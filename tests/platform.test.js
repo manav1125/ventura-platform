@@ -754,6 +754,8 @@ describe('Control center', () => {
     assert.ok(body.memory);
     assert.ok(body.billing);
     assert.ok(body.infrastructure);
+    assert.ok(body.operations.action_summary);
+    assert.ok(Array.isArray(body.operations.actions));
     assert.ok(Array.isArray(body.infrastructure.assets));
     assert.ok(body.infrastructure.readiness);
     assert.ok(Array.isArray(body.analytics.trend));
@@ -870,6 +872,65 @@ describe('Control center', () => {
     }, tokens.access);
     assert.equal(status, 200);
     assert.equal(body.approval.status, 'executed');
+  });
+
+  it('journals idempotent operations and exposes them in the control center', async () => {
+    const {
+      runGuardedOperation,
+      listActionOperations,
+      getActionOperationSummary
+    } = await import('../src/agents/action-operations.js');
+
+    let calls = 0;
+    const first = await runGuardedOperation({
+      businessId: bizId,
+      actionType: 'send_email',
+      summary: 'Idempotent founder follow-up',
+      payload: {
+        to: 'repeat@example.com',
+        subject: 'Checking in again',
+        body: '<p>Hello from Ventura</p>'
+      },
+      execute: async () => {
+        calls += 1;
+        return { provider: 'test-smtp', accepted: ['repeat@example.com'] };
+      }
+    });
+
+    const second = await runGuardedOperation({
+      businessId: bizId,
+      actionType: 'send_email',
+      summary: 'Idempotent founder follow-up',
+      payload: {
+        to: 'repeat@example.com',
+        subject: 'Checking in again',
+        body: '<p>Hello from Ventura</p>'
+      },
+      execute: async () => {
+        calls += 1;
+        return { provider: 'should-not-run' };
+      }
+    });
+
+    assert.equal(calls, 1);
+    assert.equal(first.replayed, false);
+    assert.equal(second.replayed, true);
+
+    const operations = listActionOperations(bizId, 10);
+    const journaled = operations.find(item => item.summary === 'Idempotent founder follow-up');
+    assert.ok(journaled);
+    assert.equal(journaled.status, 'succeeded');
+    assert.equal(journaled.replay_count, 1);
+
+    const summary = getActionOperationSummary(bizId);
+    assert.ok(summary.total >= 1);
+    assert.ok(summary.replayed >= 1);
+
+    const control = await GET(`/api/businesses/${bizId}/control-center`, tokens.access);
+    assert.equal(control.status, 200);
+    assert.ok(Array.isArray(control.body.operations));
+    assert.ok(control.body.operationSummary);
+    assert.ok(control.body.operations.some(item => item.summary === 'Idempotent founder follow-up'));
   });
 
   it('blocks Stripe onboarding when Stripe is not configured', async () => {

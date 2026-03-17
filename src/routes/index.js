@@ -14,6 +14,7 @@ import { provisionBusiness } from '../provisioning/provision.js';
 import { runBusinessCycle } from '../agents/runner.js';
 import { queueTask, getAllTasks, getQueuedTasks } from '../agents/tasks.js';
 import { listApprovals, decideApproval } from '../agents/approvals.js';
+import { listActionOperations, getActionOperationSummary } from '../agents/action-operations.js';
 import { getRecentActivity, logActivity } from '../agents/activity.js';
 import { getExecutionIntelligenceSnapshot } from '../agents/execution-intelligence.js';
 import { getDb } from '../db/migrate.js';
@@ -394,6 +395,8 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   const integrations = getBusinessIntegrations(business);
   const infrastructure = getInfrastructureSnapshot(business, integrations);
   const execution = getExecutionIntelligenceSnapshot(business.id);
+  const operations = listActionOperations(business.id, 20);
+  const operationSummary = getActionOperationSummary(business.id);
   const stripeIntegration = integrations.find(integration => integration.kind === 'stripe');
   const stripeConfig = stripeIntegration?.config || {};
   const engineeringTasks = tasks.filter(task => task.department === 'engineering');
@@ -499,7 +502,9 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       workflows: execution.workflows,
       recent_verifications: execution.recent_verifications,
       verification_summary: execution.verification_summary,
-      skill_library: execution.skill_library
+      skill_library: execution.skill_library,
+      operations,
+      operation_summary: operationSummary
     },
     engineering: {
       summary: {
@@ -538,11 +543,15 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
         pending_reviews: openReviews,
         handled_30d: handledOps30d,
         alerts_14d: recentAlerts,
-        running_tasks: runningOperations
+        running_tasks: runningOperations,
+        action_failures: Number(operationSummary.failed || 0),
+        action_replays: Number(operationSummary.replayed || 0)
       },
       founder_inbox: founderInbox,
       alerts: alertRows,
-      tasks: operationsTasks.slice(0, 12)
+      tasks: operationsTasks.slice(0, 12),
+      actions: operations.slice(0, 12),
+      action_summary: operationSummary
     },
     analytics: {
       summary: {
@@ -808,8 +817,11 @@ router.post('/auth/forgot-password', asyncHandler(async (req, res) => {
 
   if (user) {
     const resetToken = createPasswordResetToken(user.id);
-    sendPasswordReset(user.email, `${FRONTEND_URL}#reset-password/${resetToken}`)
-      .catch(err => console.error(`Password reset email failed: ${err.message}`));
+    try {
+      await sendPasswordReset(user.email, `${FRONTEND_URL}#reset-password/${resetToken}`);
+    } catch (err) {
+      console.error(`Password reset email failed: ${err.message}`);
+    }
   }
 
   res.json({
@@ -1451,6 +1463,8 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
   const recentActivity = getRecentActivity(req.params.id, 8);
   const usage = getUserUsage(db, req.user.sub, user.plan);
   const execution = getExecutionIntelligenceSnapshot(req.params.id);
+  const operations = listActionOperations(req.params.id, 16);
+  const operationSummary = getActionOperationSummary(req.params.id);
 
   res.json({
     business: hydratedBusiness,
@@ -1466,6 +1480,8 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
     recent_verifications: execution.recent_verifications,
     verificationSummary: execution.verification_summary,
     skills: execution.skill_library,
+    operations,
+    operationSummary,
     usage,
     economics,
     plan: serializePlan(user.plan)

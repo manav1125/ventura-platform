@@ -4,6 +4,7 @@ import { ANTHROPIC_API_KEY, AGENT_MODEL, AGENT_MAX_TOKENS } from '../config.js';
 import { getDb } from '../db/migrate.js';
 import { logActivity } from './activity.js';
 import { createApproval } from './approvals.js';
+import { runGuardedOperation } from './action-operations.js';
 import {
   composeTaskBrief,
   formatTaskBrief,
@@ -227,9 +228,16 @@ async function executeTool(name, input, task, business, memory, pendingFiles) {
         return { queuedForReview: true, approvalId: approval.id, files: files.length };
       }
       const { deployFiles } = await import('../integrations/deploy.js');
-      const result = await deployFiles(business.id, files, input.version_note);
+      const { result, replayed, operation } = await runGuardedOperation({
+        businessId: business.id,
+        taskId: task.id,
+        actionType: 'deploy_website',
+        summary: input.version_note || `Deploy ${files.length} file changes`,
+        payload: { files, version_note: input.version_note },
+        execute: () => deployFiles(business.id, files, input.version_note)
+      });
       bump('deployments');
-      return result;
+      return { ...result, replayed: !!replayed, operationId: operation?.id || null };
     }
 
     case 'send_email': {
@@ -251,10 +259,23 @@ async function executeTool(name, input, task, business, memory, pendingFiles) {
         return { queuedForReview: true, approvalId: approval.id };
       }
       const { sendEmail } = await import('../integrations/email.js');
-      await sendEmail({ from: business.email_address, to: input.to, subject: input.subject, html: input.body });
+      const { replayed, operation } = await runGuardedOperation({
+        businessId: business.id,
+        taskId: task.id,
+        actionType: 'send_email',
+        summary: `${input.subject} → ${input.to}`,
+        payload: {
+          from: business.email_address,
+          to: input.to,
+          subject: input.subject,
+          body: input.body,
+          type: input.type
+        },
+        execute: () => sendEmail({ from: business.email_address, to: input.to, subject: input.subject, html: input.body })
+      });
       bump('emails_sent');
       await logActivity(business.id, { type: 'email_sent', department: ['cold_outreach','follow_up'].includes(input.type) ? 'marketing' : 'operations', title: `Email → ${input.to}: "${input.subject}"`, detail: { type: input.type } });
-      return { success: true };
+      return { success: true, replayed: !!replayed, operationId: operation?.id || null };
     }
 
     case 'post_social': {
@@ -274,13 +295,27 @@ async function executeTool(name, input, task, business, memory, pendingFiles) {
         return { queuedForReview: true, approvalId: approval.id };
       }
       const { postTweet, postLinkedIn, postThread } = await import('../integrations/social.js');
-      const r = {};
-      if (['twitter','both'].includes(input.platform)) {
-        const tweets = input.thread ? splitThread(input.content) : [input.content.slice(0,280)];
-        r.twitter = tweets.length > 1 ? await postThread(business.id, tweets) : await postTweet(business.id, tweets[0]);
-      }
-      if (['linkedin','both'].includes(input.platform)) r.linkedin = await postLinkedIn(business.id, { text: input.content });
-      return { success: true, results: r };
+      const { result, replayed, operation } = await runGuardedOperation({
+        businessId: business.id,
+        taskId: task.id,
+        actionType: 'post_social',
+        summary: `Publish to ${input.platform}`,
+        payload: {
+          platform: input.platform,
+          content: input.content,
+          thread: !!input.thread
+        },
+        execute: async () => {
+          const r = {};
+          if (['twitter','both'].includes(input.platform)) {
+            const tweets = input.thread ? splitThread(input.content) : [input.content.slice(0,280)];
+            r.twitter = tweets.length > 1 ? await postThread(business.id, tweets) : await postTweet(business.id, tweets[0]);
+          }
+          if (['linkedin','both'].includes(input.platform)) r.linkedin = await postLinkedIn(business.id, { text: input.content });
+          return { success: true, results: r };
+        }
+      });
+      return { ...result, replayed: !!replayed, operationId: operation?.id || null };
     }
 
     case 'add_lead': {

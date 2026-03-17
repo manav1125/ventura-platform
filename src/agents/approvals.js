@@ -2,6 +2,7 @@ import { v4 as uuid } from 'uuid';
 import { getDb } from '../db/migrate.js';
 import { emitToBusiness, emitToUser } from '../ws/websocket.js';
 import { logActivity } from './activity.js';
+import { runGuardedOperation } from './action-operations.js';
 
 function parseJson(value, fallback = {}) {
   if (!value) return fallback;
@@ -109,39 +110,70 @@ async function executeApproval(approval) {
   const business = db.prepare('SELECT * FROM businesses WHERE id = ?').get(approval.business_id);
   if (!business) throw new Error('Business not found');
 
-  let result;
+  let execution;
   if (approval.action_type === 'send_email') {
     const { sendEmail } = await import('../integrations/email.js');
     const { to, subject, body, from } = approval.payload;
-    result = await sendEmail({
-      from: from || business.email_address,
-      to,
-      subject,
-      html: body
+    execution = await runGuardedOperation({
+      businessId: approval.business_id,
+      taskId: approval.task_id,
+      approvalId: approval.id,
+      actionType: approval.action_type,
+      summary: approval.summary || `${subject} → ${to}`,
+      payload: approval.payload,
+      execute: () => sendEmail({
+        from: from || business.email_address,
+        to,
+        subject,
+        html: body
+      })
     });
   } else if (approval.action_type === 'deploy_website') {
     const { deployFiles } = await import('../integrations/deploy.js');
-    result = await deployFiles(
-      approval.business_id,
-      approval.payload.files || [],
-      approval.payload.versionNote || approval.summary || 'Founder-approved deployment'
-    );
+    execution = await runGuardedOperation({
+      businessId: approval.business_id,
+      taskId: approval.task_id,
+      approvalId: approval.id,
+      actionType: approval.action_type,
+      summary: approval.payload.versionNote || approval.summary || 'Founder-approved deployment',
+      payload: approval.payload,
+      execute: () => deployFiles(
+        approval.business_id,
+        approval.payload.files || [],
+        approval.payload.versionNote || approval.summary || 'Founder-approved deployment'
+      )
+    });
   } else if (approval.action_type === 'post_social') {
     const { postTweet, postLinkedIn, postThread } = await import('../integrations/social.js');
     const { platform, content, thread } = approval.payload;
-    if (platform === 'twitter') result = await postTweet(approval.business_id, content);
-    else if (platform === 'linkedin') result = await postLinkedIn(approval.business_id, { text: content });
-    else if (platform === 'both' && thread) result = await postThread(approval.business_id, Array.isArray(content) ? content : [content]);
-    else if (platform === 'both') {
-      const twitter = await postTweet(approval.business_id, content);
-      const linkedin = await postLinkedIn(approval.business_id, { text: content });
-      result = { twitter, linkedin };
-    } else {
-      throw new Error(`Unsupported approval action: ${approval.action_type}`);
-    }
+    execution = await runGuardedOperation({
+      businessId: approval.business_id,
+      taskId: approval.task_id,
+      approvalId: approval.id,
+      actionType: approval.action_type,
+      summary: approval.summary || `Publish to ${platform}`,
+      payload: approval.payload,
+      execute: async () => {
+        if (platform === 'twitter') return postTweet(approval.business_id, content);
+        if (platform === 'linkedin') return postLinkedIn(approval.business_id, { text: content });
+        if (platform === 'both' && thread) return postThread(approval.business_id, Array.isArray(content) ? content : [content]);
+        if (platform === 'both') {
+          const twitter = await postTweet(approval.business_id, content);
+          const linkedin = await postLinkedIn(approval.business_id, { text: content });
+          return { twitter, linkedin };
+        }
+        throw new Error(`Unsupported approval action: ${approval.action_type}`);
+      }
+    });
   } else {
     throw new Error(`Unsupported approval action: ${approval.action_type}`);
   }
+
+  const result = {
+    ...(execution.result || {}),
+    replayed: !!execution.replayed,
+    operationId: execution.operation?.id || null
+  };
 
   db.prepare(`
     UPDATE approvals

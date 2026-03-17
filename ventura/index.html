@@ -3556,6 +3556,7 @@ function renderOperationsPage(data) {
   if (healthEl) {
     const alerts = data.operations?.alerts || [];
     const tasks = data.operations?.tasks || [];
+    const actions = data.operations?.actions || [];
     healthEl.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:16px;">
         <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
@@ -3565,6 +3566,14 @@ function renderOperationsPage(data) {
         <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
           <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">OPS TASKS</div>
           <div style="font-size:22px;color:#e0ddd5;">${tasks.length}</div>
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">ACTION FAILURES</div>
+          <div style="font-size:22px;color:#e0ddd5;">${summary.action_failures ?? 0}</div>
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">SAFE REPLAYS</div>
+          <div style="font-size:22px;color:#e0ddd5;">${summary.action_replays ?? 0}</div>
         </div>
       </div>
       ${(alerts.length ? alerts.slice(0, 5).map(item => `
@@ -3577,6 +3586,17 @@ function renderOperationsPage(data) {
           <span class="activity-status status-running">review</span>
         </div>
       `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No active operational alerts right now.</div>`)}
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);padding:18px 0 8px;">ACTION JOURNAL</div>
+      ${(actions.length ? actions.slice(0, 5).map(item => `
+        <div class="activity-item">
+          <div class="activity-icon ${item.action_type === 'deploy_website' ? 'code' : item.action_type === 'post_social' ? 'chart' : 'mail'}">${item.action_type === 'deploy_website' ? '⌥' : item.action_type === 'post_social' ? '▲' : '◆'}</div>
+          <div class="activity-content">
+            <div class="activity-title">${esc(item.summary || titleCase((item.action_type || 'action').replace(/_/g, ' ')))}</div>
+            <div class="activity-meta">${esc(titleCase((item.action_type || 'action').replace(/_/g, ' ')))} · ${timeAgo(item.executed_at || item.updated_at || item.created_at)}</div>
+          </div>
+          <span class="activity-status ${item.status === 'succeeded' ? 'status-done' : item.status === 'failed' ? 'status-running' : 'status-queued'}">${esc(item.status)}</span>
+        </div>
+      `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No high-impact actions have been journaled yet.</div>`)}
     `;
   }
 }

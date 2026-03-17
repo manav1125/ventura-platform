@@ -347,6 +347,31 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_skill_library_department ON skill_library(department);
 
     -- ─────────────────────────────────────────
+    -- ACTION OPERATIONS (idempotent side effects)
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS action_operations (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      task_id       TEXT REFERENCES tasks(id),
+      approval_id   TEXT REFERENCES approvals(id),
+      action_type   TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      summary       TEXT,
+      payload       TEXT DEFAULT '{}',
+      result        TEXT,
+      status        TEXT NOT NULL DEFAULT 'running', -- running | succeeded | failed | blocked
+      replay_count  INTEGER NOT NULL DEFAULT 0,
+      error         TEXT,
+      executed_at   TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_action_operations_business ON action_operations(business_id);
+    CREATE INDEX IF NOT EXISTS idx_action_operations_status ON action_operations(status);
+    CREATE INDEX IF NOT EXISTS idx_action_operations_task ON action_operations(task_id);
+
+    -- ─────────────────────────────────────────
     -- INTEGRATIONS / INFRA REGISTRY
     -- ─────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS integrations (
@@ -454,6 +479,7 @@ export function runMigrations() {
   ensureColumn(db, 'tasks', 'brief_json', 'TEXT');
   ensureColumn(db, 'tasks', 'verification_status', 'TEXT');
   ensureColumn(db, 'tasks', 'verification_summary', 'TEXT');
+  ensureColumn(db, 'action_operations', 'replay_count', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'integrations', 'secrets', "TEXT DEFAULT '{}'");
   ensureColumn(db, 'integrations', 'updated_at', 'TEXT');
   ensureColumn(db, 'users', 'email_verified', 'INTEGER NOT NULL DEFAULT 1');
