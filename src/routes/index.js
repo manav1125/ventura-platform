@@ -17,9 +17,23 @@ import { listApprovals, decideApproval } from '../agents/approvals.js';
 import { getRecentActivity, logActivity } from '../agents/activity.js';
 import { getDb } from '../db/migrate.js';
 import { getStats } from '../ws/websocket.js';
-import { handleStripeWebhook, createConnectAccount, createOnboardingLink } from '../integrations/stripe.js';
+import {
+  handleStripeWebhook,
+  createConnectAccount,
+  createDashboardLoginLink,
+  createOnboardingLink,
+  getConnectAccountSnapshot,
+  isMockStripeAccount
+} from '../integrations/stripe.js';
 import { getDeployments } from '../integrations/deploy.js';
-import { listIntegrations, syncBusinessIntegrations, upsertIntegration } from '../integrations/registry.js';
+import {
+  disconnectSocialProviderConnection,
+  getIntegration,
+  listIntegrations,
+  saveSocialProviderConnection,
+  saveStripeIntegrationState,
+  syncBusinessIntegrations
+} from '../integrations/registry.js';
 import { getPlanDefinition, resolveBusinessEconomics, serializePlan } from '../billing/plans.js';
 import { dispatchSpecialistTask } from '../business/specialists.js';
 import Anthropic from '@anthropic-ai/sdk';
@@ -123,6 +137,14 @@ function getSpecialistSummary(db, businessId) {
 
 function getOwnedBusiness(db, businessId, userId) {
   return db.prepare('SELECT * FROM businesses WHERE id = ? AND user_id = ?').get(businessId, userId);
+}
+
+function getBusinessIntegrations(business) {
+  let integrations = listIntegrations(business.id);
+  if (!integrations.length) {
+    integrations = syncBusinessIntegrations(business);
+  }
+  return integrations;
 }
 
 function parseJsonField(value, fallback = {}) {
@@ -326,9 +348,9 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   const since30d = now - (30 * 86400000);
   const memory = normaliseMemory(business.agent_memory, business);
   const economics = resolveBusinessEconomics(business, userPlan);
-  let integrations = listIntegrations(business.id);
-  if (!integrations.length) integrations = syncBusinessIntegrations(business);
+  const integrations = getBusinessIntegrations(business);
   const stripeIntegration = integrations.find(integration => integration.kind === 'stripe');
+  const stripeConfig = stripeIntegration?.config || {};
   const engineeringTasks = tasks.filter(task => task.department === 'engineering');
   const marketingTasks = tasks.filter(task => ['marketing', 'sales'].includes(task.department));
   const operationsTasks = tasks.filter(task => ['operations', 'finance'].includes(task.department));
@@ -404,9 +426,17 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       economics,
       stripe: {
         configured: !!STRIPE_SECRET_KEY,
-        connected: !!(business.stripe_account_id && !String(business.stripe_account_id).startsWith('acct_mock_')),
-        mocked: !!(business.stripe_account_id && String(business.stripe_account_id).startsWith('acct_mock_')),
-        status: stripeIntegration?.status || (STRIPE_SECRET_KEY ? 'pending' : 'mocked')
+        connected: !!stripeConfig.connected,
+        mocked: !!stripeConfig.mocked,
+        status: stripeIntegration?.status || (STRIPE_SECRET_KEY ? 'pending' : 'mocked'),
+        account_id: stripeConfig.account_id || business.stripe_account_id || null,
+        onboarding_complete: !!stripeConfig.onboarding_complete,
+        charges_enabled: !!stripeConfig.charges_enabled,
+        payouts_enabled: !!stripeConfig.payouts_enabled,
+        details_submitted: !!stripeConfig.details_submitted,
+        requirements_due: Number(stripeConfig.requirements_due || 0),
+        requirements: Array.isArray(stripeConfig.requirements) ? stripeConfig.requirements : [],
+        dashboard_ready: !!stripeConfig.dashboard_ready
       }
     },
     memory,
@@ -479,10 +509,18 @@ function sanitizePublicIntegration(kind, config = {}) {
   if (kind === 'database') return { namespace: config.namespace || null };
   if (kind === 'website') return { url: config.url || null, domain: config.domain || null };
   if (kind === 'email') return { address: config.address || null };
-  if (kind === 'stripe') return { connected: !!config.account_id };
+  if (kind === 'stripe') return {
+    connected: !!config.connected,
+    mocked: !!config.mocked,
+    onboarding_complete: !!config.onboarding_complete
+  };
   if (kind === 'analytics') return { source: config.source || null };
   if (kind === 'search') return { live_research: !!config.live_research };
-  if (kind === 'social') return { twitter: !!config.twitter, linkedin: !!config.linkedin };
+  if (kind === 'social') return {
+    connected_providers: Array.isArray(config.connected_providers) ? config.connected_providers : [],
+    twitter: !!(config.twitter?.connected || config.twitter === true),
+    linkedin: !!(config.linkedin?.connected || config.linkedin === true)
+  };
   if (kind === 'calendar') return { note: config.note || null };
   return {};
 }
@@ -535,10 +573,7 @@ function getApprovalSummary(db, businessId) {
 
 function getPublicBusinessDetail(db, businessRow, fallbackPlan = 'trial') {
   const business = serializePublicBusiness(businessRow, fallbackPlan);
-  let integrations = listIntegrations(businessRow.id);
-  if (!integrations.length) {
-    integrations = syncBusinessIntegrations(businessRow);
-  }
+  const integrations = getBusinessIntegrations(businessRow);
 
   const recentActivity = db.prepare(`
     SELECT type, department, title, created_at
@@ -923,12 +958,7 @@ router.get('/businesses/:id/integrations', requireAuth, asyncHandler(async (req,
   const business = getOwnedBusiness(db, req.params.id, req.user.sub);
   if (!business) return res.status(404).json({ error: 'Not found' });
 
-  let integrations = listIntegrations(req.params.id);
-  if (!integrations.length) {
-    integrations = syncBusinessIntegrations(business);
-  }
-
-  res.json({ integrations });
+  res.json({ integrations: getBusinessIntegrations(business) });
 }));
 
 // POST /api/businesses/:id/integrations/sync
@@ -945,6 +975,83 @@ router.post('/businesses/:id/integrations/sync', requireAuth, asyncHandler(async
     detail: { integrations: integrations.length }
   });
   res.json({ integrations, syncedAt: new Date().toISOString() });
+}));
+
+// PATCH /api/businesses/:id/integrations/social/:provider
+router.patch('/businesses/:id/integrations/social/:provider', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const provider = req.params.provider;
+  if (!['twitter', 'linkedin'].includes(provider)) {
+    return res.status(400).json({ error: 'Unsupported social provider' });
+  }
+
+  const schema = provider === 'twitter'
+    ? z.object({
+      handle: z.string().max(80).optional(),
+      profileUrl: z.union([z.string().url(), z.literal('')]).optional(),
+      accountLabel: z.string().max(120).optional(),
+      accountId: z.string().max(180).optional(),
+      accessToken: z.string().max(5000).optional(),
+      refreshToken: z.string().max(5000).optional(),
+      expiresAt: z.string().max(120).optional()
+    })
+    : z.object({
+      organization: z.string().max(160).optional(),
+      organizationUrn: z.string().max(220).optional(),
+      authorUrn: z.string().max(220).optional(),
+      pageUrl: z.union([z.string().url(), z.literal('')]).optional(),
+      accessToken: z.string().max(5000).optional(),
+      refreshToken: z.string().max(5000).optional(),
+      expiresAt: z.string().max(120).optional()
+    });
+
+  const body = validate(schema, req.body || {});
+  const integration = saveSocialProviderConnection({
+    businessId: business.id,
+    provider,
+    updates: body
+  });
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'marketing',
+    title: `Founder updated ${provider === 'twitter' ? 'X' : 'LinkedIn'} connection`,
+    detail: {
+      provider,
+      connected: !!integration?.config?.[provider]?.connected
+    }
+  });
+
+  res.json({ integration });
+}));
+
+// DELETE /api/businesses/:id/integrations/social/:provider
+router.delete('/businesses/:id/integrations/social/:provider', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const provider = req.params.provider;
+  if (!['twitter', 'linkedin'].includes(provider)) {
+    return res.status(400).json({ error: 'Unsupported social provider' });
+  }
+
+  const integration = disconnectSocialProviderConnection({
+    businessId: business.id,
+    provider
+  });
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'marketing',
+    title: `Founder disconnected ${provider === 'twitter' ? 'X' : 'LinkedIn'}`,
+    detail: { provider }
+  });
+
+  res.json({ integration });
 }));
 
 // POST /api/businesses/:id/specialists/:specialist/run
@@ -1147,10 +1254,7 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
   const latestCycle = recentCycles[0] || null;
   const approvals = listApprovals(req.params.id, { limit: 25 });
   let deployments = getDeployments(req.params.id, 10);
-  let integrations = listIntegrations(req.params.id);
-  if (!integrations.length) {
-    integrations = syncBusinessIntegrations(hydratedBusiness);
-  }
+  const integrations = getBusinessIntegrations(hydratedBusiness);
   if (!deployments.length) {
     deployments = db.prepare(`
       SELECT id,
@@ -1249,6 +1353,24 @@ router.patch('/businesses/:id/memory', requireAuth, asyncHandler(async (req, res
   res.json({ memory });
 }));
 
+// GET /api/businesses/:id/stripe/status — retrieve current Connect state
+router.get('/businesses/:id/stripe/status', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const currentIntegration = getIntegration(business.id, 'stripe');
+  const currentAccountId = currentIntegration?.config?.account_id || business.stripe_account_id || null;
+  const snapshot = await getConnectAccountSnapshot(currentAccountId);
+  const integration = saveStripeIntegrationState({
+    businessId: business.id,
+    accountId: snapshot.account_id || currentAccountId,
+    snapshot
+  });
+
+  res.json({ stripe: integration?.config || snapshot, status: integration?.status || snapshot.status });
+}));
+
 // POST /api/businesses/:id/stripe/onboarding — open Connect onboarding
 router.post('/businesses/:id/stripe/onboarding', requireAuth, asyncHandler(async (req, res) => {
   if (!STRIPE_SECRET_KEY) {
@@ -1260,7 +1382,7 @@ router.post('/businesses/:id/stripe/onboarding', requireAuth, asyncHandler(async
   if (!business) return res.status(404).json({ error: 'Not found' });
 
   let stripeAccountId = business.stripe_account_id;
-  if (!stripeAccountId || String(stripeAccountId).startsWith('acct_mock_')) {
+  if (!stripeAccountId || isMockStripeAccount(stripeAccountId)) {
     const user = getUserById(req.user.sub);
     const account = await createConnectAccount(business, user);
     stripeAccountId = account?.id || db.prepare('SELECT stripe_account_id FROM businesses WHERE id = ?').get(req.params.id)?.stripe_account_id;
@@ -1271,13 +1393,11 @@ router.post('/businesses/:id/stripe/onboarding', requireAuth, asyncHandler(async
   }
 
   const url = await createOnboardingLink(stripeAccountId, business.id);
-  upsertIntegration({
+  const snapshot = await getConnectAccountSnapshot(stripeAccountId);
+  const integration = saveStripeIntegrationState({
     businessId: business.id,
-    kind: 'stripe',
-    provider: 'stripe',
-    status: 'connected',
-    config: { account_id: stripeAccountId },
-    lastSyncAt: new Date().toISOString()
+    accountId: stripeAccountId,
+    snapshot
   });
 
   await logActivity(req.params.id, {
@@ -1287,6 +1407,26 @@ router.post('/businesses/:id/stripe/onboarding', requireAuth, asyncHandler(async
     detail: { stripe_account_id: stripeAccountId }
   });
 
+  res.json({ url, stripeAccountId, stripe: integration?.config || snapshot });
+}));
+
+// POST /api/businesses/:id/stripe/dashboard — open the Stripe Express dashboard
+router.post('/businesses/:id/stripe/dashboard', requireAuth, asyncHandler(async (req, res) => {
+  if (!STRIPE_SECRET_KEY) {
+    return res.status(503).json({ error: 'Stripe Connect is not configured yet.' });
+  }
+
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const currentIntegration = getIntegration(business.id, 'stripe');
+  const stripeAccountId = currentIntegration?.config?.account_id || business.stripe_account_id || null;
+  if (!stripeAccountId || isMockStripeAccount(stripeAccountId)) {
+    return res.status(400).json({ error: 'Complete Stripe onboarding before opening the dashboard.' });
+  }
+
+  const url = await createDashboardLoginLink(stripeAccountId);
   res.json({ url, stripeAccountId });
 }));
 

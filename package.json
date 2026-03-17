@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test tests/platform.test.js",
+    "test": "node --test --test-reporter=spec tests/platform.test.js",
     "agent:run": "node src/agents/runner.js",
     "db:migrate": "node src/db/migrate.js",
     "db:seed": "node src/db/seed.js"

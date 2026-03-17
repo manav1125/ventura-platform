@@ -283,8 +283,10 @@ export function runMigrations() {
       provider      TEXT NOT NULL,
       status        TEXT NOT NULL DEFAULT 'pending',
       config        TEXT DEFAULT '{}',
+      secrets       TEXT DEFAULT '{}',
       last_sync_at  TEXT,
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(business_id, kind)
     );
 
@@ -337,8 +339,16 @@ export function runMigrations() {
   ensureColumn(db, 'businesses', 'revenue_share_pct', 'INTEGER NOT NULL DEFAULT -1');
   ensureColumn(db, 'businesses', 'tasks_included_per_month', 'INTEGER NOT NULL DEFAULT -1');
   ensureColumn(db, 'businesses', 'infrastructure_included', 'INTEGER NOT NULL DEFAULT -1');
+  ensureColumn(db, 'integrations', 'secrets', "TEXT DEFAULT '{}'");
+  ensureColumn(db, 'integrations', 'updated_at', 'TEXT');
   ensureColumn(db, 'users', 'email_verified', 'INTEGER NOT NULL DEFAULT 1');
   ensureColumn(db, 'users', 'email_verified_at', 'TEXT');
+  db.prepare(`
+    UPDATE integrations
+    SET secrets = COALESCE(secrets, '{}'),
+        updated_at = COALESCE(updated_at, created_at, datetime('now'))
+    WHERE secrets IS NULL OR updated_at IS NULL
+  `).run();
   db.prepare(`
     UPDATE users
     SET email_verified_at = COALESCE(email_verified_at, created_at)

@@ -12,6 +12,10 @@ import { emitToBusiness } from '../ws/websocket.js';
 
 const stripe = new Stripe(STRIPE_SECRET_KEY || 'sk_test_placeholder');
 
+export function isMockStripeAccount(stripeAccountId) {
+  return !!stripeAccountId && String(stripeAccountId).startsWith('acct_mock_');
+}
+
 // ─── Create a Stripe Connect account for a business ───────────────────────────
 
 export async function createConnectAccount(business, user) {
@@ -38,11 +42,85 @@ export async function createConnectAccount(business, user) {
 export async function createOnboardingLink(stripeAccountId, businessId) {
   const link = await stripe.accountLinks.create({
     account: stripeAccountId,
-    refresh_url: `${FRONTEND_URL}#settings?stripe=refresh&business=${businessId}`,
-    return_url:  `${FRONTEND_URL}#settings?stripe=complete&business=${businessId}`,
+    refresh_url: `${FRONTEND_URL}#dashboard?page=settings&business=${businessId}&stripe=refresh`,
+    return_url: `${FRONTEND_URL}#dashboard?page=settings&business=${businessId}&stripe=complete`,
     type: 'account_onboarding'
   });
   return link.url;
+}
+
+export async function createDashboardLoginLink(stripeAccountId) {
+  if (!STRIPE_SECRET_KEY) {
+    throw Object.assign(new Error('Stripe Connect is not configured yet.'), { statusCode: 503 });
+  }
+  if (!stripeAccountId || isMockStripeAccount(stripeAccountId)) {
+    throw Object.assign(new Error('Complete Stripe onboarding before opening the dashboard.'), { statusCode: 400 });
+  }
+  const link = await stripe.accounts.createLoginLink(stripeAccountId);
+  return link.url;
+}
+
+export async function getConnectAccountSnapshot(stripeAccountId) {
+  if (!stripeAccountId) {
+    return {
+      account_id: null,
+      status: STRIPE_SECRET_KEY ? 'pending' : 'mocked',
+      mocked: !STRIPE_SECRET_KEY,
+      connected: false,
+      onboarding_complete: false,
+      charges_enabled: false,
+      payouts_enabled: false,
+      details_submitted: false,
+      requirements_due: 0,
+      requirements: [],
+      dashboard_ready: false,
+      country: null,
+      default_currency: null,
+      type: 'express'
+    };
+  }
+
+  if (isMockStripeAccount(stripeAccountId) || !STRIPE_SECRET_KEY) {
+    return {
+      account_id: stripeAccountId,
+      status: isMockStripeAccount(stripeAccountId) ? 'mocked' : 'pending',
+      mocked: isMockStripeAccount(stripeAccountId),
+      connected: false,
+      onboarding_complete: false,
+      charges_enabled: false,
+      payouts_enabled: false,
+      details_submitted: false,
+      requirements_due: 0,
+      requirements: [],
+      dashboard_ready: !isMockStripeAccount(stripeAccountId),
+      country: null,
+      default_currency: null,
+      type: 'express'
+    };
+  }
+
+  const account = await stripe.accounts.retrieve(stripeAccountId);
+  const requirements = Array.isArray(account.requirements?.currently_due)
+    ? account.requirements.currently_due
+    : [];
+  const onboardingComplete = !!(account.details_submitted && account.charges_enabled && account.payouts_enabled);
+
+  return {
+    account_id: account.id,
+    status: onboardingComplete ? 'connected' : 'pending',
+    mocked: false,
+    connected: onboardingComplete,
+    onboarding_complete: onboardingComplete,
+    charges_enabled: !!account.charges_enabled,
+    payouts_enabled: !!account.payouts_enabled,
+    details_submitted: !!account.details_submitted,
+    requirements_due: requirements.length,
+    requirements,
+    dashboard_ready: true,
+    country: account.country || null,
+    default_currency: account.default_currency || null,
+    type: account.type || 'express'
+  };
 }
 
 // ─── Webhook handler — receives Stripe events ─────────────────────────────────

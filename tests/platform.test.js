@@ -37,6 +37,7 @@ async function req(method, path, body, token) {
 const GET    = (p, t)    => req('GET',   p, null, t);
 const POST   = (p, b, t) => req('POST',  p, b, t);
 const PATCH  = (p, b, t) => req('PATCH', p, b, t);
+const DELETE = (p, t)    => req('DELETE', p, null, t);
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 before(async () => {
@@ -456,6 +457,52 @@ describe('Control center', () => {
     assert.ok(sync.body.integrations.every(i => i.last_sync_at), 'all integrations should record a sync time');
   });
 
+  it('stores business-scoped social credentials without leaking secrets', async () => {
+    const token = 'twitter-access-token-secret-7890';
+    const { status, body } = await PATCH(`/api/businesses/${bizId}/integrations/social/twitter`, {
+      handle: '@testsaas',
+      profileUrl: 'https://x.com/testsaas',
+      accountLabel: 'Test SaaS',
+      accessToken: token
+    }, tokens.access);
+
+    assert.equal(status, 200);
+    assert.equal(body.integration.kind, 'social');
+    assert.equal(body.integration.status, 'connected');
+    assert.equal(body.integration.config.twitter.handle, '@testsaas');
+    assert.equal(body.integration.config.twitter.connected, true);
+    assert.equal(body.integration.config.twitter.token_last4, '7890');
+    assert.ok(!JSON.stringify(body).includes(token), 'response should not include raw tokens');
+
+    const list = await GET(`/api/businesses/${bizId}/integrations`, tokens.access);
+    const social = list.body.integrations.find(i => i.kind === 'social');
+    assert.ok(social);
+    assert.equal(social.config.twitter.handle, '@testsaas');
+    assert.equal(social.config.twitter.token_last4, '7890');
+    assert.ok(!Object.prototype.hasOwnProperty.call(social, 'secrets'));
+  });
+
+  it('preserves connected social integrations across syncs', async () => {
+    const sync = await POST(`/api/businesses/${bizId}/integrations/sync`, {}, tokens.access);
+    assert.equal(sync.status, 200);
+    const social = sync.body.integrations.find(i => i.kind === 'social');
+    assert.ok(social);
+    assert.equal(social.config.twitter.handle, '@testsaas');
+    assert.equal(social.config.twitter.connected, true);
+  });
+
+  it('disconnects a social provider without removing the registry row', async () => {
+    const { status, body } = await DELETE(`/api/businesses/${bizId}/integrations/social/twitter`, tokens.access);
+    assert.equal(status, 200);
+    assert.equal(body.integration.kind, 'social');
+    assert.equal(body.integration.config.twitter.connected, false);
+
+    const list = await GET(`/api/businesses/${bizId}/integrations`, tokens.access);
+    const social = list.body.integrations.find(i => i.kind === 'social');
+    assert.ok(social);
+    assert.equal(social.config.twitter.connected, false);
+  });
+
   it('dispatches a specialist sprint', async () => {
     const { status, body } = await POST(`/api/businesses/${bizId}/specialists/marketing/run`, {
       brief: 'Launch a founder waitlist campaign this week'
@@ -525,6 +572,20 @@ describe('Control center', () => {
 
   it('blocks Stripe onboarding when Stripe is not configured', async () => {
     const { status, body } = await POST(`/api/businesses/${bizId}/stripe/onboarding`, {}, tokens.access);
+    assert.equal(status, 503);
+    assert.match(body.error, /stripe/i);
+  });
+
+  it('returns a safe Stripe status snapshot even without live Stripe config', async () => {
+    const { status, body } = await GET(`/api/businesses/${bizId}/stripe/status`, tokens.access);
+    assert.equal(status, 200);
+    assert.ok(body.stripe);
+    assert.equal(body.status, 'mocked');
+    assert.equal(body.stripe.mocked, true);
+  });
+
+  it('blocks Stripe dashboard login when Connect is not configured', async () => {
+    const { status, body } = await POST(`/api/businesses/${bizId}/stripe/dashboard`, {}, tokens.access);
     assert.equal(status, 503);
     assert.match(body.error, /stripe/i);
   });

@@ -5,13 +5,14 @@
 
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db/migrate.js';
-import { FRONTEND_URL, PLATFORM_DOMAIN } from '../config.js';
+import { FRONTEND_URL, PLATFORM_DOMAIN, STRIPE_SECRET_KEY } from '../config.js';
 import { emitToUser } from '../ws/websocket.js';
 import { logActivity } from '../agents/activity.js';
 import { queueTask } from '../agents/tasks.js';
 import { sendEmail } from '../integrations/email.js';
 import { createVercelProject } from '../integrations/deploy.js';
-import { seedDefaultIntegrations, upsertIntegration } from '../integrations/registry.js';
+import { saveStripeIntegrationState, seedDefaultIntegrations, upsertIntegration } from '../integrations/registry.js';
+import { createConnectAccount, getConnectAccountSnapshot } from '../integrations/stripe.js';
 import { getPlanEconomics } from '../billing/plans.js';
 
 // ─── Slug generator ───────────────────────────────────────────────────────────
@@ -164,20 +165,48 @@ async function stepScaffoldWebsite(businessId, slug, name, type, description, us
 }
 
 async function stepSetupStripe(businessId, userId) {
-  // In production: create a Stripe Connect Express account.
-  // Platform takes STRIPE_PLATFORM_FEE_PCT % of revenue.
   await sleep(300);
-  const stripeAccountId = `acct_mock_${uuid().slice(0, 16)}`;
   const db = getDb();
-  db.prepare(`UPDATE businesses SET stripe_account_id=? WHERE id=?`).run(stripeAccountId, businessId);
+  let stripeAccountId = null;
+  let snapshot = null;
+
+  if (STRIPE_SECRET_KEY) {
+    try {
+      const business = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
+      const user = db.prepare('SELECT id, email, name FROM users WHERE id = ?').get(userId);
+      const account = await createConnectAccount(business, user);
+      stripeAccountId = account?.id || db.prepare('SELECT stripe_account_id FROM businesses WHERE id = ?').get(businessId)?.stripe_account_id;
+      snapshot = await getConnectAccountSnapshot(stripeAccountId);
+      await logActivity(businessId, {
+        type: 'system',
+        department: 'finance',
+        title: 'Stripe Connect account created',
+        detail: { stripeAccountId, mode: 'live' }
+      });
+    } catch (error) {
+      console.error(`[Stripe] Live Connect provisioning failed for ${businessId}: ${error.message}`);
+      await logActivity(businessId, {
+        type: 'alert',
+        department: 'finance',
+        title: 'Stripe Connect fell back to preview mode',
+        detail: { error: error.message }
+      });
+    }
+  }
+
+  if (!stripeAccountId) {
+    stripeAccountId = `acct_mock_${uuid().slice(0, 16)}`;
+    db.prepare(`UPDATE businesses SET stripe_account_id=? WHERE id=?`).run(stripeAccountId, businessId);
+    await logActivity(businessId, {
+      type: 'system',
+      department: 'finance',
+      title: 'Stripe Connect provisioned in preview mode',
+      detail: { stripeAccountId, mode: 'mocked' }
+    });
+  }
+
   emitToUser(userId, { event: 'provisioning:step', step: 'stripe', status: 'complete', businessId });
-  upsertIntegration({
-    businessId,
-    kind: 'stripe',
-    provider: 'stripe',
-    status: 'connected',
-    config: { account_id: stripeAccountId }
-  });
+  saveStripeIntegrationState({ businessId, accountId: stripeAccountId, snapshot });
   return stripeAccountId;
 }
 

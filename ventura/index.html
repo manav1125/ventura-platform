@@ -3189,7 +3189,7 @@ function setActiveBusiness(biz) {
   document.querySelectorAll('.dash-subtitle').forEach(el => {
     if (el.textContent.includes('day')) el.textContent = `${biz.slug} — day ${biz.day_count} of operation`;
   });
-  loadDashboard();
+  return loadDashboard();
 }
 
 async function loadDashboard() {
@@ -4102,16 +4102,159 @@ function renderSettings(data, operating = null, billing = null) {
 
   const infraEl = document.getElementById('settings-infrastructure');
   if (infraEl) {
-    infraEl.innerHTML = (data.integrations || []).map(i => `
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:16px;">
-        <div>
-          <div style="font-size:14px;color:#e0ddd5;margin-bottom:4px;">${esc(titleCase(i.kind))}</div>
-          <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(i.provider)}${i.config?.url ? ` · ${esc(i.config.url)}` : ''}${i.config?.address ? ` · ${esc(i.config.address)}` : ''}</div>
-          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-top:6px;">${i.last_sync_at ? `Synced ${timeAgo(i.last_sync_at)}` : 'Awaiting first sync'}</div>
+    const integrations = data.integrations || [];
+    const stripeIntegration = integrations.find(i => i.kind === 'stripe') || null;
+    const stripeConfig = {
+      ...((operating?.billing?.stripe) || {}),
+      ...((stripeIntegration?.config) || {})
+    };
+    const socialIntegration = integrations.find(i => i.kind === 'social') || { status: 'pending', config: {} };
+    const twitter = socialIntegration.config?.twitter || {};
+    const linkedin = socialIntegration.config?.linkedin || {};
+    const stackRows = integrations
+      .filter(i => !['stripe', 'social'].includes(i.kind))
+      .map(i => `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:16px;">
+          <div>
+            <div style="font-size:14px;color:#e0ddd5;margin-bottom:4px;">${esc(titleCase(i.kind))}</div>
+            <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(i.provider)}${i.config?.url ? ` · ${esc(i.config.url)}` : ''}${i.config?.address ? ` · ${esc(i.config.address)}` : ''}</div>
+            <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-top:6px;">${i.last_sync_at ? `Synced ${timeAgo(i.last_sync_at)}` : 'Awaiting first sync'}</div>
+          </div>
+          <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(i.status)};padding:4px 10px;background:${integrationBg(i.status)};border-radius:999px;white-space:nowrap;">${esc(i.status).toUpperCase()}</span>
         </div>
-        <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(i.status)};padding:4px 10px;background:${integrationBg(i.status)};border-radius:999px;white-space:nowrap;">${esc(i.status).toUpperCase()}</span>
+      `).join('');
+    const stripeSummary = stripeConfig.mocked
+      ? 'Stripe is still in preview mode for this business. Start Connect onboarding to replace the mock account with a live Express account.'
+      : stripeConfig.connected
+        ? 'Charges and payouts are enabled. Ventura can now track real revenue share and route founders into the Stripe dashboard.'
+        : stripeConfig.account_id
+          ? `Connect account created${stripeConfig.requirements_due ? ` with ${stripeConfig.requirements_due} requirement${stripeConfig.requirements_due === 1 ? '' : 's'} still due.` : ', waiting for onboarding completion.'}`
+          : 'No Connect account exists yet for this business. Ventura will create one as soon as you start onboarding.';
+
+    infraEl.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div style="padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:12px;">
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:6px;">STRIPE CONNECT</div>
+              <div style="font-size:14px;color:#e0ddd5;line-height:1.6;">${esc(stripeSummary)}</div>
+            </div>
+            <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(stripeIntegration?.status || stripeConfig.status || 'pending')};padding:4px 10px;background:${integrationBg(stripeIntegration?.status || stripeConfig.status || 'pending')};border-radius:999px;white-space:nowrap;">${esc((stripeIntegration?.status || stripeConfig.status || 'pending').toUpperCase())}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px;">
+            <div style="padding:12px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">ACCOUNT</div>
+              <div style="font-size:13px;color:#e0ddd5;">${esc(stripeConfig.account_id || 'Not created yet')}</div>
+            </div>
+            <div style="padding:12px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">DETAILS SUBMITTED</div>
+              <div style="font-size:13px;color:#e0ddd5;">${stripeConfig.details_submitted ? 'Yes' : 'No'}</div>
+            </div>
+            <div style="padding:12px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">CHARGES / PAYOUTS</div>
+              <div style="font-size:13px;color:#e0ddd5;">${stripeConfig.charges_enabled ? 'Charges on' : 'Charges off'} / ${stripeConfig.payouts_enabled ? 'Payouts on' : 'Payouts off'}</div>
+            </div>
+            <div style="padding:12px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">OPEN REQUIREMENTS</div>
+              <div style="font-size:13px;color:#e0ddd5;">${Number(stripeConfig.requirements_due || 0)}</div>
+            </div>
+          </div>
+          ${(stripeConfig.requirements || []).length ? `
+            <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:8px;">CURRENT STRIPE REQUIREMENTS</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+              ${stripeConfig.requirements.map(item => `<span class="tag">${esc(item)}</span>`).join('')}
+            </div>
+          ` : ''}
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            <button class="icon-btn" onclick="connectStripe()">${stripeConfig.account_id && !stripeConfig.connected ? 'Continue onboarding' : 'Start onboarding'}</button>
+            <button class="icon-btn" onclick="refreshStripeStatus()">Refresh status</button>
+            ${stripeConfig.dashboard_ready && !stripeConfig.mocked ? `<button class="icon-btn" onclick="openStripeDashboard()">Open Stripe dashboard</button>` : ''}
+          </div>
+        </div>
+
+        <div style="padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px;">
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:6px;">SOCIAL ACCOUNTS</div>
+              <div style="font-size:14px;color:#e0ddd5;line-height:1.6;">Connect business-owned X and LinkedIn accounts so Ventura can publish through the right brand, not a shared platform token.</div>
+            </div>
+            <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(socialIntegration.status || 'pending')};padding:4px 10px;background:${integrationBg(socialIntegration.status || 'pending')};border-radius:999px;white-space:nowrap;">${esc((socialIntegration.status || 'pending').toUpperCase())}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
+            <div style="padding:14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
+              <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:12px;">
+                <div>
+                  <div style="font-size:13px;color:#e0ddd5;">X / Twitter</div>
+                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(twitter.handle ? `Connected as ${twitter.handle}` : 'No business X account connected yet.')}</div>
+                </div>
+                <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(twitter.connected ? 'connected' : 'pending')};padding:4px 10px;background:${integrationBg(twitter.connected ? 'connected' : 'pending')};border-radius:999px;white-space:nowrap;">${twitter.connected ? 'CONNECTED' : 'PENDING'}</span>
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Handle</label>
+                <input id="settings-social-twitter-handle" value="${esc(twitter.handle || '')}" placeholder="@venturaai" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Profile URL</label>
+                <input id="settings-social-twitter-profile-url" value="${esc(twitter.profile_url || '')}" placeholder="https://x.com/venturaai" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Account label</label>
+                <input id="settings-social-twitter-account-label" value="${esc(twitter.account_label || '')}" placeholder="Ventura Growth" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div class="form-field" style="margin:0;">
+                <label style="color:rgba(255,255,255,0.3)">Access token</label>
+                <input id="settings-social-twitter-access-token" type="password" placeholder="${esc(twitter.token_last4 ? `Saved token ends ${twitter.token_last4}` : 'Paste a business-scoped token')}" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-top:8px;font-family:'DM Mono',monospace;">Leave the token blank to keep the current saved credential.</div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+                <button class="icon-btn" onclick="saveSocialIntegration('twitter')">Save X account</button>
+                ${twitter.connected ? `<button class="icon-btn" onclick="disconnectSocialIntegration('twitter')">Disconnect</button>` : ''}
+              </div>
+            </div>
+
+            <div style="padding:14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
+              <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:12px;">
+                <div>
+                  <div style="font-size:13px;color:#e0ddd5;">LinkedIn</div>
+                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(linkedin.organization ? `Connected as ${linkedin.organization}` : 'No business LinkedIn page connected yet.')}</div>
+                </div>
+                <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(linkedin.connected ? 'connected' : 'pending')};padding:4px 10px;background:${integrationBg(linkedin.connected ? 'connected' : 'pending')};border-radius:999px;white-space:nowrap;">${linkedin.connected ? 'CONNECTED' : 'PENDING'}</span>
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Organization</label>
+                <input id="settings-social-linkedin-organization" value="${esc(linkedin.organization || '')}" placeholder="Ventura Labs" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Page / org URN</label>
+                <input id="settings-social-linkedin-organization-urn" value="${esc(linkedin.organization_urn || '')}" placeholder="urn:li:organization:123456" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Author URN (optional)</label>
+                <input id="settings-social-linkedin-author-urn" value="${esc(linkedin.author_urn || '')}" placeholder="urn:li:organization:123456" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Page URL</label>
+                <input id="settings-social-linkedin-page-url" value="${esc(linkedin.page_url || '')}" placeholder="https://www.linkedin.com/company/ventura" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div class="form-field" style="margin:0;">
+                <label style="color:rgba(255,255,255,0.3)">Access token</label>
+                <input id="settings-social-linkedin-access-token" type="password" placeholder="${esc(linkedin.token_last4 ? `Saved token ends ${linkedin.token_last4}` : 'Paste a page access token')}" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-top:8px;font-family:'DM Mono',monospace;">Leave the token blank to keep the current saved credential.</div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+                <button class="icon-btn" onclick="saveSocialIntegration('linkedin')">Save LinkedIn page</button>
+                ${linkedin.connected ? `<button class="icon-btn" onclick="disconnectSocialIntegration('linkedin')">Disconnect</button>` : ''}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:10px;">STACK REGISTRY</div>
+          ${stackRows || `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No integrations provisioned yet.</div>`}
+        </div>
       </div>
-    `).join('') || `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No integrations provisioned yet.</div>`;
+    `;
   }
 }
 
@@ -4146,7 +4289,7 @@ function renderSidebarBusinesses() {
 
 async function switchBusiness(id) {
   const biz = state.businesses.find(b => b.id === id);
-  if (biz) setActiveBusiness(biz);
+  if (biz) return setActiveBusiness(biz);
 }
 
 async function decideApproval(id, decision) {
@@ -4196,6 +4339,55 @@ async function syncIntegrations() {
     await loadDashboard();
   } catch (err) {
     showToast(`Sync failed: ${err.message}`);
+  }
+}
+
+async function saveSocialIntegration(provider) {
+  if (!state.activeBiz) return;
+  const payload = provider === 'twitter'
+    ? {
+      handle: document.getElementById('settings-social-twitter-handle')?.value?.trim() || '',
+      profileUrl: document.getElementById('settings-social-twitter-profile-url')?.value?.trim() || '',
+      accountLabel: document.getElementById('settings-social-twitter-account-label')?.value?.trim() || '',
+      accessToken: document.getElementById('settings-social-twitter-access-token')?.value?.trim() || ''
+    }
+    : {
+      organization: document.getElementById('settings-social-linkedin-organization')?.value?.trim() || '',
+      organizationUrn: document.getElementById('settings-social-linkedin-organization-urn')?.value?.trim() || '',
+      authorUrn: document.getElementById('settings-social-linkedin-author-urn')?.value?.trim() || '',
+      pageUrl: document.getElementById('settings-social-linkedin-page-url')?.value?.trim() || '',
+      accessToken: document.getElementById('settings-social-linkedin-access-token')?.value?.trim() || ''
+    };
+
+  try {
+    await PATCH(`/businesses/${state.activeBiz.id}/integrations/social/${provider}`, payload);
+    showToast(`${provider === 'twitter' ? 'X' : 'LinkedIn'} connection saved`);
+    await loadDashboard();
+    activateDashboardPage('settings');
+  } catch (err) {
+    showToast(`Could not save ${provider} connection: ${err.message}`);
+  }
+}
+
+async function disconnectSocialIntegration(provider) {
+  if (!state.activeBiz) return;
+  if (!confirm(`Disconnect ${provider === 'twitter' ? 'X' : 'LinkedIn'} for this business?`)) return;
+  try {
+    await fetch(`${API_BASE}/businesses/${state.activeBiz.id}/integrations/social/${provider}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${state.accessToken}`
+      }
+    }).then(async res => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Disconnect failed');
+      return data;
+    });
+    showToast(`${provider === 'twitter' ? 'X' : 'LinkedIn'} disconnected`);
+    await loadDashboard();
+    activateDashboardPage('settings');
+  } catch (err) {
+    showToast(`Disconnect failed: ${err.message}`);
   }
 }
 
@@ -4268,6 +4460,32 @@ async function connectStripe() {
     showToast('Stripe onboarding link unavailable');
   } catch (err) {
     showToast(`Stripe setup failed: ${err.message}`);
+  }
+}
+
+async function refreshStripeStatus(showSuccess = true) {
+  if (!state.activeBiz) return;
+  try {
+    await GET(`/businesses/${state.activeBiz.id}/stripe/status`);
+    if (showSuccess) showToast('Stripe status refreshed');
+    await loadDashboard();
+    activateDashboardPage('settings');
+  } catch (err) {
+    showToast(`Stripe refresh failed: ${err.message}`);
+  }
+}
+
+async function openStripeDashboard() {
+  if (!state.activeBiz) return;
+  try {
+    const session = await POST(`/businesses/${state.activeBiz.id}/stripe/dashboard`, {});
+    if (session.url) {
+      window.location.href = session.url;
+      return;
+    }
+    showToast('Stripe dashboard unavailable');
+  } catch (err) {
+    showToast(`Stripe dashboard unavailable: ${err.message}`);
   }
 }
 
@@ -4390,6 +4608,15 @@ function setRoute(hash = '') {
   history.replaceState(null, '', url);
 }
 
+function parseHashRoute() {
+  const raw = (location.hash || '').replace(/^#/, '');
+  const [route = '', query = ''] = raw.split('?');
+  return {
+    route,
+    params: new URLSearchParams(query || '')
+  };
+}
+
 async function showLive(e, slug = null) {
   if (e) e.preventDefault();
   showView('live');
@@ -4399,7 +4626,13 @@ async function showLive(e, slug = null) {
   await loadLiveBoard(slug);
 }
 
-async function showDashboard(e) {
+function activateDashboardPage(pageId = 'overview') {
+  const nav = Array.from(document.querySelectorAll('.nav-item'))
+    .find(item => item.getAttribute('onclick') === `showPage('${pageId}',this)`);
+  showPage(pageId, nav || null);
+}
+
+async function showDashboard(e, opts = {}) {
   if (e) e.preventDefault();
 
   const authed = await checkAuth();
@@ -4410,11 +4643,30 @@ async function showDashboard(e) {
   }
 
   showView('dashboard');
-  setRoute('dashboard');
+  const dashboardParams = new URLSearchParams();
+  if (opts.page) dashboardParams.set('page', opts.page);
+  if (opts.businessId) dashboardParams.set('business', opts.businessId);
+  setRoute(`dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ''}`);
   updateNavForAuth(true);
   renderAccountStatusBanner();
   connectWS();
   await loadBusinesses();
+
+  if (opts.businessId && state.activeBiz?.id !== opts.businessId) {
+    await switchBusiness(opts.businessId);
+  }
+
+  if (opts.page) {
+    activateDashboardPage(opts.page);
+  }
+
+  if (opts.stripe === 'complete') {
+    showToast('Stripe onboarding complete. Refreshing Connect status…');
+    setTimeout(() => refreshStripeStatus(false), 120);
+  } else if (opts.stripe === 'refresh') {
+    showToast('Stripe asked for another pass through onboarding. Review the requirements and continue.');
+    if ((opts.page || '') !== 'settings') activateDashboardPage('settings');
+  }
 
   // If user has no businesses, prompt to create one
   if (state.businesses.length === 0) {
@@ -4440,24 +4692,28 @@ function showPage(pageId, el) {
 }
 
 async function routeFromHash() {
-  const hash = (location.hash || '').replace(/^#/, '');
-  if (hash.startsWith('verify-email/')) {
-    const token = decodeURIComponent(hash.split('/').slice(1).join('/'));
+  const { route, params } = parseHashRoute();
+  if (route.startsWith('verify-email/')) {
+    const token = decodeURIComponent(route.split('/').slice(1).join('/'));
     await consumeEmailVerification(token);
     return;
   }
-  if (hash.startsWith('reset-password/')) {
-    const token = decodeURIComponent(hash.split('/').slice(1).join('/'));
+  if (route.startsWith('reset-password/')) {
+    const token = decodeURIComponent(route.split('/').slice(1).join('/'));
     state.authResetToken = token;
     switchToResetPassword(null, token);
     return;
   }
-  if (hash === 'dashboard') {
-    await showDashboard(null);
+  if (route === 'dashboard') {
+    await showDashboard(null, {
+      page: params.get('page') || null,
+      businessId: params.get('business') || null,
+      stripe: params.get('stripe') || null
+    });
     return;
   }
-  if (hash === 'live' || hash.startsWith('live/')) {
-    const slug = hash.startsWith('live/') ? hash.split('/').slice(1).join('/') : null;
+  if (route === 'live' || route.startsWith('live/')) {
+    const slug = route.startsWith('live/') ? route.split('/').slice(1).join('/') : null;
     await showLive(null, slug || null);
     return;
   }
