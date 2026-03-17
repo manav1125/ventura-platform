@@ -12,7 +12,7 @@ import { provisionBusiness } from '../provisioning/provision.js';
 import { runBusinessCycle } from '../agents/runner.js';
 import { queueTask, getAllTasks, getQueuedTasks } from '../agents/tasks.js';
 import { listApprovals, decideApproval } from '../agents/approvals.js';
-import { getRecentActivity } from '../agents/activity.js';
+import { getRecentActivity, logActivity } from '../agents/activity.js';
 import { getDb } from '../db/migrate.js';
 import { getStats } from '../ws/websocket.js';
 import { handleStripeWebhook } from '../integrations/stripe.js';
@@ -107,6 +107,143 @@ function getSpecialistSummary(db, businessId) {
 
 function getOwnedBusiness(db, businessId, userId) {
   return db.prepare('SELECT * FROM businesses WHERE id = ? AND user_id = ?').get(businessId, userId);
+}
+
+function sanitizePublicIntegration(kind, config = {}) {
+  if (kind === 'database') return { namespace: config.namespace || null };
+  if (kind === 'website') return { url: config.url || null, domain: config.domain || null };
+  if (kind === 'email') return { address: config.address || null };
+  if (kind === 'stripe') return { connected: !!config.account_id };
+  if (kind === 'analytics') return { source: config.source || null };
+  if (kind === 'search') return { live_research: !!config.live_research };
+  if (kind === 'social') return { twitter: !!config.twitter, linkedin: !!config.linkedin };
+  if (kind === 'calendar') return { note: config.note || null };
+  return {};
+}
+
+function serializePublicBusiness(row, fallbackPlan = 'trial') {
+  return {
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    type: row.type,
+    status: row.status,
+    involvement: row.involvement,
+    day_count: row.day_count,
+    web_url: row.web_url,
+    description: row.description,
+    target_customer: row.target_customer,
+    goal_90d: row.goal_90d,
+    mrr_cents: row.mrr_cents,
+    total_revenue_cents: row.total_revenue_cents,
+    latest_headline: row.latest_headline,
+    latest_activity_at: row.latest_activity_at,
+    economics: resolveBusinessEconomics(row, fallbackPlan)
+  };
+}
+
+function getApprovalSummary(db, businessId) {
+  const rows = db.prepare(`
+    SELECT status, COUNT(*) AS count
+    FROM approvals
+    WHERE business_id = ?
+    GROUP BY status
+  `).all(businessId);
+
+  const summary = {
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    executed: 0,
+    failed: 0,
+    total: 0
+  };
+
+  for (const row of rows) {
+    summary[row.status] = row.count;
+    summary.total += row.count;
+  }
+
+  return summary;
+}
+
+function getPublicBusinessDetail(db, businessRow, fallbackPlan = 'trial') {
+  const business = serializePublicBusiness(businessRow, fallbackPlan);
+  let integrations = listIntegrations(businessRow.id);
+  if (!integrations.length) {
+    integrations = syncBusinessIntegrations(businessRow);
+  }
+
+  const recentActivity = db.prepare(`
+    SELECT type, department, title, created_at
+    FROM activity
+    WHERE business_id = ?
+    ORDER BY created_at DESC
+    LIMIT 12
+  `).all(businessRow.id);
+  const deployments = getDeployments(businessRow.id, 8);
+  const recentCycles = db.prepare(`
+    SELECT status, triggered_by, tasks_run, summary, created_at
+    FROM agent_cycles
+    WHERE business_id = ?
+    ORDER BY created_at DESC
+    LIMIT 5
+  `).all(businessRow.id);
+  const recentApprovals = listApprovals(businessRow.id, { limit: 12 }).map(approval => ({
+    id: approval.id,
+    action_type: approval.action_type,
+    title: approval.title,
+    summary: approval.summary,
+    status: approval.status,
+    decision_note: approval.decision_note || null,
+    execution_result: approval.execution_result || null,
+    created_at: approval.created_at,
+    decided_at: approval.decided_at || null
+  }));
+  const specialists = getSpecialistSummary(db, businessRow.id);
+  const tasks7d = db.prepare(`
+    SELECT COUNT(*) AS total,
+           SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) AS completed
+    FROM tasks
+    WHERE business_id = ?
+      AND datetime(created_at) >= datetime('now', '-7 days')
+  `).get(businessRow.id);
+  const email7d = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM activity
+    WHERE business_id = ?
+      AND type = 'email_sent'
+      AND datetime(created_at) >= datetime('now', '-7 days')
+  `).get(businessRow.id);
+  const deploy30d = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM deployments
+    WHERE business_id = ?
+      AND datetime(created_at) >= datetime('now', '-30 days')
+  `).get(businessRow.id);
+
+  return {
+    business,
+    integrations: integrations.map(integration => ({
+      kind: integration.kind,
+      provider: integration.provider,
+      status: integration.status,
+      last_sync_at: integration.last_sync_at,
+      config: sanitizePublicIntegration(integration.kind, integration.config)
+    })),
+    recentActivity,
+    deployments,
+    recentCycles,
+    recentApprovals,
+    approvalSummary: getApprovalSummary(db, businessRow.id),
+    specialists,
+    stats: {
+      tasks_7d: tasks7d.total || 0,
+      tasks_completed_7d: tasks7d.completed || 0,
+      emails_7d: email7d.total || 0,
+      deployments_30d: deploy30d.total || 0
+    }
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -240,6 +377,36 @@ router.patch('/businesses/:id', requireAuth, asyncHandler(async (req, res) => {
 
   if (updates) {
     db.prepare(`UPDATE businesses SET ${updates}, updated_at=datetime('now') WHERE id=?`).run(...values);
+
+    if (body.status && body.status !== business.status) {
+      await logActivity(req.params.id, {
+        type: 'system',
+        department: 'operations',
+        title: body.status === 'paused' ? 'Founder paused the autonomous loop' : 'Founder resumed the autonomous loop',
+        detail: { previous: business.status, next: body.status }
+      });
+    }
+
+    if (body.involvement && body.involvement !== business.involvement) {
+      await logActivity(req.params.id, {
+        type: 'system',
+        department: 'strategy',
+        title: `Founder changed control mode to ${body.involvement}`,
+        detail: { previous: business.involvement, next: body.involvement }
+      });
+    }
+
+    if (body.name || body.description || body.target_customer || body.goal_90d || body.type) {
+      await logActivity(req.params.id, {
+        type: 'system',
+        department: 'strategy',
+        title: 'Founder updated the business profile',
+        detail: {
+          name: body.name || business.name,
+          type: body.type || business.type
+        }
+      });
+    }
   }
 
   res.json({ success: true });
@@ -341,6 +508,12 @@ router.post('/businesses/:id/integrations/sync', requireAuth, asyncHandler(async
   if (!business) return res.status(404).json({ error: 'Not found' });
 
   const integrations = syncBusinessIntegrations(business);
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'operations',
+    title: 'Founder synced the integration registry',
+    detail: { integrations: integrations.length }
+  });
   res.json({ integrations, syncedAt: new Date().toISOString() });
 }));
 
@@ -367,6 +540,13 @@ router.post('/businesses/:id/specialists/:specialist/run', requireAuth, asyncHan
     specialist: req.params.specialist,
     brief: body.brief || '',
     triggeredBy: 'user'
+  });
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: task.department,
+    title: `Founder dispatched ${task.label} specialist`,
+    detail: { specialist: task.specialist, taskId: task.taskId, brief: body.brief || '' }
   });
 
   res.status(201).json(task);
@@ -535,7 +715,7 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
   `).all(req.params.id);
 
   const latestCycle = recentCycles[0] || null;
-  const approvals = listApprovals(req.params.id, { limit: 10 });
+  const approvals = listApprovals(req.params.id, { limit: 25 });
   let deployments = getDeployments(req.params.id, 10);
   let integrations = listIntegrations(req.params.id);
   if (!integrations.length) {
@@ -629,20 +809,7 @@ router.get('/live', asyncHandler(async (req, res) => {
     ORDER BY total DESC, department ASC
   `).all();
 
-  const businesses = businessRows.map(row => ({
-    id: row.id,
-    name: row.name,
-    slug: row.slug,
-    type: row.type,
-    status: row.status,
-    day_count: row.day_count,
-    web_url: row.web_url,
-    mrr_cents: row.mrr_cents,
-    total_revenue_cents: row.total_revenue_cents,
-    latest_headline: row.latest_headline,
-    latest_activity_at: row.latest_activity_at,
-    economics: resolveBusinessEconomics(row, row.user_plan || 'trial')
-  }));
+  const businesses = businessRows.map(row => serializePublicBusiness(row, row.user_plan || 'trial'));
 
   res.json({
     feed,
@@ -654,6 +821,35 @@ router.get('/live', asyncHandler(async (req, res) => {
       feed_events: feed.length
     }
   });
+}));
+
+// GET /api/live/:slug — public business drilldown
+router.get('/live/:slug', asyncHandler(async (req, res) => {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT b.*, u.plan AS user_plan,
+           (
+             SELECT a.title
+             FROM activity a
+             WHERE a.business_id = b.id
+             ORDER BY a.created_at DESC
+             LIMIT 1
+           ) AS latest_headline,
+           (
+             SELECT a.created_at
+             FROM activity a
+             WHERE a.business_id = b.id
+             ORDER BY a.created_at DESC
+             LIMIT 1
+           ) AS latest_activity_at
+    FROM businesses b
+    LEFT JOIN users u ON u.id = b.user_id
+    WHERE b.slug = ?
+      AND b.status IN ('active', 'paused', 'provisioning')
+  `).get(req.params.slug);
+  if (!row) return res.status(404).json({ error: 'Business not found' });
+
+  res.json(getPublicBusinessDetail(db, row, row.user_plan || 'trial'));
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────

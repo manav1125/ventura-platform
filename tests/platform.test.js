@@ -18,6 +18,8 @@ const BASE = 'http://localhost:3099';
 let server;
 let tokens = {};
 let bizId;
+let otherTokens = {};
+let otherBizId;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 async function req(method, path, body, token) {
@@ -171,13 +173,17 @@ describe('Businesses', () => {
   it('updates business settings', async () => {
     const { status } = await PATCH(`/api/businesses/${bizId}`, {
       goal90d: 'Updated goal: reach $1k MRR',
-      involvement: 'review'
+      involvement: 'review',
+      description: 'Updated business description for control-center coverage',
+      targetCustomer: 'Bootstrapped SaaS founders'
     }, tokens.access);
     assert.equal(status, 200);
 
     const { body } = await GET(`/api/businesses/${bizId}`, tokens.access);
     assert.equal(body.business.goal_90d, 'Updated goal: reach $1k MRR');
     assert.equal(body.business.involvement, 'review');
+    assert.equal(body.business.target_customer, 'Bootstrapped SaaS founders');
+    assert.equal(body.business.description, 'Updated business description for control-center coverage');
   });
 
   it('enforces trial plan business limit (1)', async () => {
@@ -191,6 +197,36 @@ describe('Businesses', () => {
     }, tokens.access);
     assert.equal(status, 403);
     assert.match(body.error, /limit/i);
+  });
+});
+
+describe('Second founder setup', () => {
+
+  it('creates another founder and business for access-control tests', async () => {
+    const register = await POST('/api/auth/register', {
+      email: 'other@ventura.test',
+      name: 'Other Founder',
+      password: 'password123'
+    });
+    assert.equal(register.status, 201);
+    otherTokens = { access: register.body.accessToken, refresh: register.body.refreshToken };
+
+    const create = await POST('/api/businesses', {
+      name: 'Other Business',
+      type: 'agency',
+      description: 'An agency business used to test websocket ownership access control paths.',
+      targetCustomer: 'SaaS startups',
+      goal90d: 'Sign first client',
+      involvement: 'autopilot'
+    }, otherTokens.access);
+    assert.equal(create.status, 202);
+
+    await new Promise(r => setTimeout(r, 1200));
+
+    const list = await GET('/api/businesses', otherTokens.access);
+    assert.equal(list.status, 200);
+    otherBizId = list.body.businesses[0].id;
+    assert.ok(otherBizId);
   });
 });
 
@@ -397,6 +433,18 @@ describe('Public live board', () => {
     assert.ok(body.summary);
     assert.ok(body.summary.active_businesses >= 1);
   });
+
+  it('returns public detail for a live business slug', async () => {
+    const { status, body } = await GET('/api/live/test-saas');
+    assert.equal(status, 200);
+    assert.ok(body.business);
+    assert.equal(body.business.slug, 'test-saas');
+    assert.ok(Array.isArray(body.recentActivity));
+    assert.ok(Array.isArray(body.integrations));
+    assert.ok(Array.isArray(body.recentApprovals));
+    assert.ok(body.approvalSummary);
+    assert.ok(body.stats);
+  });
 });
 
 // ─── CHAT ─────────────────────────────────────────────────────────────────────
@@ -528,6 +576,35 @@ describe('WebSocket', () => {
         }
         if (msg.event === 'subscribed') {
           assert.equal(msg.businessId, bizId);
+          clearTimeout(timer);
+          ws.close();
+          resolve();
+        }
+      });
+      ws.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+  });
+
+  it('rejects subscribing to another users business', async () => {
+    await new Promise((resolve, reject) => {
+      const ws = new WebSocket('ws://localhost:3099/ws');
+      const timer = setTimeout(() => {
+        ws.close();
+        reject(new Error('Ownership reject timeout'));
+      }, 3000);
+
+      ws.on('message', (data) => {
+        const msg = JSON.parse(data.toString());
+        if (msg.event === 'hello') {
+          ws.send(JSON.stringify({ type: 'auth', token: tokens.access }));
+        }
+        if (msg.event === 'auth:ok') {
+          ws.send(JSON.stringify({ type: 'subscribe', businessId: otherBizId }));
+        }
+        if (msg.event === 'error' && /not accessible/i.test(msg.message)) {
           clearTimeout(timer);
           ws.close();
           resolve();

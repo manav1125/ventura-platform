@@ -1881,6 +1881,19 @@
     </div>
   </div>
 
+  <section class="section" style="padding-top:0;padding-bottom:40px;">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Company drilldown</span>
+      </div>
+      <div class="panel-body" id="live-business-detail">
+        <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;">
+          Select a company from the live board to inspect its operating loop, approval history, deployments, and infrastructure footprint.
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="section" style="padding-top:0;">
     <div class="grid-2">
       <div class="panel">
@@ -2313,6 +2326,8 @@
             <div class="panel-body">
               <div class="form-field" style="margin-bottom:16px;"><label style="color:rgba(255,255,255,0.3)">Business name</label><input id="settings-business-name" value="Nova Analytics" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
               <div class="form-field" style="margin-bottom:16px;"><label style="color:rgba(255,255,255,0.3)">Business type</label><select id="settings-business-type" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option value="saas">SaaS / Software</option><option value="agency">Agency / Services</option><option value="ecommerce">eCommerce</option><option value="content">Content / Media</option><option value="education">Education</option><option value="other">Other</option></select></div>
+              <div class="form-field" style="margin-bottom:16px;"><label style="color:rgba(255,255,255,0.3)">Target customer</label><input id="settings-business-customer" value="Indie hackers and bootstrapped founders" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:16px;"><label style="color:rgba(255,255,255,0.3)">Description</label><textarea id="settings-business-description" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;min-height:96px">A lightweight analytics dashboard for indie hackers and solo founders.</textarea></div>
               <div class="form-field"><label style="color:rgba(255,255,255,0.3)">Business goal</label><textarea id="settings-business-goal" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;min-height:80px">Reach $10k MRR within 60 days by targeting indie hackers and bootstrapped founders.</textarea></div>
               <button class="btn-run" style="margin-top:16px" onclick="saveBusinessProfile()">Save changes</button>
             </div>
@@ -2527,6 +2542,8 @@ let state = {
   activeBiz:    null,
   control:      null,
   live:         null,
+  liveSlug:     null,
+  liveDetail:   null,
   ws:           null,
   wsReady:      false,
 };
@@ -2952,14 +2969,41 @@ async function loadTasks() {
   } catch {}
 }
 
-async function loadLiveBoard() {
+async function loadLiveBoard(preferredSlug = null) {
   try {
     const data = await GET('/live');
     state.live = data;
     renderLiveBoard(data);
+    const slug = preferredSlug || state.liveSlug || data.businesses?.[0]?.slug || null;
+    if (slug) {
+      await loadLiveBusinessDetail(slug, { updateHash: false });
+    } else {
+      renderLiveBusinessDetail(null);
+    }
   } catch (err) {
     console.error('loadLiveBoard:', err);
     showToast(`Live board unavailable: ${err.message}`);
+  }
+}
+
+async function loadLiveBusinessDetail(slug, { updateHash = true } = {}) {
+  if (!slug) {
+    state.liveSlug = null;
+    state.liveDetail = null;
+    renderLiveBusinessDetail(null);
+    renderLiveBoard(state.live || { businesses: [], summary: {}, feed: [], specialists: [] });
+    return;
+  }
+
+  try {
+    const data = await GET(`/live/${slug}`);
+    state.liveSlug = slug;
+    state.liveDetail = data;
+    renderLiveBoard(state.live || { businesses: [], summary: {}, feed: [], specialists: [] });
+    renderLiveBusinessDetail(data);
+    if (updateHash) setRoute(`live/${slug}`);
+  } catch (err) {
+    showToast(`Could not open company: ${err.message}`);
   }
 }
 
@@ -3050,7 +3094,7 @@ function renderLiveBoard(data) {
   if (businessEl) {
     const businesses = data.businesses || [];
     businessEl.innerHTML = businesses.length ? businesses.map(b => `
-      <div class="capability-card" style="background:rgba(255,255,255,0.03);">
+      <div class="capability-card" onclick="loadLiveBusinessDetail('${esc(b.slug)}')" style="background:${state.liveSlug === b.slug ? 'rgba(232,68,10,0.08)' : 'rgba(255,255,255,0.03)'};border-color:${state.liveSlug === b.slug ? 'rgba(232,68,10,0.22)' : 'var(--border)'};cursor:pointer;">
         <div class="capability-num">${esc((b.type || 'other').toUpperCase())} — DAY ${b.day_count || 0}</div>
         <h3>${esc(b.name)}</h3>
         <p>${esc(b.latest_headline || 'Ventura is actively operating this company.')}</p>
@@ -3072,7 +3116,7 @@ function renderLiveBoard(data) {
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;margin-top:18px;">
           <span style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);">${b.latest_activity_at ? `updated ${timeAgo(b.latest_activity_at)}` : 'awaiting first event'}</span>
-          ${b.web_url ? `<a href="${esc(b.web_url)}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:none;font-size:12px;">Website ↗</a>` : ''}
+          <span style="font-size:12px;color:var(--gold);">${state.liveSlug === b.slug ? 'Open now' : 'Open log →'}</span>
         </div>
       </div>
     `).join('') : `
@@ -3112,6 +3156,116 @@ function renderLiveBoard(data) {
       </div>
     `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No specialist throughput yet.</div>`;
   }
+}
+
+function renderLiveBusinessDetail(data) {
+  const el = document.getElementById('live-business-detail');
+  if (!el) return;
+  if (!data?.business) {
+    el.innerHTML = `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;">Select a company from the live board to inspect its operating loop, approval history, deployments, and infrastructure footprint.</div>`;
+    return;
+  }
+
+  const biz = data.business;
+  const approvals = data.recentApprovals || [];
+  const pendingApprovals = approvals.filter(item => item.status === 'pending').length;
+  const integrations = data.integrations || [];
+  const activityRows = (data.recentActivity || []).map(item => `
+    <div class="activity-item">
+      <div class="activity-icon ${typeIcon(item.type)}">${typeEmoji(item.type)}</div>
+      <div class="activity-content">
+        <div class="activity-title">${esc(item.title)}</div>
+        <div class="activity-meta">${displayDepartment(item.department)} · ${timeAgo(item.created_at)}</div>
+      </div>
+      <span class="activity-status ${statusClass(item.type)}">${statusLabel(item.type)}</span>
+    </div>
+  `).join('') || `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No public activity yet.</div>`;
+  const approvalRows = approvals.length ? approvals.slice(0, 6).map(item => `
+    <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;">
+        <div>
+          <div style="font-size:13px;color:#e0ddd5;margin-bottom:5px;">${esc(item.title)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.52);">${esc(item.action_type)} · ${timeAgo(item.created_at)}</div>
+        </div>
+        <span style="font-size:11px;font-family:'DM Mono',monospace;color:${approvalTone(item.status)};padding:3px 10px;background:${approvalBg(item.status)};border-radius:999px;white-space:nowrap;">${esc(item.status).toUpperCase()}</span>
+      </div>
+      ${item.summary ? `<div style="font-size:12px;color:rgba(255,255,255,0.62);line-height:1.55;margin-top:8px;">${esc(item.summary)}</div>` : ''}
+      ${item.decision_note ? `<div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-top:8px;">NOTE: ${esc(item.decision_note)}</div>` : ''}
+      ${formatApprovalResult(item.execution_result) ? `<div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-top:6px;">RESULT: ${esc(formatApprovalResult(item.execution_result))}</div>` : ''}
+    </div>
+  `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No approval history yet.</div>`;
+  const deploymentRows = (data.deployments || []).length ? data.deployments.map(item => `
+    <div class="activity-item">
+      <div class="activity-content">
+        <div class="activity-title" style="font-family:'DM Mono',monospace;font-size:12px;">${esc(item.version)} — ${esc(item.description)}</div>
+        <div class="activity-meta">${timeAgo(item.created_at)} · ${item.files_changed || 0} files changed</div>
+      </div>
+      <span class="activity-status ${item.status === 'live' ? 'status-done' : 'status-running'}">${esc(item.status)}</span>
+    </div>
+  `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No deployments tracked yet.</div>`;
+  const stackRows = integrations.length ? integrations.map(item => `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:12px;">
+      <div>
+        <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(titleCase(item.kind))}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.55;">${esc(item.provider)}${item.config?.url ? ` · ${esc(item.config.url)}` : ''}${item.config?.address ? ` · ${esc(item.config.address)}` : ''}${item.config?.domain ? ` · ${esc(item.config.domain)}` : ''}</div>
+      </div>
+      <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(item.status)};padding:4px 10px;background:${integrationBg(item.status)};border-radius:999px;white-space:nowrap;">${esc(item.status).toUpperCase()}</span>
+    </div>
+  `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No infrastructure mapped yet.</div>`;
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap;">
+      <div style="max-width:760px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--gold);margin-bottom:8px;">${esc((biz.type || 'other').toUpperCase())} · ${esc((biz.status || 'active').toUpperCase())} · DAY ${biz.day_count || 0}</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:54px;letter-spacing:0.03em;line-height:0.92;color:#f1ede4;margin-bottom:12px;">${esc(biz.name)}</div>
+        <div style="font-size:16px;color:rgba(255,255,255,0.72);line-height:1.7;max-width:720px;">${esc(biz.description || 'No public description available yet.')}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;min-width:220px;">
+        ${biz.web_url ? `<a href="${esc(biz.web_url)}" target="_blank" rel="noopener" class="btn-primary" style="text-align:center;">Visit website ↗</a>` : ''}
+        <button class="btn-secondary" onclick="showDashboard(event)">Open founder dashboard</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:24px;">
+      <div class="metric-card"><div class="metric-card-label">MRR</div><div class="metric-card-value">${formatMoney(biz.mrr_cents || 0)}</div><div class="metric-card-delta">tracked live</div></div>
+      <div class="metric-card"><div class="metric-card-label">Revenue</div><div class="metric-card-value">${formatMoney(biz.total_revenue_cents || 0)}</div><div class="metric-card-delta">${biz.economics?.revenue_share_pct || 20}% rev share</div></div>
+      <div class="metric-card"><div class="metric-card-label">Tasks last 7d</div><div class="metric-card-value">${data.stats?.tasks_completed_7d || 0}/${data.stats?.tasks_7d || 0}</div><div class="metric-card-delta">completed / created</div></div>
+      <div class="metric-card"><div class="metric-card-label">Pending approvals</div><div class="metric-card-value">${pendingApprovals}</div><div class="metric-card-delta">${data.approvalSummary?.executed || 0} executed total</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:22px;margin-top:24px;">
+      <div style="display:flex;flex-direction:column;gap:20px;">
+        <div class="panel" style="margin:0;">
+          <div class="panel-header"><span class="panel-title">Operating log</span></div>
+          <div class="panel-body" style="padding:0 20px;">${activityRows}</div>
+        </div>
+        <div class="panel" style="margin:0;">
+          <div class="panel-header"><span class="panel-title">Deployment history</span></div>
+          <div class="panel-body" style="padding:0 20px;">${deploymentRows}</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:20px;">
+        <div class="panel" style="margin:0;">
+          <div class="panel-header"><span class="panel-title">Operating model</span></div>
+          <div class="panel-body">
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;">
+              <div><div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">BASE FEE</div><div style="font-size:18px;color:#e0ddd5;">${formatMoney(biz.economics?.monthly_subscription_cents || 0)}/mo</div></div>
+              <div><div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">API BUDGET</div><div style="font-size:18px;color:#e0ddd5;">${formatMoney(biz.economics?.api_budget_cents || 0)}</div></div>
+              <div><div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">CONTROL MODE</div><div style="font-size:18px;color:#e0ddd5;">${esc(titleCase(biz.involvement || 'autopilot'))}</div></div>
+              <div><div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">TARGET</div><div style="font-size:18px;color:#e0ddd5;">${esc(biz.goal_90d || 'Grow')}</div></div>
+            </div>
+            <div style="font-size:13px;color:rgba(255,255,255,0.58);line-height:1.6;margin-top:16px;">Target customer: ${esc(biz.target_customer || 'Not public')}</div>
+          </div>
+        </div>
+        <div class="panel" style="margin:0;">
+          <div class="panel-header"><span class="panel-title">Infrastructure footprint</span></div>
+          <div class="panel-body">${stackRows}</div>
+        </div>
+        <div class="panel" style="margin:0;">
+          <div class="panel-header"><span class="panel-title">Approval audit trail</span></div>
+          <div class="panel-body">${approvalRows}</div>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function renderControlCenter(data) {
@@ -3229,8 +3383,8 @@ function renderApprovals(approvals) {
   const el = document.getElementById('operations-review-list');
   if (!el) return;
   const pending = approvals.filter(a => a.status === 'pending');
-  const rows = pending.length ? pending : approvals.slice(0, 4);
-  el.innerHTML = rows.length ? rows.map(a => `
+  const archive = approvals.filter(a => a.status !== 'pending').slice(0, 4);
+  const pendingHtml = pending.length ? pending.map(a => `
     <div class="activity-item" style="align-items:flex-start;gap:14px;">
       <div class="activity-icon plan">⚑</div>
       <div class="activity-content" style="flex:1;">
@@ -3244,9 +3398,26 @@ function renderApprovals(approvals) {
           </div>
         ` : ''}
       </div>
-      <span class="activity-status ${a.status === 'executed' ? 'status-done' : a.status === 'pending' ? 'status-running' : 'status-queued'}">${esc(a.status)}</span>
+      <span class="activity-status status-running">${esc(a.status)}</span>
     </div>
-  `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding:16px 0;">No founder review items.</div>`;
+  `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding:16px 0;">No founder review items waiting right now.</div>`;
+  const archiveHtml = archive.length ? `
+    <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);padding:18px 0 8px;">RECENT DECISIONS</div>
+    ${archive.map(a => `
+      <div class="activity-item" style="align-items:flex-start;gap:14px;">
+        <div class="activity-icon plan">◎</div>
+        <div class="activity-content" style="flex:1;">
+          <div class="activity-title">${esc(a.title)}</div>
+          <div class="activity-meta">${esc(a.action_type)} · ${a.decided_at ? timeAgo(a.decided_at) : timeAgo(a.created_at)}</div>
+          ${a.summary ? `<div style="font-size:12px;color:rgba(255,255,255,0.6);line-height:1.5;margin-top:6px;">${esc(a.summary)}</div>` : ''}
+          ${a.decision_note ? `<div style="font-size:12px;color:rgba(255,255,255,0.58);line-height:1.5;margin-top:6px;">Note: ${esc(a.decision_note)}</div>` : ''}
+          ${formatApprovalResult(a.execution_result) ? `<div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-top:6px;">Result: ${esc(formatApprovalResult(a.execution_result))}</div>` : ''}
+        </div>
+        <span class="activity-status ${a.status === 'executed' ? 'status-done' : a.status === 'failed' ? 'status-running' : 'status-queued'}">${esc(a.status)}</span>
+      </div>
+    `).join('')}
+  ` : '';
+  el.innerHTML = pendingHtml + archiveHtml;
 }
 
 function renderSettings(data) {
@@ -3255,9 +3426,13 @@ function renderSettings(data) {
 
   const nameEl = document.getElementById('settings-business-name');
   const typeEl = document.getElementById('settings-business-type');
+  const customerEl = document.getElementById('settings-business-customer');
+  const descriptionEl = document.getElementById('settings-business-description');
   const goalEl = document.getElementById('settings-business-goal');
   if (nameEl) nameEl.value = biz.name || '';
   if (typeEl) typeEl.value = biz.type || 'other';
+  if (customerEl) customerEl.value = biz.target_customer || '';
+  if (descriptionEl) descriptionEl.value = biz.description || '';
   if (goalEl) goalEl.value = biz.goal_90d || '';
 
   const controlsEl = document.getElementById('settings-agent-controls');
@@ -3460,13 +3635,15 @@ async function saveBusinessProfile() {
   if (!state.activeBiz) return;
   const name = document.getElementById('settings-business-name')?.value?.trim();
   const type = document.getElementById('settings-business-type')?.value;
+  const targetCustomer = document.getElementById('settings-business-customer')?.value?.trim();
+  const description = document.getElementById('settings-business-description')?.value?.trim();
   const goal90d = document.getElementById('settings-business-goal')?.value?.trim();
-  if (!name || !goal90d) {
-    showToast('Business name and goal are required');
+  if (!name || !goal90d || !targetCustomer || !description) {
+    showToast('Name, description, target customer, and goal are required');
     return;
   }
   try {
-    await PATCH(`/businesses/${state.activeBiz.id}`, { name, type, goal90d });
+    await PATCH(`/businesses/${state.activeBiz.id}`, { name, type, targetCustomer, description, goal90d });
     showToast('Business profile saved');
     await loadBusinesses();
     await loadDashboard();
@@ -3568,12 +3745,13 @@ function setRoute(hash = '') {
   history.replaceState(null, '', url);
 }
 
-async function showLive(e) {
+async function showLive(e, slug = null) {
   if (e) e.preventDefault();
   showView('live');
-  setRoute('live');
+  if (slug) state.liveSlug = slug;
+  setRoute(slug ? `live/${slug}` : 'live');
   updateNavForAuth(!!state.accessToken);
-  await loadLiveBoard();
+  await loadLiveBoard(slug);
 }
 
 async function showDashboard(e) {
@@ -3621,8 +3799,9 @@ async function routeFromHash() {
     await showDashboard(null);
     return;
   }
-  if (hash === 'live') {
-    await showLive(null);
+  if (hash === 'live' || hash.startsWith('live/')) {
+    const slug = hash.startsWith('live/') ? hash.split('/').slice(1).join('/') : null;
+    await showLive(null, slug || null);
     return;
   }
   showLanding();
@@ -3637,12 +3816,24 @@ function deptColor(d) { return {engineering:'code',marketing:'mkt',operations:'o
 function normalizeDepartment(d) { return ({ planning:'strategy', strategy:'strategy', engineering:'engineering', marketing:'marketing', operations:'operations', sales:'sales', finance:'finance' }[(d || '').toLowerCase()] || 'operations'); }
 function displayDepartment(d) { return ({ strategy:'Planning', engineering:'Engineering', marketing:'Marketing', operations:'Operations', sales:'Marketing', finance:'Operations' }[d] || (d ? titleCase(d) : 'System')); }
 function shortDepartment(d) { return ({ strategy:'pln', engineering:'eng', marketing:'mkt', operations:'ops', sales:'mkt', finance:'ops' }[d] || 'ops'); }
-function typeIcon(t) { return {deploy:'code',email_sent:'mail',lead:'chart',content:'chart',alert:'plan',research:'plan',code:'code'}[t]||'plan'; }
-function typeEmoji(t) { return {deploy:'⌥',email_sent:'◆',lead:'▲',content:'◆',alert:'⚑',research:'◎',code:'⌥',metrics:'▲'}[t]||'✦'; }
-function statusClass(t) { return t==='alert'?'status-running':['content','deploy','email_sent'].includes(t)?'status-done':'status-queued'; }
-function statusLabel(t) { return t==='alert'?'review':['content','deploy','email_sent'].includes(t)?'done':'info'; }
+function typeIcon(t) { return {deploy:'code',email_sent:'mail',lead:'chart',content:'chart',alert:'plan',research:'plan',code:'code',system:'plan',revenue:'chart'}[t]||'plan'; }
+function typeEmoji(t) { return {deploy:'⌥',email_sent:'◆',lead:'▲',content:'◆',alert:'⚑',research:'◎',code:'⌥',metrics:'▲',system:'✦',revenue:'▲'}[t]||'✦'; }
+function statusClass(t) { return t==='alert'?'status-running':['content','deploy','email_sent','system','revenue'].includes(t)?'status-done':'status-queued'; }
+function statusLabel(t) { return t==='alert'?'review':['content','deploy','email_sent','system','revenue'].includes(t)?'done':'info'; }
 function integrationColor(status) { return ({ connected:'#28ca41', active:'#28ca41', mocked:'var(--gold)', pending:'var(--gold)', failed:'#ff6b6b' }[status] || '#9aa0aa'); }
 function integrationBg(status) { return ({ connected:'rgba(40,202,65,0.1)', active:'rgba(40,202,65,0.1)', mocked:'rgba(200,168,75,0.1)', pending:'rgba(200,168,75,0.1)', failed:'rgba(255,107,107,0.12)' }[status] || 'rgba(255,255,255,0.06)'); }
+function approvalTone(status) { return ({ pending:'var(--gold)', executed:'#28ca41', approved:'#28ca41', rejected:'#9aa0aa', failed:'#ff6b6b' }[status] || '#9aa0aa'); }
+function approvalBg(status) { return ({ pending:'rgba(200,168,75,0.1)', executed:'rgba(40,202,65,0.1)', approved:'rgba(40,202,65,0.1)', rejected:'rgba(255,255,255,0.06)', failed:'rgba(255,107,107,0.12)' }[status] || 'rgba(255,255,255,0.06)'); }
+function formatApprovalResult(result) {
+  if (!result || typeof result !== 'object') return '';
+  if (result.error) return result.error;
+  if (result.version) return `Deployed ${result.version}`;
+  if (result.messageId) return `Email sent (${result.messageId})`;
+  if (result.postId) return `Post published (${result.postId})`;
+  const keys = Object.keys(result);
+  if (!keys.length) return '';
+  return keys.slice(0, 2).map(key => `${key}:${typeof result[key] === 'object' ? 'ok' : result[key]}`).join(' · ');
+}
 function titleCase(value) { return String(value || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); }
 function timeAgo(iso) {
   if (!iso) return 'unknown';

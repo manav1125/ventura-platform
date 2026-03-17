@@ -7,6 +7,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { verifyAccessToken } from '../auth/auth.js';
 import { WS_HEARTBEAT_INTERVAL } from '../config.js';
+import { getDb } from '../db/migrate.js';
 
 // Active connections indexed two ways:
 //   byUser:     userId -> Set<WebSocket>
@@ -81,7 +82,12 @@ function handleClientMessage(ws, msg) {
         ws.send(JSON.stringify({ event: 'error', message: 'Authenticate first' }));
         return;
       }
-      // TODO: verify userId owns this businessId (add DB check in production)
+      const db = getDb();
+      const business = db.prepare('SELECT id FROM businesses WHERE id = ? AND user_id = ?').get(msg.businessId, ws.userId);
+      if (!business) {
+        ws.send(JSON.stringify({ event: 'error', message: 'Business not found or not accessible', businessId: msg.businessId }));
+        return;
+      }
       subscribe(ws, 'business', msg.businessId);
       ws.send(JSON.stringify({ event: 'subscribed', businessId: msg.businessId }));
       break;
