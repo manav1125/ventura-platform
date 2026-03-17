@@ -10,6 +10,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 window.VENTURA_CONFIG = {
-  API_URL: "/",          // ← REPLACE with your ventura-api Render URL
+  API_URL: "https://ventura-api.onrender.com",
   WS_URL:  null          // ← leave null — auto-derived from API_URL
 };
