@@ -11,7 +11,7 @@ import {
   createPasswordResetToken, resetPasswordWithToken
 } from '../auth/auth.js';
 import { provisionBusiness } from '../provisioning/provision.js';
-import { runBusinessCycle } from '../agents/runner.js';
+import { startBusinessCycleIfIdle } from '../agents/runner.js';
 import { ensureBusinessCadence, getCadenceSnapshot, scheduleNextRun } from '../agents/cadence.js';
 import { queueTask, getAllTasks, getQueuedTasks } from '../agents/tasks.js';
 import { listApprovals, decideApproval } from '../agents/approvals.js';
@@ -1202,14 +1202,15 @@ router.post('/businesses/:id/run', requireAuth, asyncHandler(async (req, res) =>
   if (!business) return res.status(404).json({ error: 'Business not found' });
   if (business.status !== 'active') return res.status(400).json({ error: 'Business is not active' });
 
-  // Check no cycle already running
-  const running = db.prepare(`SELECT id FROM agent_cycles WHERE business_id=? AND status='running'`).get(req.params.id);
-  if (running) return res.status(409).json({ error: 'A cycle is already running', cycleId: running.id });
+  const cycle = startBusinessCycleIfIdle(business, 'manual');
+  if (!cycle.started) {
+    return res.status(409).json({ error: 'A cycle is already running', cycleId: cycle.cycleId });
+  }
 
   res.status(202).json({ message: 'Agent cycle started', businessId: req.params.id });
 
   // Run in background
-  runBusinessCycle(business, 'manual')
+  cycle.promise
     .catch(err => console.error(`Manual cycle failed: ${err.message}`));
 }));
 
@@ -2302,17 +2303,12 @@ router.post('/businesses/:id/recovery/:caseId/retry', requireAuth, asyncHandler(
       return res.status(400).json({ error: 'Business must be active before Ventura can retry a failed cycle.' });
     }
 
-    const running = db.prepare(`
-      SELECT id
-      FROM agent_cycles
-      WHERE business_id = ?
-        AND status = 'running'
-    `).get(req.params.id);
-    if (running) {
-      return res.status(409).json({ error: 'A cycle is already running', cycleId: running.id });
+    const cycle = startBusinessCycleIfIdle(business, 'recovery');
+    if (!cycle.started) {
+      return res.status(409).json({ error: 'A cycle is already running', cycleId: cycle.cycleId });
     }
 
-    runBusinessCycle(business, 'recovery')
+    cycle.promise
       .catch(err => console.error(`Recovery cycle failed: ${err.message}`));
 
     await logActivity(req.params.id, {

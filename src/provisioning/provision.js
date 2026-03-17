@@ -9,6 +9,7 @@ import { FRONTEND_URL, PLATFORM_DOMAIN, STRIPE_SECRET_KEY } from '../config.js';
 import { emitToUser } from '../ws/websocket.js';
 import { logActivity } from '../agents/activity.js';
 import { scheduleNextRun } from '../agents/cadence.js';
+import { startBusinessCycleIfIdle } from '../agents/runner.js';
 import { queueTask } from '../agents/tasks.js';
 import { sendEmail } from '../integrations/email.js';
 import { createVercelProject } from '../integrations/deploy.js';
@@ -95,12 +96,19 @@ export async function provisionBusiness({ userId, name, type, description, targe
       web_url: webUrl,
       email_address: emailAddress
     });
-    await stepActivate(businessId, userId);
+    await stepActivate(businessId);
     scheduleNextRun(businessId, { mode: 'daily', preferredHourUtc: 2 });
-    const activeBusiness = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
+    let activeBusiness = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
     await syncWorkspaceData({ business: activeBusiness, triggeredBy: 'provisioning' });
     await stepSeedAgentMemory(businessId, { name, type, description, targetCustomer, goal90d, involvement, webUrl, emailAddress });
     await stepQueueInitialTasks(businessId, type);
+    activeBusiness = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
+    const launchCycle = startBusinessCycleIfIdle(activeBusiness, 'launch');
+    if (launchCycle.started) {
+      launchCycle.promise
+        .catch(err => console.error(`Launch cycle failed for ${businessId}: ${err.message}`));
+    }
+    notifyProvisioningComplete(businessId, userId);
     await stepSendWelcomeEmail(userId, name, webUrl, emailAddress, slug);
 
     return { businessId, slug, webUrl, emailAddress };
@@ -223,9 +231,12 @@ async function stepSetupStripe(businessId, userId) {
   return stripeAccountId;
 }
 
-async function stepActivate(businessId, userId) {
+async function stepActivate(businessId) {
   const db = getDb();
   db.prepare(`UPDATE businesses SET status='active', day_count=1 WHERE id=?`).run(businessId);
+}
+
+function notifyProvisioningComplete(businessId, userId) {
   emitToUser(userId, { event: 'provisioning:complete', businessId });
 }
 
@@ -264,30 +275,34 @@ async function stepSendWelcomeEmail(userId, businessName, webUrl, emailAddress, 
   const user = db.prepare('SELECT email, name FROM users WHERE id = ?').get(userId);
   if (!user) return;
 
-  await sendEmail({
-    to: user.email,
-    subject: `🚀 ${businessName} is live — your agent starts tonight`,
-    html: `
-      <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:40px 20px;color:#0a0a0a">
-        <h1 style="font-size:28px;margin-bottom:8px">Welcome to Ventura, ${user.name}.</h1>
-        <p style="color:#6b6459;font-size:16px;line-height:1.6;margin-bottom:24px">
-          <strong>${businessName}</strong> is now live and your AI agent is ready to start working.
-          The first autonomous cycle runs tonight at 2am.
-        </p>
-        <div style="background:#f5f2eb;border-radius:4px;padding:24px;margin-bottom:24px">
-          <div style="margin-bottom:12px"><strong>Your website:</strong> <a href="${webUrl}">${webUrl}</a></div>
-          <div style="margin-bottom:12px"><strong>Your email:</strong> ${emailAddress}</div>
-          <div><strong>Dashboard:</strong> <a href="${FRONTEND_URL}">${FRONTEND_URL}</a></div>
+  try {
+    await sendEmail({
+      to: user.email,
+      subject: `🚀 ${businessName} is live — Ventura is already working`,
+      html: `
+        <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:40px 20px;color:#0a0a0a">
+          <h1 style="font-size:28px;margin-bottom:8px">Welcome to Ventura, ${user.name}.</h1>
+          <p style="color:#6b6459;font-size:16px;line-height:1.6;margin-bottom:24px">
+            <strong>${businessName}</strong> is now live and Ventura has already kicked off the first work cycle.
+            Daily autonomous runs continue at 2am, but your agent starts outlining tasks and executing immediately after launch.
+          </p>
+          <div style="background:#f5f2eb;border-radius:4px;padding:24px;margin-bottom:24px">
+            <div style="margin-bottom:12px"><strong>Your website:</strong> <a href="${webUrl}">${webUrl}</a></div>
+            <div style="margin-bottom:12px"><strong>Your email:</strong> ${emailAddress}</div>
+            <div><strong>Dashboard:</strong> <a href="${FRONTEND_URL}">${FRONTEND_URL}</a></div>
+          </div>
+          <a href="${FRONTEND_URL}" style="background:#e8440a;color:white;padding:14px 28px;text-decoration:none;border-radius:2px;font-weight:500;display:inline-block">
+            Open Dashboard →
+          </a>
+          <p style="margin-top:32px;font-size:13px;color:#aaa">
+            Questions? Reply to this email or chat with your agent directly in the dashboard.
+          </p>
         </div>
-        <a href="${FRONTEND_URL}" style="background:#e8440a;color:white;padding:14px 28px;text-decoration:none;border-radius:2px;font-weight:500;display:inline-block">
-          Open Dashboard →
-        </a>
-        <p style="margin-top:32px;font-size:13px;color:#aaa">
-          Questions? Reply to this email or chat with your agent directly in the dashboard.
-        </p>
-      </div>
-    `
-  });
+      `
+    });
+  } catch (error) {
+    console.error(`Welcome email failed for ${user.email}: ${error.message}`);
+  }
 }
 
 // ─── Bootstrap task library ───────────────────────────────────────────────────

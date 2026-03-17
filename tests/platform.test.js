@@ -270,6 +270,22 @@ describe('Businesses', () => {
     assert.ok(body.business.email_address, 'should have email_address');
   });
 
+  it('automatically starts the first launch cycle after provisioning', async () => {
+    const deadline = Date.now() + 3000;
+    let cycle = null;
+
+    while (Date.now() < deadline) {
+      const { status, body } = await GET(`/api/businesses/${bizId}/cycles`, tokens.access);
+      assert.equal(status, 200);
+      cycle = body.cycles[0] || null;
+      if (cycle?.triggered_by === 'launch') break;
+      await new Promise(r => setTimeout(r, 50));
+    }
+
+    assert.ok(cycle, 'expected Ventura to create an initial launch cycle');
+    assert.equal(cycle.triggered_by, 'launch');
+  });
+
   it('404s on other users business', async () => {
     const { status } = await GET(`/api/businesses/nonexistent-id`, tokens.access);
     assert.equal(status, 404);

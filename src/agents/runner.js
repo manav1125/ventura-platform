@@ -16,7 +16,7 @@ import { openRecoveryCase, resolveRecoveryCasesForSource } from './recovery.js';
 import { syncWorkspaceData } from '../integrations/workspace-sync.js';
 import { markWorkspaceAutomationTaskOutcome, runWorkspaceAutomation } from './workspace-automation.js';
 import { emitToBusiness, emitToUser } from '../ws/websocket.js';
-import { AGENT_CRON_SCHEDULE } from '../config.js';
+import { AGENT_CRON_SCHEDULE, AGENT_MODEL } from '../config.js';
 
 // ─── Cron scheduler ───────────────────────────────────────────────────────────
 let schedulerTask;
@@ -57,7 +57,12 @@ export async function runAllBusinesses(triggeredBy = 'cron') {
   // In production, parallelise with a concurrency limiter
   for (const business of dueBusinesses) {
     try {
-      await runBusinessCycle(business, triggeredBy);
+      const cycle = startBusinessCycleIfIdle(business, triggeredBy);
+      if (!cycle.started) {
+        console.log(`⏭ Skipping ${business.name}: cycle already running (${cycle.cycleId})`);
+        continue;
+      }
+      await cycle.promise;
     } catch (err) {
       console.error(`❌ Failed cycle for ${business.name}: ${err.message}`);
     }
@@ -69,6 +74,7 @@ export async function runAllBusinesses(triggeredBy = 'cron') {
 export async function runBusinessCycle(business, triggeredBy = 'cron') {
   const db = getDb();
   const cycleId = uuid();
+  const isLaunchCycle = triggeredBy === 'launch';
 
   console.log(`\n▶ Starting cycle for: ${business.name} (${business.id})`);
 
@@ -108,24 +114,29 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
       triggeredBy: triggeredBy === 'cron' ? 'agent' : triggeredBy
     });
 
-    // ── Generate new tasks for this cycle ────────────────────────────────────
-    const newTasks = await generateCycleTasks(refreshedBusiness);
-    for (const t of newTasks) {
-      await queueTask({
-        businessId: business.id,
-        business: refreshedBusiness,
-        title: t.title,
-        description: t.description,
-        department: t.department,
-        workflowKey: t.workflowKey,
-        cycleId,
-        triggeredBy: 'agent',
-        priority: 3
-      });
+    const queuedBeforeGeneration = getQueuedTasks(business.id, 20);
+
+    // Launch cycles should begin executing the freshly seeded bootstrap queue
+    // instead of immediately piling on a second daily planning layer.
+    if (!isLaunchCycle || queuedBeforeGeneration.length < 3) {
+      const newTasks = await generateCycleTasks(refreshedBusiness);
+      for (const t of newTasks) {
+        await queueTask({
+          businessId: business.id,
+          business: refreshedBusiness,
+          title: t.title,
+          description: t.description,
+          department: t.department,
+          workflowKey: t.workflowKey,
+          cycleId,
+          triggeredBy: 'agent',
+          priority: 3
+        });
+      }
     }
 
     // ── Run all queued tasks ──────────────────────────────────────────────────
-    const tasks = getQueuedTasks(business.id, 8); // max 8 tasks per cycle
+    const tasks = getQueuedTasks(business.id, isLaunchCycle ? 2 : 8);
 
     for (const task of tasks) {
       try {
@@ -196,11 +207,19 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
     }
 
     // ── Update day count and metrics ──────────────────────────────────────────
-    db.prepare(`
-      UPDATE businesses
-      SET day_count = day_count + 1, updated_at = datetime('now')
-      WHERE id = ?
-    `).run(business.id);
+    if (isLaunchCycle) {
+      db.prepare(`
+        UPDATE businesses
+        SET updated_at = datetime('now')
+        WHERE id = ?
+      `).run(business.id);
+    } else {
+      db.prepare(`
+        UPDATE businesses
+        SET day_count = day_count + 1, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(business.id);
+    }
     const cadence = markCycleRun(business.id, new Date(), { failure: false });
 
     // Refresh business object for summary
@@ -219,7 +238,7 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
     await logActivity(business.id, {
       type: 'cycle_complete',
       department: null,
-      title: `Daily cycle complete — ${tasksRun} tasks run`,
+      title: `${isLaunchCycle ? 'Launch cycle complete' : 'Daily cycle complete'} — ${tasksRun} tasks run`,
       detail: { cycleId, tasksRun, errors, summary }
     });
 
@@ -277,6 +296,35 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
     emitToBusiness(business.id, { event: 'cadence:updated', businessId: business.id, cadence });
     throw err;
   }
+}
+
+export function getRunningCycle(businessId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT id, business_id, status, triggered_by, started_at, created_at
+    FROM agent_cycles
+    WHERE business_id = ?
+      AND status = 'running'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(businessId) || null;
+}
+
+export function startBusinessCycleIfIdle(business, triggeredBy = 'cron') {
+  const running = getRunningCycle(business.id);
+  if (running) {
+    return {
+      started: false,
+      cycleId: running.id,
+      running
+    };
+  }
+
+  return {
+    started: true,
+    cycleId: null,
+    promise: runBusinessCycle(business, triggeredBy)
+  };
 }
 
 // ─── AI-generated cycle tasks ─────────────────────────────────────────────────
