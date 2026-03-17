@@ -1,0 +1,20 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev
+
+# Copy source
+COPY src/ ./src/
+COPY .env.example ./.env.example
+
+# Create data directory for SQLite
+RUN mkdir -p /data
+
+# Expose API + WebSocket port
+EXPOSE 3001
+
+# Seed on first run if DB doesn't exist, then start
+CMD ["sh", "-c", "[ ! -f /data/ventura.db ] && node src/db/seed.js; node src/server.js"]

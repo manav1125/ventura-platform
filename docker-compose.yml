@@ -1,0 +1,55 @@
+version: '3.9'
+
+services:
+  # ── Ventura Backend API + WebSocket ──────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: ventura-api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      BASE_URL: http://localhost:3001
+      JWT_SECRET: ${JWT_SECRET}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      AGENT_MODEL: ${AGENT_MODEL:-claude-sonnet-4-6}
+      DB_PATH: /data/ventura.db
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM:-noreply@ventura.ai}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      VERCEL_TOKEN: ${VERCEL_TOKEN}
+      VERCEL_TEAM_ID: ${VERCEL_TEAM_ID}
+      BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY}
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-ventura.ai}
+      AGENT_CRON_SCHEDULE: ${AGENT_CRON_SCHEDULE:-0 2 * * *}
+    volumes:
+      - db-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/health').then(r=>r.ok?process.exit(0):process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Frontend (static HTML served by nginx) ───────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: ventura-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  db-data:

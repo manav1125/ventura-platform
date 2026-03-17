@@ -1,0 +1,2870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ventura — Launch Any Business, Tonight</title>
+<script src="/config.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0a0a0a;
+    --paper: #f5f2eb;
+    --paper2: #ede9df;
+    --accent: #e8440a;
+    --accent2: #1a3cff;
+    --gold: #c8a84b;
+    --muted: #6b6459;
+    --border: rgba(10,10,10,0.12);
+    --radius: 4px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    overflow-x: hidden;
+  }
+
+  /* ───── NOISE TEXTURE ───── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.6;
+  }
+
+  /* ───── NAV ───── */
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 48px;
+    background: rgba(245,242,235,0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 0.05em;
+    color: var(--ink);
+    text-decoration: none;
+  }
+
+  .nav-logo span { color: var(--accent); }
+
+  .nav-links {
+    display: flex;
+    gap: 32px;
+    list-style: none;
+  }
+
+  .nav-links a {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .nav-links a:hover { color: var(--ink); }
+
+  .nav-cta {
+    background: var(--ink);
+    color: var(--paper) !important;
+    padding: 10px 22px;
+    border-radius: 2px;
+    transition: background 0.2s !important;
+  }
+
+  .nav-cta:hover { background: var(--accent) !important; color: var(--paper) !important; }
+
+  /* ───── HERO ───── */
+  .hero {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding-top: 80px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero-left {
+    padding: 100px 48px 80px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    z-index: 2;
+  }
+
+  .hero-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 32px;
+  }
+
+  .hero-tag::before {
+    content: '';
+    display: block;
+    width: 20px;
+    height: 1px;
+    background: var(--accent);
+  }
+
+  .hero h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(72px, 8vw, 120px);
+    line-height: 0.92;
+    letter-spacing: 0.02em;
+    margin-bottom: 32px;
+  }
+
+  .hero h1 .line-accent { color: var(--accent); }
+  .hero h1 .line-blue { color: var(--accent2); }
+
+  .hero-sub {
+    font-size: 18px;
+    font-weight: 300;
+    line-height: 1.65;
+    color: var(--muted);
+    max-width: 440px;
+    margin-bottom: 48px;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 16px 36px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    border-radius: 2px;
+    text-decoration: none;
+    display: inline-block;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-primary::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.15);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .btn-primary:hover::after { opacity: 1; }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(232,68,10,0.3); }
+
+  .btn-secondary {
+    color: var(--ink);
+    font-size: 14px;
+    font-weight: 400;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--ink);
+    transition: gap 0.2s;
+  }
+
+  .btn-secondary:hover { gap: 14px; }
+
+  .hero-right {
+    position: relative;
+    overflow: hidden;
+    background: var(--ink);
+  }
+
+  .hero-right::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 39px,
+      rgba(255,255,255,0.03) 39px,
+      rgba(255,255,255,0.03) 40px
+    );
+  }
+
+  .dashboard-preview {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 85%;
+    background: #111;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    overflow: hidden;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.5);
+    animation: float 6s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translate(-50%, -50%) translateY(0); }
+    50% { transform: translate(-50%, -50%) translateY(-8px); }
+  }
+
+  .db-bar {
+    background: #1a1a1a;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .db-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .db-dot.r { background: #ff5f57; }
+  .db-dot.y { background: #ffbd2e; }
+  .db-dot.g { background: #28ca41; }
+
+  .db-title { margin-left: 8px; font-family: 'DM Mono', monospace; font-size: 11px; color: rgba(255,255,255,0.4); }
+
+  .db-body { padding: 20px; }
+
+  .db-metric-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 16px; }
+
+  .db-metric {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 4px;
+    padding: 12px;
+  }
+
+  .db-metric-label { font-size: 9px; font-family: 'DM Mono', monospace; color: rgba(255,255,255,0.35); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; }
+  .db-metric-val { font-size: 20px; font-weight: 500; color: #fff; font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.04em; }
+  .db-metric-val.green { color: #28ca41; }
+  .db-metric-val.amber { color: #ffbd2e; }
+
+  .db-log {
+    background: rgba(0,0,0,0.4);
+    border-radius: 4px;
+    padding: 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+  }
+
+  .db-log-line { padding: 3px 0; color: rgba(255,255,255,0.45); display: flex; gap: 10px; }
+  .db-log-line .ts { color: rgba(255,255,255,0.2); }
+  .db-log-line.active { color: rgba(255,255,255,0.8); }
+  .db-log-line.active .ts { color: var(--accent); }
+  .db-log-line.done .action { color: #28ca41; }
+
+  .pulse {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-right: 6px;
+    animation: pulse 1.5s ease-in-out infinite;
+    vertical-align: middle;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  /* ───── STATS BAR ───── */
+  .stats-bar {
+    background: var(--ink);
+    color: var(--paper);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .stat-item {
+    padding: 28px 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    position: relative;
+  }
+
+  .stat-item:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 25%;
+    height: 50%;
+    width: 1px;
+    background: rgba(245,242,235,0.15);
+  }
+
+  .stat-val {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 48px;
+    letter-spacing: 0.04em;
+    color: var(--paper);
+    line-height: 1;
+  }
+
+  .stat-val span { color: var(--accent); }
+
+  .stat-label {
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(245,242,235,0.4);
+  }
+
+  /* ───── HOW IT WORKS ───── */
+  .section {
+    padding: 120px 48px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .section-tag {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+    display: block;
+  }
+
+  .section-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(48px, 5vw, 72px);
+    line-height: 1;
+    letter-spacing: 0.02em;
+    margin-bottom: 20px;
+  }
+
+  .section-sub {
+    font-size: 17px;
+    font-weight: 300;
+    color: var(--muted);
+    max-width: 560px;
+    line-height: 1.7;
+    margin-bottom: 72px;
+  }
+
+  /* Steps */
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2px;
+    background: var(--border);
+    border: 1px solid var(--border);
+  }
+
+  .step {
+    background: var(--paper);
+    padding: 40px 32px;
+    position: relative;
+    transition: background 0.25s;
+  }
+
+  .step:hover { background: var(--paper2); }
+
+  .step-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 80px;
+    line-height: 1;
+    color: rgba(10,10,10,0.06);
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    letter-spacing: 0.02em;
+  }
+
+  .step-icon {
+    width: 40px;
+    height: 40px;
+    background: var(--accent);
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 24px;
+    color: white;
+    font-size: 18px;
+  }
+
+  .step h3 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 24px;
+    letter-spacing: 0.04em;
+    margin-bottom: 12px;
+  }
+
+  .step p {
+    font-size: 14px;
+    font-weight: 300;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+
+  /* ───── CAPABILITIES ───── */
+  .capabilities-section {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 120px 48px;
+  }
+
+  .capabilities-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .capabilities-section .section-tag { color: var(--gold); }
+  .capabilities-section .section-title { color: var(--paper); }
+  .capabilities-section .section-sub { color: rgba(245,242,235,0.5); }
+
+  .capability-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.08);
+    margin-top: 64px;
+  }
+
+  .capability-card {
+    background: var(--ink);
+    padding: 44px 36px;
+    position: relative;
+    overflow: hidden;
+    transition: background 0.25s;
+  }
+
+  .capability-card:hover { background: #151515; }
+
+  .capability-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s ease;
+  }
+
+  .capability-card:hover::before { transform: scaleX(1); }
+
+  .capability-num {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: rgba(255,255,255,0.2);
+    margin-bottom: 20px;
+  }
+
+  .capability-card h3 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 0.04em;
+    margin-bottom: 14px;
+    color: var(--paper);
+  }
+
+  .capability-card p {
+    font-size: 14px;
+    font-weight: 300;
+    line-height: 1.7;
+    color: rgba(245,242,235,0.45);
+  }
+
+  .capability-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 20px;
+  }
+
+  .tag {
+    font-size: 11px;
+    font-family: 'DM Mono', monospace;
+    padding: 4px 10px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 2px;
+    color: rgba(255,255,255,0.4);
+  }
+
+  /* ───── PRICING ───── */
+  .pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    margin-top: 64px;
+  }
+
+  .pricing-card {
+    background: var(--paper);
+    padding: 48px 36px;
+    position: relative;
+  }
+
+  .pricing-card.featured {
+    background: var(--ink);
+    color: var(--paper);
+  }
+
+  .pricing-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    background: var(--accent);
+    color: white;
+    border-radius: 1px;
+    margin-bottom: 24px;
+  }
+
+  .pricing-tier {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  .pricing-card.featured .pricing-tier { color: rgba(245,242,235,0.5); }
+
+  .pricing-price {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 64px;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    margin-bottom: 8px;
+  }
+
+  .pricing-per {
+    font-size: 14px;
+    font-weight: 300;
+    color: var(--muted);
+    margin-bottom: 32px;
+  }
+
+  .pricing-card.featured .pricing-per { color: rgba(245,242,235,0.5); }
+
+  .pricing-features {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 36px;
+  }
+
+  .pricing-features li {
+    font-size: 14px;
+    font-weight: 300;
+    color: var(--muted);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    line-height: 1.5;
+  }
+
+  .pricing-card.featured .pricing-features li { color: rgba(245,242,235,0.65); }
+
+  .pricing-features li::before {
+    content: '→';
+    color: var(--accent);
+    flex-shrink: 0;
+    font-size: 12px;
+    margin-top: 1px;
+  }
+
+  .pricing-note {
+    font-size: 12px;
+    font-family: 'DM Mono', monospace;
+    color: var(--muted);
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    margin-top: 12px;
+  }
+
+  .pricing-card.featured .pricing-note { color: rgba(245,242,235,0.3); border-color: rgba(245,242,235,0.1); }
+
+  /* ───── TICKER ───── */
+  .ticker-wrap {
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+    padding: 16px 0;
+    background: var(--paper2);
+  }
+
+  .ticker-track {
+    display: flex;
+    gap: 60px;
+    animation: ticker 30s linear infinite;
+    white-space: nowrap;
+  }
+
+  .ticker-track:hover { animation-play-state: paused; }
+
+  @keyframes ticker {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+
+  .ticker-item {
+    font-size: 12px;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .ticker-item .dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+
+  /* ───── CTA SECTION ───── */
+  .cta-section {
+    background: var(--accent);
+    padding: 120px 48px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .cta-section::before {
+    content: 'LAUNCH';
+    position: absolute;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 280px;
+    letter-spacing: 0.04em;
+    color: rgba(0,0,0,0.08);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  .cta-section h2 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(60px, 6vw, 96px);
+    color: white;
+    line-height: 0.95;
+    letter-spacing: 0.02em;
+    margin-bottom: 24px;
+    position: relative;
+  }
+
+  .cta-section p {
+    font-size: 18px;
+    font-weight: 300;
+    color: rgba(255,255,255,0.75);
+    max-width: 480px;
+    margin: 0 auto 48px;
+    line-height: 1.65;
+    position: relative;
+  }
+
+  .btn-white {
+    background: white;
+    color: var(--accent);
+    border: none;
+    padding: 18px 44px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    border-radius: 2px;
+    text-decoration: none;
+    display: inline-block;
+    transition: all 0.2s;
+    position: relative;
+  }
+
+  .btn-white:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(0,0,0,0.2); }
+
+  /* ───── FOOTER ───── */
+  footer {
+    background: var(--ink);
+    color: var(--paper);
+    padding: 60px 48px 40px;
+  }
+
+  .footer-top {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 48px;
+    margin-bottom: 60px;
+    padding-bottom: 60px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .footer-brand .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px;
+    color: var(--paper);
+    display: block;
+    margin-bottom: 16px;
+    letter-spacing: 0.05em;
+  }
+
+  .footer-brand .logo span { color: var(--accent); }
+
+  .footer-brand p {
+    font-size: 14px;
+    font-weight: 300;
+    color: rgba(255,255,255,0.4);
+    line-height: 1.7;
+    max-width: 280px;
+  }
+
+  .footer-col h4 {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.3);
+    margin-bottom: 20px;
+  }
+
+  .footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+
+  .footer-col ul a {
+    font-size: 14px;
+    font-weight: 300;
+    color: rgba(255,255,255,0.55);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .footer-col ul a:hover { color: var(--paper); }
+
+  .footer-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    font-family: 'DM Mono', monospace;
+    color: rgba(255,255,255,0.2);
+  }
+
+  /* ───── MODAL / ONBOARDING ───── */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10,10,10,0.85);
+    backdrop-filter: blur(8px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s;
+  }
+
+  .modal-overlay.open {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .modal {
+    background: var(--paper);
+    width: 100%;
+    max-width: 560px;
+    padding: 56px 52px;
+    position: relative;
+    transform: translateY(20px);
+    transition: transform 0.3s;
+    border-radius: 2px;
+  }
+
+  .modal-overlay.open .modal { transform: translateY(0); }
+
+  .modal-close {
+    position: absolute;
+    top: 20px; right: 20px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 22px;
+    color: var(--muted);
+    line-height: 1;
+    padding: 4px 8px;
+  }
+
+  .modal-close:hover { color: var(--ink); }
+
+  .modal h2 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 40px;
+    letter-spacing: 0.04em;
+    line-height: 1.05;
+    margin-bottom: 10px;
+  }
+
+  .modal h2 span { color: var(--accent); }
+
+  .modal-sub {
+    font-size: 15px;
+    font-weight: 300;
+    color: var(--muted);
+    margin-bottom: 36px;
+    line-height: 1.6;
+  }
+
+  .form-field {
+    margin-bottom: 20px;
+  }
+
+  .form-field label {
+    display: block;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .form-field input,
+  .form-field textarea,
+  .form-field select {
+    width: 100%;
+    padding: 13px 16px;
+    border: 1px solid var(--border);
+    background: white;
+    border-radius: 2px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    font-weight: 300;
+    color: var(--ink);
+    outline: none;
+    transition: border-color 0.2s;
+    -webkit-appearance: none;
+  }
+
+  .form-field input:focus,
+  .form-field textarea:focus,
+  .form-field select:focus {
+    border-color: var(--accent);
+  }
+
+  .form-field textarea {
+    resize: vertical;
+    min-height: 80px;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 28px;
+  }
+
+  /* ───── DASHBOARD VIEW ───── */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .dashboard {
+    min-height: 100vh;
+    background: #0d0d0d;
+    color: #e0ddd5;
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    grid-template-rows: 60px 1fr;
+  }
+
+  .dash-topbar {
+    grid-column: 1 / -1;
+    background: #111;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 24px;
+  }
+
+  .dash-topbar .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    letter-spacing: 0.05em;
+    color: #e0ddd5;
+    margin-right: 16px;
+  }
+
+  .dash-topbar .logo span { color: var(--accent); }
+
+  .dash-co-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.7);
+  }
+
+  .dash-co-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-family: 'DM Mono', monospace;
+    padding: 4px 10px;
+    background: rgba(40,202,65,0.15);
+    border: 1px solid rgba(40,202,65,0.2);
+    border-radius: 2px;
+    color: #28ca41;
+    margin-left: 8px;
+  }
+
+  .dash-co-badge::before {
+    content: '';
+    width: 6px; height: 6px;
+    background: #28ca41;
+    border-radius: 50%;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  .dash-topbar-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .icon-btn {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 2px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    color: rgba(255,255,255,0.5);
+    font-family: 'DM Mono', monospace;
+    transition: all 0.2s;
+  }
+
+  .icon-btn:hover { background: rgba(255,255,255,0.1); color: white; }
+
+  /* sidebar */
+  .dash-sidebar {
+    background: #111;
+    border-right: 1px solid rgba(255,255,255,0.06);
+    padding: 20px 0;
+    overflow-y: auto;
+  }
+
+  .sidebar-section-label {
+    font-size: 10px;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.2);
+    padding: 0 20px;
+    margin: 20px 0 8px;
+  }
+
+  .sidebar-section-label:first-child { margin-top: 0; }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.45);
+    cursor: pointer;
+    transition: all 0.15s;
+    border-left: 2px solid transparent;
+    text-decoration: none;
+  }
+
+  .nav-item:hover { color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.04); }
+  .nav-item.active { color: #fff; border-left-color: var(--accent); background: rgba(232,68,10,0.08); }
+
+  .nav-item-icon { width: 16px; text-align: center; font-size: 14px; }
+
+  .nav-item-badge {
+    margin-left: auto;
+    font-size: 10px;
+    font-family: 'DM Mono', monospace;
+    padding: 2px 7px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 10px;
+    color: rgba(255,255,255,0.4);
+  }
+
+  .nav-item-badge.live { background: rgba(40,202,65,0.15); color: #28ca41; }
+
+  /* main content */
+  .dash-main {
+    overflow-y: auto;
+    padding: 32px;
+    background: #0d0d0d;
+  }
+
+  .dash-page { display: none; }
+  .dash-page.active { display: block; }
+
+  .dash-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 32px;
+  }
+
+  .dash-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 36px;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+  }
+
+  .dash-subtitle {
+    font-size: 13px;
+    font-weight: 300;
+    color: rgba(255,255,255,0.35);
+    font-family: 'DM Mono', monospace;
+  }
+
+  .btn-run {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+  }
+
+  .btn-run:hover { background: #d03d08; }
+
+  /* metric cards */
+  .metric-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 24px; }
+
+  .metric-card {
+    background: #151515;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 4px;
+    padding: 20px;
+  }
+
+  .metric-card-label {
+    font-size: 10px;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.3);
+    margin-bottom: 10px;
+  }
+
+  .metric-card-value {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 36px;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    margin-bottom: 8px;
+    color: #fff;
+  }
+
+  .metric-card-delta {
+    font-size: 12px;
+    font-family: 'DM Mono', monospace;
+    color: #28ca41;
+  }
+
+  .metric-card-delta.down { color: #ff5f57; }
+
+  /* activity feed */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .grid-3 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+  .panel {
+    background: #151515;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .panel-title {
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.4);
+    font-family: 'DM Mono', monospace;
+  }
+
+  .panel-action {
+    font-size: 11px;
+    font-family: 'DM Mono', monospace;
+    color: var(--accent);
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+
+  .panel-body { padding: 16px 20px; }
+
+  /* activity items */
+  .activity-item {
+    display: flex;
+    gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+
+  .activity-item:last-child { border-bottom: none; }
+
+  .activity-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .activity-icon.code { background: rgba(26,60,255,0.15); }
+  .activity-icon.mail { background: rgba(232,68,10,0.15); }
+  .activity-icon.chart { background: rgba(40,202,65,0.15); }
+  .activity-icon.plan { background: rgba(200,168,75,0.15); }
+
+  .activity-content { flex: 1; min-width: 0; }
+
+  .activity-title {
+    font-size: 13px;
+    font-weight: 400;
+    color: rgba(255,255,255,0.8);
+    margin-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .activity-meta {
+    font-size: 11px;
+    font-family: 'DM Mono', monospace;
+    color: rgba(255,255,255,0.25);
+  }
+
+  .activity-status {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-family: 'DM Mono', monospace;
+    padding: 3px 8px;
+    border-radius: 2px;
+  }
+
+  .status-done { background: rgba(40,202,65,0.1); color: #28ca41; border: 1px solid rgba(40,202,65,0.2); }
+  .status-running { background: rgba(232,68,10,0.1); color: var(--accent); border: 1px solid rgba(232,68,10,0.2); }
+  .status-queued { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.3); border: 1px solid rgba(255,255,255,0.08); }
+
+  /* mini chart placeholder */
+  .sparkline {
+    width: 100%;
+    height: 60px;
+    margin-top: 8px;
+  }
+
+  /* task list */
+  .task-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    cursor: pointer;
+  }
+
+  .task-item:last-child { border-bottom: none; }
+  .task-item:hover .task-title { color: white; }
+
+  .task-check {
+    width: 18px;
+    height: 18px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 2px;
+    flex-shrink: 0;
+    margin-top: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: transparent;
+    transition: all 0.2s;
+  }
+
+  .task-item.done .task-check {
+    background: rgba(40,202,65,0.2);
+    border-color: #28ca41;
+    color: #28ca41;
+  }
+
+  .task-title {
+    font-size: 13px;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 3px;
+    transition: color 0.15s;
+    line-height: 1.4;
+  }
+
+  .task-item.done .task-title {
+    color: rgba(255,255,255,0.3);
+    text-decoration: line-through;
+  }
+
+  .task-meta {
+    font-size: 11px;
+    font-family: 'DM Mono', monospace;
+    color: rgba(255,255,255,0.2);
+  }
+
+  .task-type {
+    margin-left: auto;
+    font-size: 10px;
+    font-family: 'DM Mono', monospace;
+    padding: 3px 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .type-code { background: rgba(26,60,255,0.1); color: #6b8fff; border: 1px solid rgba(26,60,255,0.15); }
+  .type-mkt { background: rgba(200,168,75,0.1); color: var(--gold); border: 1px solid rgba(200,168,75,0.15); }
+  .type-ops { background: rgba(232,68,10,0.1); color: var(--accent); border: 1px solid rgba(232,68,10,0.15); }
+
+  /* chat interface */
+  .chat-area {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 140px);
+  }
+
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .chat-msg {
+    display: flex;
+    gap: 12px;
+    max-width: 80%;
+  }
+
+  .chat-msg.user { align-self: flex-end; flex-direction: row-reverse; }
+
+  .chat-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .chat-avatar.ai { background: rgba(232,68,10,0.2); color: var(--accent); }
+  .chat-avatar.user { background: rgba(26,60,255,0.2); color: #6b8fff; }
+
+  .chat-bubble {
+    padding: 12px 16px;
+    border-radius: 2px;
+    font-size: 14px;
+    line-height: 1.65;
+    font-weight: 300;
+  }
+
+  .chat-msg.ai .chat-bubble {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.8);
+  }
+
+  .chat-msg.user .chat-bubble {
+    background: rgba(232,68,10,0.12);
+    border: 1px solid rgba(232,68,10,0.18);
+    color: rgba(255,255,255,0.85);
+  }
+
+  .chat-input-row {
+    padding: 16px 20px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    gap: 10px;
+    background: #111;
+  }
+
+  .chat-input {
+    flex: 1;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 2px;
+    padding: 12px 16px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    color: rgba(255,255,255,0.8);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .chat-input:focus { border-color: rgba(232,68,10,0.4); }
+  .chat-input::placeholder { color: rgba(255,255,255,0.2); }
+
+  .chat-send {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 2px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    transition: background 0.2s;
+  }
+
+  .chat-send:hover { background: #d03d08; }
+
+  /* revenue chart */
+  .rev-chart {
+    width: 100%;
+    height: 160px;
+    position: relative;
+    margin-top: 8px;
+  }
+
+  .rev-chart svg { width: 100%; height: 100%; }
+
+  /* ticker in dashboard */
+  .live-ticker {
+    background: rgba(40,202,65,0.05);
+    border: 1px solid rgba(40,202,65,0.1);
+    border-radius: 4px;
+    padding: 10px 16px;
+    margin-bottom: 20px;
+    font-size: 12px;
+    font-family: 'DM Mono', monospace;
+    color: rgba(40,202,65,0.8);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    overflow: hidden;
+  }
+
+  .live-ticker::before {
+    content: 'LIVE';
+    background: #28ca41;
+    color: #0d0d0d;
+    padding: 2px 6px;
+    border-radius: 1px;
+    font-size: 9px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  /* onboarding wizard */
+  .wizard-steps {
+    display: flex;
+    gap: 0;
+    margin-bottom: 40px;
+  }
+
+  .wizard-step {
+    flex: 1;
+    padding: 14px 16px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-right: none;
+    font-size: 12px;
+    font-family: 'DM Mono', monospace;
+    color: rgba(255,255,255,0.3);
+    position: relative;
+  }
+
+  .wizard-step:last-child { border-right: 1px solid rgba(255,255,255,0.06); }
+  .wizard-step.active { background: rgba(232,68,10,0.1); border-color: rgba(232,68,10,0.2); color: var(--accent); }
+  .wizard-step.done { background: rgba(40,202,65,0.06); border-color: rgba(40,202,65,0.12); color: #28ca41; }
+
+  .wizard-num { font-size: 9px; display: block; margin-bottom: 3px; }
+
+  /* ───── ANIMATE IN ───── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .fade-up {
+    animation: fadeUp 0.6s ease forwards;
+    opacity: 0;
+  }
+
+  .fade-up-1 { animation-delay: 0.1s; }
+  .fade-up-2 { animation-delay: 0.2s; }
+  .fade-up-3 { animation-delay: 0.35s; }
+  .fade-up-4 { animation-delay: 0.5s; }
+
+  @media (max-width: 1024px) {
+    .hero { grid-template-columns: 1fr; }
+    .hero-right { display: none; }
+    nav { padding: 16px 24px; }
+    .nav-links { display: none; }
+    .stats-bar { flex-wrap: wrap; }
+    .stat-item { padding: 20px 32px; }
+    .steps { grid-template-columns: 1fr 1fr; }
+    .capability-grid { grid-template-columns: 1fr 1fr; }
+    .pricing-grid { grid-template-columns: 1fr; }
+    .section { padding: 80px 24px; }
+    .capabilities-section { padding: 80px 24px; }
+    .footer-top { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ───── LANDING VIEW ───── -->
+<div class="view active" id="view-landing">
+
+  <nav>
+    <a href="#" class="nav-logo">VENTURA<span>.</span></a>
+    <ul class="nav-links">
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#capabilities">Capabilities</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+      <li><a href="#" onclick="showDashboard(event)">Dashboard →</a></li>
+      <li><a href="#" class="nav-cta" onclick="openModal(event)">Launch a business</a></li>
+    </ul>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-left">
+      <span class="hero-tag fade-up fade-up-1">Agentic Business Platform</span>
+      <h1 class="fade-up fade-up-2">
+        YOUR<br>
+        BUSINESS<span class="line-accent">,</span><br>
+        <span class="line-blue">BUILT</span> &<br>
+        RUN BY<br>AI
+      </h1>
+      <p class="hero-sub fade-up fade-up-3">
+        Describe your idea. Ventura spins up the entire stack — website, product, marketing, operations — and runs it autonomously every single day.
+      </p>
+      <div class="hero-actions fade-up fade-up-4">
+        <a href="#" class="btn-primary" onclick="openModal(event)">Launch tonight →</a>
+        <a href="#" class="btn-secondary" onclick="showDashboard(event)">See live dashboard</a>
+      </div>
+    </div>
+    <div class="hero-right">
+      <div class="dashboard-preview">
+        <div class="db-bar">
+          <div class="db-dot r"></div>
+          <div class="db-dot y"></div>
+          <div class="db-dot g"></div>
+          <span class="db-title">ventura — nova-analytics.co — agent loop</span>
+        </div>
+        <div class="db-body">
+          <div class="db-metric-row">
+            <div class="db-metric">
+              <div class="db-metric-label">MRR</div>
+              <div class="db-metric-val green">$2,840</div>
+            </div>
+            <div class="db-metric">
+              <div class="db-metric-label">Tasks today</div>
+              <div class="db-metric-val amber">7</div>
+            </div>
+            <div class="db-metric">
+              <div class="db-metric-label">Uptime</div>
+              <div class="db-metric-val">99.9%</div>
+            </div>
+          </div>
+          <div class="db-log">
+            <div class="db-log-line done"><span class="ts">02:14</span><span class="action">✓ Deployed landing page v4</span></div>
+            <div class="db-log-line done"><span class="ts">02:31</span><span class="action">✓ Sent 40 cold emails</span></div>
+            <div class="db-log-line done"><span class="ts">03:05</span><span class="action">✓ Updated pricing page</span></div>
+            <div class="db-log-line active"><span class="ts">03:44</span><span><span class="pulse"></span>Running SEO audit...</span></div>
+            <div class="db-log-line"><span class="ts">—</span><span style="color:rgba(255,255,255,0.15)">Queued: write blog post</span></div>
+            <div class="db-log-line"><span class="ts">—</span><span style="color:rgba(255,255,255,0.15)">Queued: respond to leads</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TICKER -->
+  <div class="ticker-wrap">
+    <div class="ticker-track">
+      <span class="ticker-item"><span class="dot"></span>Nova Analytics — $2,840 MRR — Day 23</span>
+      <span class="ticker-item"><span class="dot"></span>SwiftDev Tools — 340 users — Day 11</span>
+      <span class="ticker-item"><span class="dot"></span>EcoTrack — $890 MRR — Day 18</span>
+      <span class="ticker-item"><span class="dot"></span>LegalDraft AI — 5 clients — Day 7</span>
+      <span class="ticker-item"><span class="dot"></span>PixelMate — $1,240 MRR — Day 31</span>
+      <span class="ticker-item"><span class="dot"></span>StoreOps — 12 SKUs listed — Day 5</span>
+      <span class="ticker-item"><span class="dot"></span>MindBloom — 200 subscribers — Day 14</span>
+      <span class="ticker-item"><span class="dot"></span>Nova Analytics — $2,840 MRR — Day 23</span>
+      <span class="ticker-item"><span class="dot"></span>SwiftDev Tools — 340 users — Day 11</span>
+      <span class="ticker-item"><span class="dot"></span>EcoTrack — $890 MRR — Day 18</span>
+      <span class="ticker-item"><span class="dot"></span>LegalDraft AI — 5 clients — Day 7</span>
+      <span class="ticker-item"><span class="dot"></span>PixelMate — $1,240 MRR — Day 31</span>
+      <span class="ticker-item"><span class="dot"></span>StoreOps — 12 SKUs listed — Day 5</span>
+      <span class="ticker-item"><span class="dot"></span>MindBloom — 200 subscribers — Day 14</span>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-bar">
+    <div class="stat-item">
+      <div class="stat-val">730<span>+</span></div>
+      <div class="stat-label">Businesses launched</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-val">$<span>490k</span></div>
+      <div class="stat-label">Combined ARR</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-val">24<span>/7</span></div>
+      <div class="stat-label">Agent uptime</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-val">0</div>
+      <div class="stat-label">Employees needed</div>
+    </div>
+  </div>
+
+  <!-- HOW IT WORKS -->
+  <section class="section" id="how">
+    <span class="section-tag">How it works</span>
+    <h2 class="section-title">From idea to operating<br>business in minutes</h2>
+    <p class="section-sub">Ventura handles the entire stack. You describe what you want to build — the AI does the rest, every day.</p>
+
+    <div class="steps">
+      <div class="step">
+        <span class="step-num">01</span>
+        <div class="step-icon">✦</div>
+        <h3>Describe your idea</h3>
+        <p>Tell Ventura what you want to build. A SaaS tool, a content business, a service, a store — any digital business.</p>
+      </div>
+      <div class="step">
+        <span class="step-num">02</span>
+        <div class="step-icon">⚡</div>
+        <h3>Infrastructure spins up</h3>
+        <p>Within minutes: your website, database, email, domain, and business profile are live and operational.</p>
+      </div>
+      <div class="step">
+        <span class="step-num">03</span>
+        <div class="step-icon">◎</div>
+        <h3>Agents run daily</h3>
+        <p>Every night, AI agents work on your business — shipping code, running marketing, handling ops, responding to leads.</p>
+      </div>
+      <div class="step">
+        <span class="step-num">04</span>
+        <div class="step-icon">▲</div>
+        <h3>Watch it grow</h3>
+        <p>Your dashboard shows every action taken, every dollar earned. Override, direct, or let it run fully autonomous.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CAPABILITIES -->
+  <div class="capabilities-section" id="capabilities">
+    <div class="capabilities-inner">
+      <span class="section-tag">What Ventura can do</span>
+      <h2 class="section-title">Six departments.<br>Zero headcount.</h2>
+      <p class="section-sub">Each domain has a specialist agent running a tight prompt loop, with live data from integrations.</p>
+
+      <div class="capability-grid">
+        <div class="capability-card">
+          <div class="capability-num">01 — ENGINEERING</div>
+          <h3>Build & ship product</h3>
+          <p>The agent writes, tests, and deploys code daily. Fixes bugs, ships features, maintains uptime — all without a dev on retainer.</p>
+          <div class="capability-tags">
+            <span class="tag">auto-deploy</span>
+            <span class="tag">bug fixes</span>
+            <span class="tag">feature dev</span>
+            <span class="tag">web server</span>
+          </div>
+        </div>
+        <div class="capability-card">
+          <div class="capability-num">02 — MARKETING</div>
+          <h3>Grow your audience</h3>
+          <p>Runs SEO, writes content, sends cold outreach, manages social posts, and optimises ad copy — all on autopilot.</p>
+          <div class="capability-tags">
+            <span class="tag">SEO</span>
+            <span class="tag">cold email</span>
+            <span class="tag">content</span>
+            <span class="tag">social</span>
+          </div>
+        </div>
+        <div class="capability-card">
+          <div class="capability-num">03 — OPERATIONS</div>
+          <h3>Run the business</h3>
+          <p>Manages your inbox, responds to support tickets, handles investor emails, and flags anything that needs human eyes.</p>
+          <div class="capability-tags">
+            <span class="tag">inbox mgmt</span>
+            <span class="tag">support</span>
+            <span class="tag">scheduling</span>
+          </div>
+        </div>
+        <div class="capability-card">
+          <div class="capability-num">04 — STRATEGY</div>
+          <h3>Plan what's next</h3>
+          <p>Analyses metrics, researches competitors, and generates weekly strategic plans based on what's actually working.</p>
+          <div class="capability-tags">
+            <span class="tag">market research</span>
+            <span class="tag">competitor intel</span>
+            <span class="tag">roadmap</span>
+          </div>
+        </div>
+        <div class="capability-card">
+          <div class="capability-num">05 — SALES</div>
+          <h3>Close deals</h3>
+          <p>Finds leads, qualifies prospects, drafts proposals, and follows up — with a memory thread that never drops context.</p>
+          <div class="capability-tags">
+            <span class="tag">lead gen</span>
+            <span class="tag">proposals</span>
+            <span class="tag">follow-up</span>
+            <span class="tag">pipeline</span>
+          </div>
+        </div>
+        <div class="capability-card">
+          <div class="capability-num">06 — FINANCE</div>
+          <h3>Track the money</h3>
+          <p>Monitors revenue, tracks burn, reconciles transactions via Stripe, and alerts you on anomalies before they become problems.</p>
+          <div class="capability-tags">
+            <span class="tag">stripe connect</span>
+            <span class="tag">MRR tracking</span>
+            <span class="tag">alerts</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRICING -->
+  <section class="section" id="pricing">
+    <span class="section-tag">Pricing</span>
+    <h2 class="section-title">We win when<br>you win</h2>
+    <p class="section-sub">Flat fee covers infrastructure and agent compute. Revenue share kicks in only when your business earns.</p>
+
+    <div class="pricing-grid">
+      <div class="pricing-card">
+        <div class="pricing-tier">Starter</div>
+        <div class="pricing-price">$0</div>
+        <div class="pricing-per">14-day free trial, no card required</div>
+        <ul class="pricing-features">
+          <li>Full autonomous agent loop for 14 days</li>
+          <li>Website + database + email provisioned</li>
+          <li>5 on-demand tasks</li>
+          <li>Dashboard access</li>
+          <li>1 business</li>
+        </ul>
+        <a href="#" class="btn-primary" style="width:100%;text-align:center;" onclick="openModal(event)">Start free →</a>
+        <div class="pricing-note">No credit card. Cancel anytime.</div>
+      </div>
+      <div class="pricing-card featured">
+        <div class="pricing-badge">Most popular</div>
+        <div class="pricing-tier">Builder</div>
+        <div class="pricing-price">$49</div>
+        <div class="pricing-per">per month per business + 20% rev share</div>
+        <ul class="pricing-features">
+          <li>Daily autonomous agent cycles</li>
+          <li>30 on-demand tasks/mo</li>
+          <li>All 6 agent departments active</li>
+          <li>Web server + DB + email + $5 API budget</li>
+          <li>Priority model access (Opus + thinking)</li>
+          <li>Full data export. You own everything.</li>
+        </ul>
+        <a href="#" class="btn-primary" style="width:100%;text-align:center;" onclick="openModal(event)">Launch tonight →</a>
+        <div class="pricing-note">Rev share only when business generates revenue via Stripe.</div>
+      </div>
+      <div class="pricing-card">
+        <div class="pricing-tier">Fleet</div>
+        <div class="pricing-price">$199</div>
+        <div class="pricing-per">per month + 15% rev share across all</div>
+        <ul class="pricing-features">
+          <li>Up to 10 businesses</li>
+          <li>100 on-demand tasks/mo pooled</li>
+          <li>Cross-business analytics</li>
+          <li>Custom agent prompts per business</li>
+          <li>Dedicated Slack channel</li>
+        </ul>
+        <a href="#" class="btn-primary" style="width:100%;text-align:center;background:var(--ink);" onclick="openModal(event)">Talk to us →</a>
+        <div class="pricing-note">Perfect for portfolio founders and studios.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BOTTOM CTA -->
+  <div class="cta-section">
+    <h2>YOUR BUSINESS<br>LAUNCHES TONIGHT</h2>
+    <p>Stop waiting for the right time, the right team, the right budget. Ventura gives you all three.</p>
+    <a href="#" class="btn-white" onclick="openModal(event)">Launch for free →</a>
+  </div>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-top">
+      <div class="footer-brand">
+        <span class="logo">VENTURA<span>.</span></span>
+        <p>The agentic platform that builds, launches, and runs digital businesses — fully autonomous, every day.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Product</h4>
+        <ul>
+          <li><a href="#">How it works</a></li>
+          <li><a href="#">Capabilities</a></li>
+          <li><a href="#">Pricing</a></li>
+          <li><a href="#" onclick="showDashboard(event)">Dashboard</a></li>
+          <li><a href="#">Live companies</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Company</h4>
+        <ul>
+          <li><a href="#">About</a></li>
+          <li><a href="#">Blog</a></li>
+          <li><a href="#">Careers</a></li>
+          <li><a href="#">Press</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="#">Terms</a></li>
+          <li><a href="#">Privacy</a></li>
+          <li><a href="#">Data</a></li>
+          <li><a href="#">Contact</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2025 Ventura Inc. All rights reserved.</span>
+      <span>Built by AI. Run by AI. Powered by you.</span>
+    </div>
+  </footer>
+
+</div><!-- end landing view -->
+
+<!-- ───── DASHBOARD VIEW ───── -->
+<div class="view" id="view-dashboard">
+  <div class="dashboard">
+
+    <!-- TOP BAR -->
+    <div class="dash-topbar">
+      <span class="dash-logo" style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:0.05em;color:#e0ddd5;">VENTURA<span style="color:var(--accent)">.</span></span>
+      <span class="dash-co-name">Nova Analytics</span>
+      <span class="dash-co-badge">Agent running</span>
+      <div class="dash-topbar-actions">
+        <button class="icon-btn" onclick="showPage('tasks')">+ Task</button>
+        <button class="icon-btn" onclick="showLanding()">← Exit</button>
+      </div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <div class="dash-sidebar">
+      <span class="sidebar-section-label">Overview</span>
+      <a class="nav-item active" onclick="showPage('overview',this)">
+        <span class="nav-item-icon">◈</span> Dashboard
+      </a>
+      <a class="nav-item" onclick="showPage('activity',this)">
+        <span class="nav-item-icon">◉</span> Activity feed
+        <span class="nav-item-badge live">live</span>
+      </a>
+      <a class="nav-item" onclick="showPage('tasks',this)">
+        <span class="nav-item-icon">◻</span> Tasks
+        <span class="nav-item-badge">3 queued</span>
+      </a>
+
+      <span class="sidebar-section-label">Departments</span>
+      <a class="nav-item" onclick="showPage('engineering',this)">
+        <span class="nav-item-icon">⌥</span> Engineering
+      </a>
+      <a class="nav-item" onclick="showPage('marketing',this)">
+        <span class="nav-item-icon">◆</span> Marketing
+      </a>
+      <a class="nav-item" onclick="showPage('operations',this)">
+        <span class="nav-item-icon">✦</span> Operations
+      </a>
+
+      <span class="sidebar-section-label">Business</span>
+      <a class="nav-item" onclick="showPage('chat',this)">
+        <span class="nav-item-icon">◎</span> Chat w/ Agent
+      </a>
+      <a class="nav-item" onclick="showPage('analytics',this)">
+        <span class="nav-item-icon">▲</span> Analytics
+      </a>
+      <a class="nav-item" onclick="showPage('settings',this)">
+        <span class="nav-item-icon">⊞</span> Settings
+      </a>
+
+      <span class="sidebar-section-label">My businesses</span>
+      <div id="sidebar-businesses">
+        <a class="nav-item" style="background:rgba(232,68,10,0.06);border-left:2px solid var(--accent);padding:10px 20px;display:flex;align-items:center;gap:10px;font-size:12px;color:rgba(255,255,255,0.7)">
+          <span style="width:8px;height:8px;background:#28ca41;border-radius:50%;flex-shrink:0;"></span> Nova Analytics
+        </a>
+        <a class="nav-item" onclick="openModal(event)" style="color:rgba(232,68,10,0.7);font-size:12px;padding:10px 20px;">
+          <span class="nav-item-icon" style="font-size:12px">+</span> New business
+        </a>
+      </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div class="dash-main">
+
+      <!-- OVERVIEW PAGE -->
+      <div class="dash-page active" id="page-overview">
+        <div class="dash-header">
+          <div>
+            <div class="dash-title">Dashboard</div>
+            <div class="dash-subtitle">nova-analytics.co — day 23 of operation</div>
+          </div>
+          <button class="btn-run" onclick="runAgentNow()">▶ Run agent now</button>
+        </div>
+
+        <div class="live-ticker" id="live-ticker-text">
+          Agent last ran 2h ago — Completed: deployed landing page v4, sent 40 cold emails, updated pricing — Next cycle in 21h 44m
+        </div>
+
+        <div class="metric-row">
+          <div class="metric-card">
+            <div class="metric-card-label">Monthly Revenue</div>
+            <div class="metric-card-value">$2,840</div>
+            <div class="metric-card-delta">↑ +$340 this week</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-card-label">Active Users</div>
+            <div class="metric-card-value">184</div>
+            <div class="metric-card-delta">↑ +22 this week</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-card-label">Tasks completed</div>
+            <div class="metric-card-value">127</div>
+            <div class="metric-card-delta">↑ 7 today</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-card-label">Leads in pipeline</div>
+            <div class="metric-card-value">43</div>
+            <div class="metric-card-delta down">↓ -3 this week</div>
+          </div>
+        </div>
+
+        <div class="grid-3">
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Revenue (30 days)</span>
+            </div>
+            <div class="panel-body">
+              <div class="rev-chart">
+                <svg viewBox="0 0 400 120" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stop-color="#28ca41" stop-opacity="0.3"/>
+                      <stop offset="100%" stop-color="#28ca41" stop-opacity="0"/>
+                    </linearGradient>
+                  </defs>
+                  <path d="M0,100 L15,95 L30,90 L50,85 L70,78 L90,72 L110,75 L130,68 L150,60 L170,55 L190,58 L210,50 L230,44 L250,38 L270,42 L290,35 L310,28 L330,22 L350,18 L370,14 L390,10 L400,8 L400,120 L0,120 Z" fill="url(#revGrad)"/>
+                  <path d="M0,100 L15,95 L30,90 L50,85 L70,78 L90,72 L110,75 L130,68 L150,60 L170,55 L190,58 L210,50 L230,44 L250,38 L270,42 L290,35 L310,28 L330,22 L350,18 L370,14 L390,10 L400,8" fill="none" stroke="#28ca41" stroke-width="1.5"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Today's tasks</span>
+              <button class="panel-action" onclick="showPage('tasks',null)">view all</button>
+            </div>
+            <div class="panel-body" style="padding:8px 16px;">
+              <div class="task-item done">
+                <div class="task-check">✓</div>
+                <div><div class="task-title">Deploy landing page v4</div><div class="task-meta">Completed 02:14 AM</div></div>
+                <span class="task-type type-code">code</span>
+              </div>
+              <div class="task-item done">
+                <div class="task-check">✓</div>
+                <div><div class="task-title">Send cold email batch (40)</div><div class="task-meta">Completed 02:31 AM</div></div>
+                <span class="task-type type-mkt">mkt</span>
+              </div>
+              <div class="task-item done">
+                <div class="task-check">✓</div>
+                <div><div class="task-title">Update pricing page copy</div><div class="task-meta">Completed 03:05 AM</div></div>
+                <span class="task-type type-code">code</span>
+              </div>
+              <div class="task-item">
+                <div class="task-check"></div>
+                <div><div class="task-title">Run SEO audit + fixes</div><div class="task-meta">Running now...</div></div>
+                <span class="task-type type-mkt">mkt</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Recent activity</span>
+              <button class="panel-action" onclick="showPage('activity',null)">view feed</button>
+            </div>
+            <div class="panel-body" style="padding:0 16px;">
+              <div class="activity-item">
+                <div class="activity-icon code">⌥</div>
+                <div class="activity-content"><div class="activity-title">Shipped: mobile responsive nav</div><div class="activity-meta">Engineering · 2h ago</div></div>
+                <span class="activity-status status-done">done</span>
+              </div>
+              <div class="activity-item">
+                <div class="activity-icon mail">◆</div>
+                <div class="activity-content"><div class="activity-title">Cold email batch — 40 sent, 3 replies</div><div class="activity-meta">Marketing · 4h ago</div></div>
+                <span class="activity-status status-done">done</span>
+              </div>
+              <div class="activity-item">
+                <div class="activity-icon chart">▲</div>
+                <div class="activity-content"><div class="activity-title">SEO audit running (87% complete)</div><div class="activity-meta">Marketing · running</div></div>
+                <span class="activity-status status-running">running</span>
+              </div>
+              <div class="activity-item">
+                <div class="activity-icon plan">✦</div>
+                <div class="activity-content"><div class="activity-title">Write Q1 growth strategy doc</div><div class="activity-meta">Strategy · queued</div></div>
+                <span class="activity-status status-queued">queued</span>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Agent insights</span>
+            </div>
+            <div class="panel-body">
+              <div style="display:flex;flex-direction:column;gap:14px;">
+                <div style="padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px;">
+                  <div style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;margin-bottom:6px;">💡 OPPORTUNITY</div>
+                  <div style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.5;">3 inbound leads haven't been followed up in 48h. Suggest running a follow-up sequence today.</div>
+                </div>
+                <div style="padding:14px;background:rgba(200,168,75,0.05);border:1px solid rgba(200,168,75,0.1);border-radius:3px;">
+                  <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--gold);margin-bottom:6px;">⚡ SUGGESTION</div>
+                  <div style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.5;">Pricing page bounce rate is 74%. A/B test a simplified version with one CTA.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TASKS PAGE -->
+      <div class="dash-page" id="page-tasks">
+        <div class="dash-header">
+          <div>
+            <div class="dash-title">Tasks</div>
+            <div class="dash-subtitle">Manage your agent's to-do queue</div>
+          </div>
+          <button class="btn-run" onclick="addTask()">+ Add task</button>
+        </div>
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Queue — 3 remaining today</span></div>
+          <div class="panel-body" style="padding:0 20px;">
+            <div class="task-item done">
+              <div class="task-check">✓</div>
+              <div><div class="task-title">Deploy landing page v4 with new hero section</div><div class="task-meta">Completed 02:14 — Engineering</div></div>
+              <span class="task-type type-code">code</span>
+            </div>
+            <div class="task-item done">
+              <div class="task-check">✓</div>
+              <div><div class="task-title">Send cold email batch to 40 SaaS founders</div><div class="task-meta">Completed 02:31 — Marketing</div></div>
+              <span class="task-type type-mkt">mkt</span>
+            </div>
+            <div class="task-item done">
+              <div class="task-check">✓</div>
+              <div><div class="task-title">Update pricing page copy — emphasise annual plan</div><div class="task-meta">Completed 03:05 — Engineering</div></div>
+              <span class="task-type type-code">code</span>
+            </div>
+            <div class="task-item">
+              <div class="task-check"></div>
+              <div><div class="task-title">Run full SEO audit and fix top 10 issues</div><div class="task-meta">Running now — Marketing</div></div>
+              <span class="task-type type-mkt">mkt</span>
+            </div>
+            <div class="task-item">
+              <div class="task-check"></div>
+              <div><div class="task-title">Write 1,000-word blog post: "Why analytics matters for solo founders"</div><div class="task-meta">Queued — Marketing</div></div>
+              <span class="task-type type-mkt">mkt</span>
+            </div>
+            <div class="task-item">
+              <div class="task-check"></div>
+              <div><div class="task-title">Reply to 3 pending lead emails in inbox</div><div class="task-meta">Queued — Operations</div></div>
+              <span class="task-type type-ops">ops</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHAT PAGE -->
+      <div class="dash-page" id="page-chat">
+        <div class="dash-header">
+          <div>
+            <div class="dash-title">Chat with Agent</div>
+            <div class="dash-subtitle">Your AI operator is always available</div>
+          </div>
+        </div>
+        <div class="panel chat-area" style="height:calc(100vh - 200px)">
+          <div class="chat-messages" id="chat-messages">
+            <div class="chat-msg ai">
+              <div class="chat-avatar ai">V</div>
+              <div class="chat-bubble">Hey! I'm your Ventura agent for Nova Analytics. I've been running your business for 23 days now.<br><br>Today I deployed the new landing page, sent 40 cold emails (3 replies so far, all positive), and I'm currently mid-way through an SEO audit.<br><br>What would you like me to focus on next?</div>
+            </div>
+          </div>
+          <div class="chat-input-row">
+            <input class="chat-input" id="chat-input" placeholder="Ask your agent anything, or give it a new task..." onkeydown="chatKeyDown(event)"/>
+            <button class="chat-send" onclick="sendChat()">Send →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACTIVITY PAGE -->
+      <div class="dash-page" id="page-activity">
+        <div class="dash-header">
+          <div>
+            <div class="dash-title">Activity Feed</div>
+            <div class="dash-subtitle">Everything your agent has done, in real time</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-body" style="padding:0 20px;">
+            <div class="activity-item"><div class="activity-icon code">⌥</div><div class="activity-content"><div class="activity-title">Deployed: mobile-responsive navigation update</div><div class="activity-meta">Engineering · Today 02:14 AM</div></div><span class="activity-status status-done">done</span></div>
+            <div class="activity-item"><div class="activity-icon mail">◆</div><div class="activity-content"><div class="activity-title">Sent 40 cold emails — segment: SaaS founders</div><div class="activity-meta">Marketing · Today 02:31 AM</div></div><span class="activity-status status-done">done</span></div>
+            <div class="activity-item"><div class="activity-icon code">⌥</div><div class="activity-content"><div class="activity-title">Updated pricing page — annual plan prominence</div><div class="activity-meta">Engineering · Today 03:05 AM</div></div><span class="activity-status status-done">done</span></div>
+            <div class="activity-item"><div class="activity-icon chart">▲</div><div class="activity-content"><div class="activity-title">SEO audit in progress (87% complete)</div><div class="activity-meta">Marketing · Today 03:44 AM</div></div><span class="activity-status status-running">running</span></div>
+            <div class="activity-item"><div class="activity-icon plan">✦</div><div class="activity-content"><div class="activity-title">Drafted Q1 growth strategy document</div><div class="activity-meta">Strategy · Yesterday 11:20 PM</div></div><span class="activity-status status-done">done</span></div>
+            <div class="activity-item"><div class="activity-icon mail">◆</div><div class="activity-content"><div class="activity-title">Replied to 2 investor inquiries via email</div><div class="activity-meta">Operations · Yesterday 10:45 PM</div></div><span class="activity-status status-done">done</span></div>
+            <div class="activity-item"><div class="activity-icon code">⌥</div><div class="activity-content"><div class="activity-title">Fixed: checkout flow bug on mobile Safari</div><div class="activity-meta">Engineering · Yesterday 09:30 PM</div></div><span class="activity-status status-done">done</span></div>
+            <div class="activity-item"><div class="activity-icon chart">▲</div><div class="activity-content"><div class="activity-title">Published blog: "Analytics for bootstrapped founders"</div><div class="activity-meta">Marketing · Yesterday 08:15 PM</div></div><span class="activity-status status-done">done</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ENGINEERING PAGE -->
+      <div class="dash-page" id="page-engineering">
+        <div class="dash-header">
+          <div><div class="dash-title">Engineering</div><div class="dash-subtitle">Your codebase, managed autonomously</div></div>
+          <button class="btn-run" onclick="addTask()">+ Code task</button>
+        </div>
+        <div class="metric-row" style="grid-template-columns:repeat(3,1fr)">
+          <div class="metric-card"><div class="metric-card-label">Deployments this month</div><div class="metric-card-value">34</div><div class="metric-card-delta">↑ +6 vs last month</div></div>
+          <div class="metric-card"><div class="metric-card-label">Uptime</div><div class="metric-card-value">99.9%</div><div class="metric-card-delta">↑ stable</div></div>
+          <div class="metric-card"><div class="metric-card-label">Open bugs</div><div class="metric-card-value">2</div><div class="metric-card-delta down">↓ from 7</div></div>
+        </div>
+        <div class="panel"><div class="panel-header"><span class="panel-title">Deployment log</span></div><div class="panel-body" style="padding:0 20px;font-family:'DM Mono',monospace;font-size:12px;">
+          <div class="activity-item"><div class="activity-content"><div class="activity-title" style="font-family:'DM Mono',monospace;font-size:12px;">v0.9.4 — mobile nav, pricing page, hero redesign</div><div class="activity-meta">Today 03:05 AM · 3 files changed</div></div><span class="activity-status status-done">live</span></div>
+          <div class="activity-item"><div class="activity-content"><div class="activity-title" style="font-family:'DM Mono',monospace;font-size:12px;">v0.9.3 — fix Safari checkout bug, improve load time</div><div class="activity-meta">Yesterday 09:30 PM · 1 file changed</div></div><span class="activity-status status-done">live</span></div>
+          <div class="activity-item"><div class="activity-content"><div class="activity-title" style="font-family:'DM Mono',monospace;font-size:12px;">v0.9.2 — add annual pricing toggle, new onboarding flow</div><div class="activity-meta">2 days ago · 5 files changed</div></div><span class="activity-status status-done">live</span></div>
+        </div></div>
+      </div>
+
+      <!-- MARKETING PAGE -->
+      <div class="dash-page" id="page-marketing">
+        <div class="dash-header">
+          <div><div class="dash-title">Marketing</div><div class="dash-subtitle">Growth on autopilot</div></div>
+          <button class="btn-run" onclick="addTask()">+ Campaign</button>
+        </div>
+        <div class="metric-row">
+          <div class="metric-card"><div class="metric-card-label">Emails sent (30d)</div><div class="metric-card-value">840</div><div class="metric-card-delta">↑ 38 replies</div></div>
+          <div class="metric-card"><div class="metric-card-label">Open rate</div><div class="metric-card-value">34%</div><div class="metric-card-delta">↑ above avg</div></div>
+          <div class="metric-card"><div class="metric-card-label">Blog posts</div><div class="metric-card-value">12</div><div class="metric-card-delta">↑ 3 this week</div></div>
+          <div class="metric-card"><div class="metric-card-label">Organic visitors</div><div class="metric-card-value">1,240</div><div class="metric-card-delta">↑ +320 vs last mo</div></div>
+        </div>
+        <div class="panel"><div class="panel-header"><span class="panel-title">Campaign history</span></div><div class="panel-body" style="padding:0 20px;">
+          <div class="activity-item"><div class="activity-icon mail">◆</div><div class="activity-content"><div class="activity-title">Cold email — SaaS founders segment — 40 sent</div><div class="activity-meta">Today · 3 replies (7.5%)</div></div><span class="activity-status status-done">done</span></div>
+          <div class="activity-item"><div class="activity-icon chart">▲</div><div class="activity-content"><div class="activity-title">Blog: "Analytics for bootstrapped founders"</div><div class="activity-meta">Yesterday · 240 views</div></div><span class="activity-status status-done">done</span></div>
+          <div class="activity-item"><div class="activity-icon mail">◆</div><div class="activity-content"><div class="activity-title">Cold email — agency owners segment — 60 sent</div><div class="activity-meta">3 days ago · 5 replies (8.3%)</div></div><span class="activity-status status-done">done</span></div>
+        </div></div>
+      </div>
+
+      <!-- OPERATIONS PAGE -->
+      <div class="dash-page" id="page-operations">
+        <div class="dash-header">
+          <div><div class="dash-title">Operations</div><div class="dash-subtitle">Your inbox and support, handled</div></div>
+        </div>
+        <div class="metric-row" style="grid-template-columns:repeat(3,1fr)">
+          <div class="metric-card"><div class="metric-card-label">Emails handled (30d)</div><div class="metric-card-value">128</div><div class="metric-card-delta">↑ 94% AI-resolved</div></div>
+          <div class="metric-card"><div class="metric-card-label">Avg response time</div><div class="metric-card-value">4m</div><div class="metric-card-delta">↑ faster than human</div></div>
+          <div class="metric-card"><div class="metric-card-label">Pending review</div><div class="metric-card-value">2</div><div class="metric-card-delta">Needs your eyes</div></div>
+        </div>
+        <div class="panel"><div class="panel-header"><span class="panel-title">Inbox — recent</span></div><div class="panel-body" style="padding:0 20px;">
+          <div class="activity-item"><div class="activity-icon mail">✉</div><div class="activity-content"><div class="activity-title">RE: Partnership inquiry — Acme Corp</div><div class="activity-meta">Replied by agent · Today 01:22 AM</div></div><span class="activity-status status-done">handled</span></div>
+          <div class="activity-item"><div class="activity-icon mail">✉</div><div class="activity-content"><div class="activity-title">Support: Can't connect my data source</div><div class="activity-meta">Replied by agent · Yesterday 11:40 PM</div></div><span class="activity-status status-done">handled</span></div>
+          <div class="activity-item"><div class="activity-icon plan">⚑</div><div class="activity-content"><div class="activity-title">VC follow-up: term sheet attached</div><div class="activity-meta">Flagged for you · Yesterday 3:20 PM</div></div><span class="activity-status status-running">review</span></div>
+          <div class="activity-item"><div class="activity-icon plan">⚑</div><div class="activity-content"><div class="activity-title">Complaint: data accuracy concern from user #204</div><div class="activity-meta">Flagged for you · 2 days ago</div></div><span class="activity-status status-running">review</span></div>
+        </div></div>
+      </div>
+
+      <!-- ANALYTICS PAGE -->
+      <div class="dash-page" id="page-analytics">
+        <div class="dash-header">
+          <div><div class="dash-title">Analytics</div><div class="dash-subtitle">Your business metrics, at a glance</div></div>
+        </div>
+        <div class="metric-row">
+          <div class="metric-card"><div class="metric-card-label">MRR</div><div class="metric-card-value">$2,840</div><div class="metric-card-delta">↑ +13.6% MoM</div></div>
+          <div class="metric-card"><div class="metric-card-label">ARR Run Rate</div><div class="metric-card-value">$34k</div><div class="metric-card-delta">↑ growing</div></div>
+          <div class="metric-card"><div class="metric-card-label">Churn rate</div><div class="metric-card-value">2.1%</div><div class="metric-card-delta">↑ below industry avg</div></div>
+          <div class="metric-card"><div class="metric-card-label">LTV:CAC</div><div class="metric-card-value">4.2x</div><div class="metric-card-delta">↑ healthy</div></div>
+        </div>
+        <div class="panel"><div class="panel-header"><span class="panel-title">Revenue — last 30 days</span></div>
+          <div class="panel-body">
+            <div class="rev-chart" style="height:180px">
+              <svg viewBox="0 0 400 150" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="revGrad2" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#28ca41" stop-opacity="0.25"/>
+                    <stop offset="100%" stop-color="#28ca41" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <path d="M0,130 L15,125 L30,120 L50,115 L70,108 L90,102 L110,105 L130,98 L150,90 L170,85 L190,88 L210,80 L230,74 L250,68 L270,72 L290,60 L310,48 L330,40 L350,32 L370,24 L390,15 L400,12 L400,150 L0,150 Z" fill="url(#revGrad2)"/>
+                <path d="M0,130 L15,125 L30,120 L50,115 L70,108 L90,102 L110,105 L130,98 L150,90 L170,85 L190,88 L210,80 L230,74 L250,68 L270,72 L290,60 L310,48 L330,40 L350,32 L370,24 L390,15 L400,12" fill="none" stroke="#28ca41" stroke-width="2"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SETTINGS PAGE -->
+      <div class="dash-page" id="page-settings">
+        <div class="dash-header">
+          <div><div class="dash-title">Settings</div><div class="dash-subtitle">Configure your business and agent</div></div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Business profile</span></div>
+            <div class="panel-body">
+              <div class="form-field" style="margin-bottom:16px;"><label style="color:rgba(255,255,255,0.3)">Business name</label><input value="Nova Analytics" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:16px;"><label style="color:rgba(255,255,255,0.3)">Business type</label><select style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option>SaaS / Software</option><option>Agency / Services</option><option>eCommerce</option><option>Content / Media</option></select></div>
+              <div class="form-field"><label style="color:rgba(255,255,255,0.3)">Business goal</label><textarea style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;min-height:80px">Reach $10k MRR within 60 days by targeting indie hackers and bootstrapped founders.</textarea></div>
+              <button class="btn-run" style="margin-top:16px">Save changes</button>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Agent controls</span></div>
+            <div class="panel-body">
+              <div style="display:flex;flex-direction:column;gap:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px">
+                  <span style="font-size:13px;color:rgba(255,255,255,0.7)">Daily autonomous loop</span>
+                  <span style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;padding:3px 10px;background:rgba(40,202,65,0.1);border-radius:2px">ACTIVE</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
+                  <span style="font-size:13px;color:rgba(255,255,255,0.7)">Auto-send emails</span>
+                  <span style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;padding:3px 10px;background:rgba(40,202,65,0.1);border-radius:2px">ON</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
+                  <span style="font-size:13px;color:rgba(255,255,255,0.7)">Auto-deploy code</span>
+                  <span style="font-size:11px;font-family:'DM Mono',monospace;color:var(--gold);padding:3px 10px;background:rgba(200,168,75,0.1);border-radius:2px">REVIEW</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
+                  <span style="font-size:13px;color:rgba(255,255,255,0.7)">Revenue share (Stripe)</span>
+                  <span style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;padding:3px 10px;background:rgba(40,202,65,0.1);border-radius:2px">CONNECTED</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end dash-main -->
+  </div><!-- end dashboard -->
+</div><!-- end dashboard view -->
+
+<!-- ───── ONBOARDING MODAL ───── -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <h2>Launch your<br><span>business tonight</span></h2>
+    <p class="modal-sub">Tell us about your idea. Ventura builds the stack and starts running it in under 5 minutes.</p>
+
+    <div class="wizard-steps" id="wizard-steps">
+      <div class="wizard-step active"><span class="wizard-num">STEP 1</span>Your idea</div>
+      <div class="wizard-step"><span class="wizard-num">STEP 2</span>Business type</div>
+      <div class="wizard-step"><span class="wizard-num">STEP 3</span>Goals</div>
+      <div class="wizard-step"><span class="wizard-num">STEP 4</span>Launch</div>
+    </div>
+
+    <div id="wizard-page-1">
+      <div class="form-field">
+        <label>What business do you want to build?</label>
+        <textarea id="business-idea" placeholder="e.g. A SaaS tool that helps freelancers track their income and expenses automatically. Target: freelancers in the US." style="min-height:100px;"></textarea>
+      </div>
+      <div class="form-field">
+        <label>What's your name?</label>
+        <input id="founder-name" type="text" placeholder="Your name"/>
+      </div>
+      <div class="form-field">
+        <label>Email address</label>
+        <input id="founder-email" type="email" placeholder="you@email.com"/>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-primary" onclick="wizardNext(1)" style="flex:1;text-align:center;">Continue →</button>
+      </div>
+    </div>
+
+    <div id="wizard-page-2" style="display:none">
+      <div class="form-field">
+        <label>Business category</label>
+        <select id="biz-type">
+          <option value="">Select a type...</option>
+          <option>SaaS / Software product</option>
+          <option>Agency / Consulting services</option>
+          <option>eCommerce / Physical products</option>
+          <option>Content / Media / Newsletter</option>
+          <option>Marketplace / Platform</option>
+          <option>Education / Courses</option>
+          <option>Other digital business</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>Who is your target customer?</label>
+        <input id="target-customer" type="text" placeholder="e.g. Freelance designers in the US"/>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-primary" onclick="wizardNext(2)" style="flex:1;text-align:center;">Continue →</button>
+      </div>
+    </div>
+
+    <div id="wizard-page-3" style="display:none">
+      <div class="form-field">
+        <label>What's your 90-day goal?</label>
+        <select id="goal-90d">
+          <option>Reach first paying customer</option>
+          <option>Hit $1k MRR</option>
+          <option>Hit $5k MRR</option>
+          <option>Hit $10k MRR</option>
+          <option>Validate the idea and get user feedback</option>
+          <option>Build a waitlist of 1,000 people</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>How involved do you want to be?</label>
+        <select id="involvement">
+          <option>Full autopilot — let the agent handle everything</option>
+          <option>Review before sending emails / deploying code</option>
+          <option>Daily check-in — I want to approve major decisions</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-primary" onclick="wizardNext(3)" style="flex:1;text-align:center;">Continue →</button>
+      </div>
+    </div>
+
+    <div id="wizard-page-4" style="display:none;text-align:center">
+      <div style="font-size:48px;margin-bottom:16px;">🚀</div>
+      <h3 style="font-family:'Bebas Neue',sans-serif;font-size:32px;margin-bottom:12px;letter-spacing:0.04em;">You're all set.</h3>
+      <p style="font-size:15px;color:var(--muted);line-height:1.65;margin-bottom:32px;">Ventura is spinning up your infrastructure now. Your website, database, email, and first agent cycle will be ready in under 5 minutes.</p>
+      <button class="btn-primary" onclick="launchBusiness()" style="width:100%;text-align:center;font-size:16px;padding:18px;">Open my dashboard →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// VENTURA FRONTEND — fully wired to real backend API + WebSocket
+// ═══════════════════════════════════════════════════════════════════
+
+// Read runtime config (set in config.js, overridable per-environment)
+const _cfg = window.VENTURA_CONFIG || {};
+const _apiBase = (_cfg.API_URL && _cfg.API_URL !== '/') ? _cfg.API_URL.replace(/\/$/, '') : '';
+const API = _apiBase + '/api';
+const WS_URL = _cfg.WS_URL ||
+  (_apiBase
+    ? _apiBase.replace(/^https/, 'wss').replace(/^http/, 'ws') + '/ws'
+    : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+
+// ── State ────────────────────────────────────────────────────────────────────
+let state = {
+  accessToken: localStorage.getItem('v_at'),
+  refreshToken: localStorage.getItem('v_rt'),
+  user: null,
+  businesses: [],
+  activeBiz: null,
+  ws: null,
+  wsReady: false,
+};
+
+// ── API helpers ───────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (state.accessToken) headers['Authorization'] = `Bearer ${state.accessToken}`;
+  const res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (res.status === 401 && state.refreshToken) { await refreshTokens(); return api(method, path, body); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+const GET  = (p)    => api('GET', p);
+const POST = (p, b) => api('POST', p, b);
+const PATCH = (p,b) => api('PATCH', p, b);
+
+async function refreshTokens() {
+  try {
+    const d = await POST('/auth/refresh', { refreshToken: state.refreshToken });
+    setTokens(d.accessToken, d.refreshToken);
+  } catch { logout(); }
+}
+
+function setTokens(at, rt) {
+  state.accessToken = at; state.refreshToken = rt;
+  localStorage.setItem('v_at', at); localStorage.setItem('v_rt', rt);
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+function connectWS() {
+  if (state.ws?.readyState === WebSocket.OPEN) return;
+  try {
+    state.ws = new WebSocket(WS_URL);
+    state.ws.onopen = () => {
+      state.wsReady = true;
+      if (state.accessToken) state.ws.send(JSON.stringify({ type: 'auth', token: state.accessToken }));
+      if (state.activeBiz) state.ws.send(JSON.stringify({ type: 'subscribe', businessId: state.activeBiz.id }));
+    };
+    state.ws.onmessage = (e) => {
+      try { handleWSEvent(JSON.parse(e.data)); } catch {}
+    };
+    state.ws.onclose = () => { state.wsReady = false; setTimeout(connectWS, 3000); };
+    state.ws.onerror = () => {};
+  } catch {}
+}
+
+function handleWSEvent(msg) {
+  switch (msg.event) {
+    case 'activity:new':
+      prependActivity(msg.activity);
+      break;
+    case 'task:complete':
+      showToast(`✓ ${msg.department}: ${msg.title}`);
+      loadTasks();
+      break;
+    case 'task:started':
+      showToast(`▶ Running: ${msg.title}`);
+      break;
+    case 'cycle:started':
+      updateTicker(`⚡ Agent cycle running now...`);
+      break;
+    case 'cycle:complete':
+      updateTicker(`✓ Cycle complete — ${msg.tasksRun} tasks. ${msg.summary || ''}`);
+      showToast(`Agent cycle done: ${msg.tasksRun} tasks completed`);
+      loadDashboard();
+      break;
+    case 'revenue:new':
+      showToast(`💰 Payment: $${(msg.amountCents/100).toFixed(2)}`);
+      break;
+    case 'message:new':
+      if (msg.role === 'assistant') appendChatMessage('ai', msg.content);
+      break;
+    case 'provisioning:step':
+      showToast(`Setting up: ${msg.step}...`);
+      break;
+    case 'provisioning:complete':
+      showToast('🚀 Business is live!');
+      loadBusinesses();
+      break;
+  }
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+async function checkAuth() {
+  if (!state.accessToken) return false;
+  try {
+    const d = await GET('/auth/me');
+    state.user = d.user;
+    return true;
+  } catch { return false; }
+}
+
+async function doLogin(email, password) {
+  const d = await POST('/auth/login', { email, password });
+  setTokens(d.accessToken, d.refreshToken);
+  state.user = d.user;
+  connectWS();
+}
+
+async function doRegister(email, name, password) {
+  const d = await POST('/auth/register', { email, name, password });
+  setTokens(d.accessToken, d.refreshToken);
+  state.user = d.user;
+  connectWS();
+}
+
+function logout() {
+  state.accessToken = null; state.refreshToken = null; state.user = null;
+  localStorage.removeItem('v_at'); localStorage.removeItem('v_rt');
+  state.ws?.close();
+  showLanding();
+}
+
+// ── Businesses ────────────────────────────────────────────────────────────────
+async function loadBusinesses() {
+  try {
+    const d = await GET('/businesses');
+    state.businesses = d.businesses;
+    renderSidebarBusinesses();
+    if (!state.activeBiz && d.businesses.length) {
+      setActiveBusiness(d.businesses[0]);
+    }
+  } catch (err) { console.error(err); }
+}
+
+function setActiveBusiness(biz) {
+  state.activeBiz = biz;
+  // Subscribe to WS for live events
+  if (state.wsReady) state.ws.send(JSON.stringify({ type: 'subscribe', businessId: biz.id }));
+  document.querySelectorAll('.dash-co-name').forEach(el => el.textContent = biz.name);
+  document.querySelectorAll('.dash-subtitle').forEach(el => {
+    if (el.textContent.includes('day')) el.textContent = `${biz.slug} — day ${biz.day_count} of operation`;
+  });
+  loadDashboard();
+}
+
+async function loadDashboard() {
+  if (!state.activeBiz) return;
+  try {
+    const [metricsData, tasksData, activityData] = await Promise.all([
+      GET(`/businesses/${state.activeBiz.id}/metrics`),
+      GET(`/businesses/${state.activeBiz.id}/tasks`),
+      GET(`/businesses/${state.activeBiz.id}/activity?limit=8`)
+    ]);
+    renderMetrics(metricsData);
+    renderTasks(tasksData.tasks);
+    renderActivityFeed(activityData.activity);
+    renderRevChart(metricsData.daily);
+  } catch (err) { console.error('Dashboard load error:', err); }
+}
+
+async function loadTasks() {
+  if (!state.activeBiz) return;
+  const d = await GET(`/businesses/${state.activeBiz.id}/tasks`);
+  renderTasks(d.tasks);
+}
+
+// ── Render helpers ────────────────────────────────────────────────────────────
+function renderMetrics(data) {
+  const biz = data.business || state.activeBiz;
+  setEl('metric-mrr',   `$${(biz.mrr_cents/100).toLocaleString('en-US',{minimumFractionDigits:0})}`);
+  setEl('metric-users', data.daily?.[0]?.active_users || '—');
+  setEl('metric-tasks', data.daily?.reduce((s,d)=>s+(d.tasks_done||0),0) || '—');
+  setEl('metric-leads', data.leads?.reduce((s,l)=>s+l.count,0) || '—');
+}
+
+function renderTasks(tasks) {
+  const el = document.getElementById('tasks-list');
+  if (!el) return;
+  const recent = (tasks || []).slice(0, 6);
+  el.innerHTML = recent.map(t => `
+    <div class="task-item ${t.status==='complete'?'done':''}">
+      <div class="task-check">${t.status==='complete'?'✓':''}</div>
+      <div>
+        <div class="task-title">${esc(t.title)}</div>
+        <div class="task-meta">${t.status==='complete'?'Completed':'Queued'} · ${t.department}</div>
+      </div>
+      <span class="task-type type-${deptColor(t.department)}">${t.department.slice(0,3)}</span>
+    </div>`).join('');
+}
+
+function renderActivityFeed(items) {
+  const el = document.getElementById('activity-feed');
+  if (!el) return;
+  el.innerHTML = (items||[]).slice(0,8).map(a => `
+    <div class="activity-item">
+      <div class="activity-icon ${typeIcon(a.type)}">${typeEmoji(a.type)}</div>
+      <div class="activity-content">
+        <div class="activity-title">${esc(a.title)}</div>
+        <div class="activity-meta">${a.department||'system'} · ${timeAgo(a.created_at)}</div>
+      </div>
+      <span class="activity-status ${statusClass(a.type)}">${statusLabel(a.type)}</span>
+    </div>`).join('');
+}
+
+function prependActivity(a) {
+  const el = document.getElementById('activity-feed');
+  if (!el) return;
+  const div = document.createElement('div');
+  div.className = 'activity-item';
+  div.style.animation = 'fadeUp 0.3s ease';
+  div.innerHTML = `
+    <div class="activity-icon ${typeIcon(a.type)}">${typeEmoji(a.type)}</div>
+    <div class="activity-content">
+      <div class="activity-title">${esc(a.title)}</div>
+      <div class="activity-meta">${a.department||'system'} · just now</div>
+    </div>
+    <span class="activity-status status-running">live</span>`;
+  el.insertBefore(div, el.firstChild);
+  if (el.children.length > 8) el.removeChild(el.lastChild);
+}
+
+function renderRevChart(daily) {
+  if (!daily?.length) return;
+  const vals = daily.slice().reverse().map(d => d.mrr_cents/100);
+  const max = Math.max(...vals, 1);
+  const pts = vals.map((v,i) => {
+    const x = 10 + (i / (vals.length-1)) * 380;
+    const y = 140 - (v/max)*130;
+    return `${x},${y}`;
+  }).join(' L ');
+  const fill = vals.map((v,i) => {
+    const x = 10 + (i / (vals.length-1)) * 380;
+    const y = 140 - (v/max)*130;
+    return `${x},${y}`;
+  });
+  const areaD = `M ${fill[0]} L ${fill.slice(1).join(' L ')} L ${10+(vals.length-1)/(vals.length-1)*380},150 L 10,150 Z`;
+
+  document.querySelectorAll('.rev-chart svg').forEach(svg => {
+    svg.innerHTML = `
+      <defs><linearGradient id="rg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#28ca41" stop-opacity="0.25"/>
+        <stop offset="100%" stop-color="#28ca41" stop-opacity="0"/>
+      </linearGradient></defs>
+      <path d="${areaD}" fill="url(#rg)"/>
+      <path d="M ${pts}" fill="none" stroke="#28ca41" stroke-width="1.5"/>`;
+  });
+}
+
+function renderSidebarBusinesses() {
+  const el = document.getElementById('sidebar-businesses');
+  if (!el) return;
+  el.innerHTML = state.businesses.map(b => `
+    <a class="nav-item ${state.activeBiz?.id===b.id?'active-business':''}"
+       onclick="switchBusiness('${b.id}')"
+       style="${state.activeBiz?.id===b.id?'background:rgba(232,68,10,0.06);border-left:2px solid var(--accent);':''}padding:10px 20px;display:flex;align-items:center;gap:10px;font-size:12px;color:rgba(255,255,255,0.7)">
+      <span style="width:8px;height:8px;background:${b.status==='active'?'#28ca41':'#666'};border-radius:50%;flex-shrink:0;"></span>
+      ${esc(b.name)}
+    </a>`).join('') +
+    `<a class="nav-item" onclick="openModal(event)" style="color:rgba(232,68,10,0.7);font-size:12px;padding:10px 20px;">
+      <span class="nav-item-icon" style="font-size:12px">+</span> New business
+    </a>`;
+}
+
+async function switchBusiness(id) {
+  const biz = state.businesses.find(b => b.id === id);
+  if (biz) setActiveBusiness(biz);
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+let chatLoaded = false;
+
+async function loadChat() {
+  if (!state.activeBiz || chatLoaded) return;
+  chatLoaded = true;
+  const d = await GET(`/businesses/${state.activeBiz.id}/messages`);
+  const el = document.getElementById('chat-messages');
+  el.innerHTML = '';
+  (d.messages||[]).forEach(m => appendChatMessage(m.role === 'assistant' ? 'ai' : 'user', m.content));
+}
+
+function appendChatMessage(role, content) {
+  const el = document.getElementById('chat-messages');
+  if (!el) return;
+  const div = document.createElement('div');
+  div.className = `chat-msg ${role}`;
+  div.innerHTML = `<div class="chat-avatar ${role}">${role==='ai'?'V':'Y'}</div><div class="chat-bubble">${esc(content).replace(/\n/g,'<br>')}</div>`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function sendChat() {
+  if (!state.activeBiz) return;
+  const input = document.getElementById('chat-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  appendChatMessage('user', msg);
+
+  // Optimistic typing indicator
+  const typingId = 'typing-' + Date.now();
+  const typing = document.createElement('div');
+  typing.id = typingId;
+  typing.className = 'chat-msg ai';
+  typing.innerHTML = `<div class="chat-avatar ai">V</div><div class="chat-bubble" style="color:rgba(255,255,255,0.3)">Thinking...</div>`;
+  document.getElementById('chat-messages').appendChild(typing);
+  document.getElementById('chat-messages').scrollTop = 99999;
+
+  try {
+    const d = await POST(`/businesses/${state.activeBiz.id}/messages`, { content: msg });
+    document.getElementById(typingId)?.remove();
+    appendChatMessage('ai', d.message.content);
+  } catch (err) {
+    document.getElementById(typingId)?.remove();
+    appendChatMessage('ai', 'Sorry, I had trouble responding. Try again.');
+  }
+}
+
+function chatKeyDown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+}
+
+// ── Agent run ─────────────────────────────────────────────────────────────────
+async function runAgentNow() {
+  if (!state.activeBiz) return;
+  updateTicker('⚡ Starting agent cycle...');
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/run`, {});
+    updateTicker('▶ Agent cycle running — you\'ll see live updates below as tasks complete');
+  } catch (err) {
+    updateTicker(`Error: ${err.message}`);
+  }
+}
+
+// ── Task creation ─────────────────────────────────────────────────────────────
+async function addTask() {
+  if (!state.activeBiz) return;
+  const title = prompt('What task should the agent do?');
+  if (!title?.trim()) return;
+  const dept = prompt('Department? (engineering / marketing / operations / strategy / sales / finance)', 'marketing');
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/tasks`, {
+      title: title.trim(),
+      department: dept?.trim() || 'operations',
+      priority: 2
+    });
+    showToast(`Task queued: "${title.slice(0,40)}"`);
+    loadTasks();
+  } catch (err) { showToast(`Error: ${err.message}`); }
+}
+
+// ── Wizard (business creation) ────────────────────────────────────────────────
+let wizardData = {};
+
+function resetWizard() {
+  wizardData = {};
+  for (let i = 1; i <= 4; i++) {
+    const p = document.getElementById('wizard-page-' + i);
+    if (p) p.style.display = i === 1 ? 'block' : 'none';
+  }
+  document.querySelectorAll('.wizard-step').forEach((s,i) => {
+    s.classList.remove('active','done');
+    if (i===0) s.classList.add('active');
+  });
+}
+
+function wizardNext(from) {
+  // Collect data from current page
+  if (from === 1) {
+    wizardData.description = document.getElementById('business-idea')?.value || '';
+    wizardData.name = wizardData.description.split(/[.\n]/)[0].slice(0,60).trim() || 'My Business';
+    const nameEl = document.getElementById('founder-name');
+    const emailEl = document.getElementById('founder-email');
+    if (nameEl?.value) wizardData.founderName = nameEl.value;
+    if (emailEl?.value) wizardData.founderEmail = emailEl.value;
+  }
+  if (from === 2) {
+    wizardData.type = document.getElementById('biz-type')?.value?.toLowerCase().split('/')[0].trim() || 'other';
+    if (wizardData.type === 'saas') wizardData.type = 'saas';
+    if (wizardData.type === 'agency') wizardData.type = 'agency';
+    if (wizardData.type === 'ecommerce') wizardData.type = 'ecommerce';
+    if (wizardData.type === 'content') wizardData.type = 'content';
+    if (!['saas','agency','ecommerce','content','marketplace','education'].includes(wizardData.type)) wizardData.type = 'other';
+    wizardData.targetCustomer = document.getElementById('target-customer')?.value || 'Small businesses';
+  }
+  if (from === 3) {
+    wizardData.goal90d = document.getElementById('goal-90d')?.value || 'Reach first paying customer';
+    wizardData.involvement = (document.getElementById('involvement')?.value || '').includes('full') ? 'autopilot' :
+                             (document.getElementById('involvement')?.value || '').includes('Review') ? 'review' : 'daily';
+  }
+
+  const steps = document.querySelectorAll('.wizard-step');
+  document.getElementById('wizard-page-' + from).style.display = 'none';
+  document.getElementById('wizard-page-' + (from + 1)).style.display = 'block';
+  steps[from-1].classList.remove('active'); steps[from-1].classList.add('done');
+  steps[from].classList.add('active');
+}
+
+async function launchBusiness() {
+  // If not logged in, register with wizard data
+  if (!state.accessToken) {
+    try {
+      if (wizardData.founderEmail && wizardData.founderName) {
+        await doRegister(wizardData.founderEmail, wizardData.founderName, 'changeme123');
+      } else {
+        showToast('Please fill in your name and email first');
+        return;
+      }
+    } catch (err) {
+      if (err.message.includes('EMAIL_TAKEN') || err.message.includes('registered')) {
+        try { await doLogin(wizardData.founderEmail, 'changeme123'); } catch {}
+      }
+    }
+  }
+
+  try {
+    await POST('/businesses', {
+      name: wizardData.name || 'My Business',
+      type: wizardData.type || 'saas',
+      description: wizardData.description || 'A new digital business',
+      targetCustomer: wizardData.targetCustomer || 'Small businesses',
+      goal90d: wizardData.goal90d || 'Get first customers',
+      involvement: wizardData.involvement || 'autopilot'
+    });
+    closeModal();
+    await loadBusinesses();
+    showDashboard(null);
+  } catch (err) {
+    alert('Launch error: ' + err.message);
+  }
+}
+
+// ── View switching ────────────────────────────────────────────────────────────
+async function showDashboard(e) {
+  if (e) e.preventDefault();
+  document.getElementById('view-landing').classList.remove('active');
+  document.getElementById('view-dashboard').classList.add('active');
+
+  // Check auth and load data
+  const authed = await checkAuth();
+  if (authed) {
+    connectWS();
+    await loadBusinesses();
+  }
+}
+
+function showLanding() {
+  document.getElementById('view-dashboard').classList.remove('active');
+  document.getElementById('view-landing').classList.add('active');
+}
+
+function openModal(e) {
+  if (e) e.preventDefault();
+  document.getElementById('modal-overlay').classList.add('open');
+  resetWizard();
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+document.getElementById('modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ── Dashboard navigation ──────────────────────────────────────────────────────
+function showPage(pageId, el) {
+  document.querySelectorAll('.dash-page').forEach(p => p.classList.remove('active'));
+  const page = document.getElementById('page-' + pageId);
+  if (page) page.classList.add('active');
+  if (el) {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    el.classList.add('active');
+  }
+  if (pageId === 'chat') loadChat();
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function setEl(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function updateTicker(msg) { const el = document.getElementById('live-ticker-text'); if (el) el.textContent = msg; }
+function deptColor(d) { return {engineering:'code',marketing:'mkt',operations:'ops',sales:'mkt',strategy:'code',finance:'ops'}[d]||'ops'; }
+function typeIcon(t) { return {deploy:'code',email_sent:'mail',lead:'chart',content:'chart',alert:'plan',research:'plan',code:'code'}[t]||'plan'; }
+function typeEmoji(t) { return {deploy:'⌥',email_sent:'◆',lead:'▲',content:'◆',alert:'⚑',research:'◎',code:'⌥',metrics:'▲'}[t]||'✦'; }
+function statusClass(t) { return t==='alert'?'status-running':t==='content'||t==='deploy'||t==='email_sent'?'status-done':'status-queued'; }
+function statusLabel(t) { return t==='alert'?'review':t==='content'||t==='deploy'||t==='email_sent'?'done':'info'; }
+function timeAgo(iso) {
+  if (!iso) return 'unknown';
+  const diff = (Date.now() - new Date(iso)) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+  return `${Math.floor(diff/86400)}d ago`;
+}
+
+let _toastTimer;
+function showToast(msg) {
+  let toast = document.getElementById('v-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'v-toast';
+    toast.style.cssText = 'position:fixed;bottom:32px;right:32px;z-index:9999;background:#0a0a0a;color:#e0ddd5;padding:14px 22px;border-radius:4px;font-size:13px;font-family:"DM Mono",monospace;border:1px solid rgba(255,255,255,0.12);max-width:360px;transition:all 0.3s;transform:translateY(8px);opacity:0';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.opacity = '1'; toast.style.transform = 'translateY(0)';
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { toast.style.opacity='0'; toast.style.transform='translateY(8px)'; }, 3500);
+}
+
+// Wire metric card IDs (add to existing cards in overview page)
+document.addEventListener('DOMContentLoaded', () => {
+  // Tag metric values with IDs for dynamic updates
+  const cards = document.querySelectorAll('.metric-card');
+  const ids = ['metric-mrr','metric-users','metric-tasks','metric-leads'];
+  cards.forEach((c,i) => {
+    const val = c.querySelector('.metric-card-value');
+    if (val && ids[i]) val.id = ids[i];
+  });
+  // Tag activity feed container
+  const feed = document.querySelector('.panel-body .activity-item')?.parentElement;
+  if (feed) feed.id = 'activity-feed';
+  // Tag tasks list
+  const tasksList = document.querySelector('#page-tasks .panel-body');
+  if (tasksList) tasksList.id = 'tasks-list';
+});
+</script>
+
+</body>
+</html>
