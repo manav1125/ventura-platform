@@ -97,7 +97,7 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
 
   try {
     const refreshedBusiness = db.prepare('SELECT * FROM businesses WHERE id = ?').get(business.id);
-    const workspaceSync = syncWorkspaceData({
+    const workspaceSync = await syncWorkspaceData({
       business: refreshedBusiness,
       triggeredBy: triggeredBy === 'cron' ? 'agent' : triggeredBy,
       respectSchedule: triggeredBy === 'cron'

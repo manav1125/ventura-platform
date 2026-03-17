@@ -98,7 +98,7 @@ export async function provisionBusiness({ userId, name, type, description, targe
     await stepActivate(businessId, userId);
     scheduleNextRun(businessId, { mode: 'daily', preferredHourUtc: 2 });
     const activeBusiness = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
-    syncWorkspaceData({ business: activeBusiness, triggeredBy: 'provisioning' });
+    await syncWorkspaceData({ business: activeBusiness, triggeredBy: 'provisioning' });
     await stepSeedAgentMemory(businessId, { name, type, description, targetCustomer, goal90d, involvement, webUrl, emailAddress });
     await stepQueueInitialTasks(businessId, type);
     await stepSendWelcomeEmail(userId, name, webUrl, emailAddress, slug);

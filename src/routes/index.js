@@ -68,9 +68,12 @@ import { getPlanDefinition, resolveBusinessEconomics, serializePlan } from '../b
 import { dispatchSpecialistTask } from '../business/specialists.js';
 import {
   getInfrastructureSnapshot,
+  recordDeploymentRelease,
+  smokeTestDeploymentAsset,
   testAnalyticsAsset,
   testMailboxAsset,
   updateAnalyticsAsset,
+  updateDeploymentAsset,
   updateDomainAsset,
   updateMailboxAsset,
   verifyDomainAsset
@@ -752,22 +755,31 @@ function sanitizePublicIntegration(kind, config = {}) {
     linkedin: !!(config.linkedin?.connected || config.linkedin === true)
   };
   if (kind === 'inbox') return {
+    provider: config.provider || null,
     connected: !!config.connected,
     inbox_address: config.inbox_address || null,
+    imap_host: config.imap_host || null,
+    imap_username: config.imap_username || null,
+    imap_password_saved: !!config.imap_password_saved,
     sync_mode: config.sync_mode || null,
     sync_interval_hours: Number(config.sync_interval_hours || 0) || null,
     automation_enabled: config.automation_enabled !== false
   };
   if (kind === 'calendar') return {
+    provider: config.provider || null,
     connected: !!config.connected,
     calendar_label: config.calendar_label || null,
+    ics_url_saved: !!config.ics_url_saved,
+    ics_feed_host: config.ics_feed_host || null,
     sync_mode: config.sync_mode || null,
     sync_interval_hours: Number(config.sync_interval_hours || 0) || null,
     automation_enabled: config.automation_enabled !== false
   };
   if (kind === 'accounting') return {
+    provider: config.provider || null,
     connected: !!config.connected,
     account_label: config.account_label || null,
+    use_business_stripe_account: config.use_business_stripe_account !== false,
     currency: config.currency || null,
     sync_mode: config.sync_mode || null,
     sync_interval_hours: Number(config.sync_interval_hours || 0) || null,
@@ -792,6 +804,17 @@ function sanitizePublicInfrastructureAsset(asset = {}) {
       status: asset.status,
       address: asset.config?.address || null,
       delivery_mode: asset.config?.delivery_mode || null
+    };
+  }
+  if (asset.kind === 'deployment') {
+    return {
+      kind: 'deployment',
+      status: asset.status,
+      provider: asset.config?.provider || null,
+      target_url: asset.config?.target_url || null,
+      smoke_path: asset.config?.smoke_path || null,
+      last_release_version: asset.checks?.last_release_version || null,
+      last_smoke_status: asset.checks?.last_smoke_status || null
     };
   }
   if (asset.kind === 'analytics') {
@@ -1288,31 +1311,39 @@ router.patch('/businesses/:id/integrations/workspace/:kind', requireAuth, asyncH
 
   const schema = kind === 'inbox'
     ? z.object({
-        provider: z.string().max(120).optional(),
+        provider: z.enum(['preview-inbox', 'imap', 'business-inbox']).optional(),
         inboxAddress: z.union([z.string().email(), z.literal('')]).optional(),
         supportAliases: z.array(z.string().email()).max(8).optional(),
         ownerEmail: z.union([z.string().email(), z.literal('')]).optional(),
+        imapHost: z.string().max(255).optional(),
+        imapPort: z.number().int().min(1).max(65535).optional(),
+        imapSecure: z.boolean().optional(),
+        imapUsername: z.string().max(180).optional(),
+        imapPassword: z.string().max(400).optional(),
+        imapMailbox: z.string().max(120).optional(),
         syncMode: z.enum(['manual', 'hourly', 'daily', 'on_cycle', 'live', 'preview']).optional(),
         syncIntervalHours: z.number().int().min(1).max(168).optional(),
         automationEnabled: z.boolean().optional()
       })
     : kind === 'calendar'
       ? z.object({
-          provider: z.string().max(120).optional(),
+          provider: z.enum(['preview-calendar', 'ics', 'business-calendar']).optional(),
           calendarId: z.string().max(180).optional(),
           calendarLabel: z.string().max(180).optional(),
           ownerEmail: z.union([z.string().email(), z.literal('')]).optional(),
           timezone: z.string().max(120).optional(),
+          icsUrl: z.union([z.string().url().max(600), z.literal('')]).optional(),
           syncMode: z.enum(['manual', 'hourly', 'daily', 'on_cycle', 'live', 'preview']).optional(),
           syncIntervalHours: z.number().int().min(1).max(168).optional(),
           automationEnabled: z.boolean().optional()
         })
       : z.object({
-          provider: z.string().max(120).optional(),
+          provider: z.enum(['preview-ledger', 'stripe', 'business-ledger']).optional(),
           accountExternalId: z.string().max(180).optional(),
           accountLabel: z.string().max(180).optional(),
           ownerEmail: z.union([z.string().email(), z.literal('')]).optional(),
           currency: z.string().max(12).optional(),
+          useBusinessStripeAccount: z.boolean().optional(),
           syncMode: z.enum(['derived', 'manual', 'hourly', 'daily', 'on_cycle', 'live', 'preview']).optional(),
           syncIntervalHours: z.number().int().min(1).max(168).optional(),
           automationEnabled: z.boolean().optional()
@@ -1327,6 +1358,11 @@ router.patch('/businesses/:id/integrations/workspace/:kind', requireAuth, asyncH
       inbox_address: body.inboxAddress,
       support_aliases: body.supportAliases,
       owner_email: body.ownerEmail,
+      imap_host: body.imapHost,
+      imap_port: body.imapPort,
+      imap_secure: body.imapSecure,
+      imap_username: body.imapUsername,
+      imap_mailbox: body.imapMailbox,
       sync_mode: body.syncMode,
       sync_interval_hours: body.syncIntervalHours,
       automation_enabled: body.automationEnabled,
@@ -1335,7 +1371,12 @@ router.patch('/businesses/:id/integrations/workspace/:kind', requireAuth, asyncH
       timezone: body.timezone,
       account_external_id: body.accountExternalId,
       account_label: body.accountLabel,
-      currency: body.currency
+      currency: body.currency,
+      use_business_stripe_account: body.useBusinessStripeAccount
+    },
+    secretUpdates: {
+      imap_password: body.imapPassword,
+      ics_url: body.icsUrl
     }
   });
 
@@ -1819,6 +1860,106 @@ router.post('/businesses/:id/infrastructure/domain/verify', requireAuth, asyncHa
   res.json({ asset, infrastructure: getInfrastructureSnapshot({ ...business, web_url: asset.config.active_url }) });
 }));
 
+// PATCH /api/businesses/:id/infrastructure/deployment
+router.patch('/businesses/:id/infrastructure/deployment', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const schema = z.object({
+    provider: z.enum(['track-only', 'vercel-managed']).optional(),
+    targetUrl: z.union([z.string().url(), z.literal('')]).optional(),
+    smokePath: z.string().max(255).optional(),
+    repoUrl: z.union([z.string().url(), z.literal('')]).optional(),
+    gitBranch: z.string().max(120).optional(),
+    buildCommand: z.string().max(180).optional(),
+    outputDirectory: z.string().max(180).optional(),
+    releaseChannel: z.string().max(80).optional(),
+    autoReleaseEnabled: z.boolean().optional()
+  });
+  const body = validate(schema, req.body || {});
+  const asset = updateDeploymentAsset(business, body);
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'engineering',
+    title: 'Founder updated deployment controls',
+    detail: {
+      provider: asset?.config?.provider || null,
+      target_url: asset?.config?.target_url || null,
+      smoke_path: asset?.config?.smoke_path || null
+    }
+  });
+
+  res.json({ asset, infrastructure: getInfrastructureSnapshot(business) });
+}));
+
+// POST /api/businesses/:id/infrastructure/deployment/release
+router.post('/businesses/:id/infrastructure/deployment/release', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const schema = z.object({
+    version: z.string().max(80).optional(),
+    versionNote: z.string().max(240).optional(),
+    filesChanged: z.number().int().min(0).max(500).optional(),
+    runSmokeCheck: z.boolean().optional()
+  });
+  const body = validate(schema, req.body || {});
+  const release = recordDeploymentRelease(business, body);
+  const smoke = body.runSmokeCheck === false
+    ? null
+    : await smokeTestDeploymentAsset(business, {});
+
+  await logActivity(req.params.id, {
+    type: 'deploy',
+    department: 'engineering',
+    title: `Founder logged release ${release.deployment.version}`,
+    detail: {
+      version: release.deployment.version,
+      description: release.deployment.description,
+      smoke_status: smoke?.asset?.checks?.last_smoke_status || null
+    }
+  });
+
+  res.json({
+    deployment: release.deployment,
+    asset: smoke?.asset || release.asset,
+    smoke,
+    infrastructure: getInfrastructureSnapshot(business)
+  });
+}));
+
+// POST /api/businesses/:id/infrastructure/deployment/smoke
+router.post('/businesses/:id/infrastructure/deployment/smoke', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const schema = z.object({
+    path: z.string().max(255).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const result = await smokeTestDeploymentAsset(business, { path: body.path });
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'engineering',
+    title: result.success ? 'Deployment smoke check passed' : 'Deployment smoke check failed',
+    detail: {
+      target: result.target,
+      preview: result.preview,
+      status_code: result.statusCode
+    }
+  });
+
+  res.json({
+    ...result,
+    infrastructure: getInfrastructureSnapshot(business)
+  });
+}));
+
 // PATCH /api/businesses/:id/infrastructure/mailbox
 router.patch('/businesses/:id/infrastructure/mailbox', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
@@ -1998,7 +2139,7 @@ router.post('/businesses/:id/workspace/sync', requireAuth, asyncHandler(async (r
     runAutomation: z.boolean().optional()
   });
   const body = validate(schema, req.body || {});
-  const sync = syncWorkspaceData({
+  const sync = await syncWorkspaceData({
     business,
     kinds: body.kinds || ['inbox', 'calendar', 'accounting'],
     triggeredBy: 'founder'

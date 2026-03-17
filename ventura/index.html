@@ -4434,6 +4434,7 @@ function renderSettings(data, operating = null, billing = null) {
     const linkedinOauth = linkedin.oauth || {};
     const linkedinOrganizations = Array.isArray(linkedin.organizations) ? linkedin.organizations : [];
     const domainAsset = infrastructureAssets.find(asset => asset.kind === 'domain') || { status: 'connected', config: {}, checks: {} };
+    const deploymentAsset = infrastructureAssets.find(asset => asset.kind === 'deployment') || { status: 'preview', config: {}, checks: {} };
     const mailboxAsset = infrastructureAssets.find(asset => asset.kind === 'mailbox') || { status: 'preview', config: {}, checks: {} };
     const analyticsAsset = infrastructureAssets.find(asset => asset.kind === 'analytics') || { status: 'pending', config: {}, checks: {} };
     const providerRows = (readiness.providers || []).map(item => `
@@ -4485,6 +4486,11 @@ function renderSettings(data, operating = null, billing = null) {
         ? `SMTP is configured and the last mailbox test to ${mailboxAsset.checks?.last_test_target || mailboxAsset.config?.forwarding_address || mailboxAsset.config?.address || 'the configured inbox'} succeeded.`
         : 'SMTP is configured. Send a mailbox test to confirm delivery and founder alerts.')
       : 'Mailbox delivery is still in preview mode. Add SMTP credentials on Render to make verification, reset, and outreach emails deliver live.';
+    const deploymentSummary = deploymentAsset.checks?.last_smoke_status === 'success'
+      ? `Latest smoke check passed against ${deploymentAsset.checks?.last_smoke_url || deploymentAsset.config?.target_url || biz.web_url || 'the live deployment target'}.`
+      : deploymentAsset.checks?.last_release_at
+        ? `Latest release ${deploymentAsset.checks?.last_release_version || ''} was logged ${timeAgo(deploymentAsset.checks.last_release_at)}. Run a smoke check to confirm the current target is healthy.`
+        : 'Configure the deployment target and release channel so Ventura can validate the live company surface after each ship.';
     const analyticsSummary = analyticsAsset.config?.provider === 'internal_metrics'
       ? 'Ventura internal metrics are live now. You can optionally add an external destination so founders can mirror data into their own analytics stack.'
       : analyticsAsset.status === 'configured' || analyticsAsset.status === 'connected'
@@ -4548,6 +4554,67 @@ function renderSettings(data, operating = null, billing = null) {
         </div>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">
+          <div style="padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px;">
+              <div>
+                <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:6px;">DEPLOYMENT CONTROL</div>
+                <div style="font-size:14px;color:#e0ddd5;line-height:1.6;">${esc(deploymentSummary)}</div>
+              </div>
+              <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(deploymentAsset.status || 'preview')};padding:4px 10px;background:${integrationBg(deploymentAsset.status || 'preview')};border-radius:999px;white-space:nowrap;">${esc((deploymentAsset.status || 'preview').toUpperCase())}</span>
+            </div>
+            <div class="form-field" style="margin:0 0 10px;">
+              <label style="color:rgba(255,255,255,0.3)">Deployment provider</label>
+              <select id="settings-deployment-provider" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                <option value="track-only" ${(deploymentAsset.config?.provider || 'track-only') === 'track-only' ? 'selected' : ''}>Track only</option>
+                <option value="vercel-managed" ${deploymentAsset.config?.provider === 'vercel-managed' ? 'selected' : ''}>Vercel managed</option>
+              </select>
+            </div>
+            <div class="form-field" style="margin:0 0 10px;">
+              <label style="color:rgba(255,255,255,0.3)">Target URL</label>
+              <input id="settings-deployment-target-url" value="${esc(deploymentAsset.config?.target_url || biz.web_url || '')}" placeholder="https://app.yourdomain.com" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px;">
+              <div class="form-field" style="margin:0;">
+                <label style="color:rgba(255,255,255,0.3)">Repo URL</label>
+                <input id="settings-deployment-repo-url" value="${esc(deploymentAsset.config?.repo_url || '')}" placeholder="https://github.com/org/repo" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div class="form-field" style="margin:0;">
+                <label style="color:rgba(255,255,255,0.3)">Branch</label>
+                <input id="settings-deployment-branch" value="${esc(deploymentAsset.config?.git_branch || 'main')}" placeholder="main" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px;">
+              <div class="form-field" style="margin:0;">
+                <label style="color:rgba(255,255,255,0.3)">Smoke path</label>
+                <input id="settings-deployment-smoke-path" value="${esc(deploymentAsset.config?.smoke_path || '/')}" placeholder="/" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div class="form-field" style="margin:0;">
+                <label style="color:rgba(255,255,255,0.3)">Release channel</label>
+                <input id="settings-deployment-release-channel" value="${esc(deploymentAsset.config?.release_channel || 'production')}" placeholder="production" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px;">
+              <div class="form-field" style="margin:0;">
+                <label style="color:rgba(255,255,255,0.3)">Build command</label>
+                <input id="settings-deployment-build-command" value="${esc(deploymentAsset.config?.build_command || 'npm run build')}" placeholder="npm run build" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div class="form-field" style="margin:0;">
+                <label style="color:rgba(255,255,255,0.3)">Output directory</label>
+                <input id="settings-deployment-output-directory" value="${esc(deploymentAsset.config?.output_directory || 'ventura')}" placeholder="ventura" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,0.62);margin-bottom:10px;">
+              <input id="settings-deployment-auto-release" type="checkbox" ${deploymentAsset.config?.auto_release_enabled === false ? '' : 'checked'}>
+              Auto-run release validation after founder-triggered deploy logs
+            </label>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+              <button class="icon-btn" onclick="saveDeploymentSettings()">Save deployment</button>
+              <button class="icon-btn" onclick="runDeploymentSmokeCheck()">Run smoke check</button>
+              <button class="icon-btn" onclick="logDeploymentRelease()">Log release</button>
+            </div>
+            <div style="font-size:11px;color:rgba(255,255,255,0.38);font-family:'DM Mono',monospace;">${esc(deploymentAsset.checks?.last_smoke_note || deploymentAsset.checks?.last_release_note || '')}</div>
+          </div>
+
           <div style="padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px;">
               <div>
@@ -4766,9 +4833,16 @@ function renderSettings(data, operating = null, billing = null) {
               <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px;">
                 <div>
                   <div style="font-size:13px;color:#e0ddd5;">Inbox sync</div>
-                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(inboxIntegration.config?.inbox_address || 'No inbox connected yet.')}</div>
+                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(inboxIntegration.config?.inbox_address || 'No inbox connected yet.')}${inboxIntegration.provider === 'imap' ? ` · IMAP ${esc(inboxIntegration.config?.imap_host || 'configured')}` : ''}</div>
                 </div>
                 <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(inboxIntegration.status || 'preview')};padding:4px 10px;background:${integrationBg(inboxIntegration.status || 'preview')};border-radius:999px;">${esc((inboxIntegration.status || 'preview').toUpperCase())}</span>
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Provider</label>
+                <select id="settings-workspace-inbox-provider" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                  <option value="preview-inbox" ${(inboxIntegration.provider || 'preview-inbox') === 'preview-inbox' ? 'selected' : ''}>Preview data</option>
+                  <option value="imap" ${inboxIntegration.provider === 'imap' ? 'selected' : ''}>IMAP inbox</option>
+                </select>
               </div>
               <div class="form-field" style="margin:0 0 10px;">
                 <label style="color:rgba(255,255,255,0.3)">Inbox address</label>
@@ -4777,6 +4851,34 @@ function renderSettings(data, operating = null, billing = null) {
               <div class="form-field" style="margin:0 0 10px;">
                 <label style="color:rgba(255,255,255,0.3)">Support aliases</label>
                 <input id="settings-workspace-inbox-aliases" value="${esc((inboxIntegration.config?.support_aliases || []).join(', '))}" placeholder="sales@, success@" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px;">
+                <div class="form-field" style="margin:0;">
+                  <label style="color:rgba(255,255,255,0.3)">IMAP host</label>
+                  <input id="settings-workspace-inbox-imap-host" value="${esc(inboxIntegration.config?.imap_host || '')}" placeholder="imap.gmail.com" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                </div>
+                <div class="form-field" style="margin:0;">
+                  <label style="color:rgba(255,255,255,0.3)">IMAP username</label>
+                  <input id="settings-workspace-inbox-imap-username" value="${esc(inboxIntegration.config?.imap_username || '')}" placeholder="support@yourdomain.com" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:10px;">
+                <div class="form-field" style="margin:0;">
+                  <label style="color:rgba(255,255,255,0.3)">Port</label>
+                  <input id="settings-workspace-inbox-imap-port" type="number" min="1" max="65535" value="${esc(String(inboxIntegration.config?.imap_port || 993))}" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                </div>
+                <div class="form-field" style="margin:0;">
+                  <label style="color:rgba(255,255,255,0.3)">Mailbox</label>
+                  <input id="settings-workspace-inbox-imap-mailbox" value="${esc(inboxIntegration.config?.imap_mailbox || 'INBOX')}" placeholder="INBOX" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                </div>
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,0.62);margin:22px 0 0;">
+                  <input id="settings-workspace-inbox-imap-secure" type="checkbox" ${inboxIntegration.config?.imap_secure === false ? '' : 'checked'}>
+                  Use TLS
+                </label>
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">IMAP password</label>
+                <input id="settings-workspace-inbox-imap-password" type="password" placeholder="${esc(inboxIntegration.config?.imap_password_saved ? 'Saved password on file' : 'Paste an app password')}" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
               </div>
               <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px;">
                 <div class="form-field" style="margin:0;">
@@ -4797,16 +4899,29 @@ function renderSettings(data, operating = null, billing = null) {
                 <input id="settings-workspace-inbox-automation-enabled" type="checkbox" ${inboxIntegration.config?.automation_enabled === false ? '' : 'checked'}>
                 Auto-create inbox follow-up tasks
               </label>
+              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-bottom:10px;font-family:'DM Mono',monospace;">${inboxIntegration.provider === 'imap'
+                ? (inboxIntegration.config?.imap_password_saved
+                  ? 'IMAP credentials are stored. Leave the password blank to keep the current secret.'
+                  : 'Save an IMAP password to switch this workspace from preview to live inbox sync.')
+                : 'Preview mode uses Ventura sample inbox signals until you switch to IMAP.'}</div>
               <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-bottom:10px;font-family:'DM Mono',monospace;">Next sync: ${inboxSyncPlan.next_sync_at === 'on_cycle' ? 'every Ventura loop' : (inboxSyncPlan.next_sync_at ? new Date(inboxSyncPlan.next_sync_at).toLocaleString() : 'manual only')}</div>
+              ${inboxIntegration.config?.last_sync_error ? `<div style="font-size:11px;color:#ff9f78;margin-bottom:10px;font-family:'DM Mono',monospace;">Last sync error: ${esc(inboxIntegration.config.last_sync_error)}</div>` : ''}
               <button class="icon-btn" onclick="saveWorkspaceIntegration('inbox')">Save inbox sync</button>
             </div>
             <div style="padding:14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px;">
                 <div>
                   <div style="font-size:13px;color:#e0ddd5;">Calendar sync</div>
-                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(calendarIntegration.config?.calendar_label || 'No calendar linked yet.')}</div>
+                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(calendarIntegration.config?.calendar_label || 'No calendar linked yet.')}${calendarIntegration.provider === 'ics' ? ` · ${esc(calendarIntegration.config?.ics_feed_host || 'ICS feed')}` : ''}</div>
                 </div>
                 <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(calendarIntegration.status || 'preview')};padding:4px 10px;background:${integrationBg(calendarIntegration.status || 'preview')};border-radius:999px;">${esc((calendarIntegration.status || 'preview').toUpperCase())}</span>
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Provider</label>
+                <select id="settings-workspace-calendar-provider" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                  <option value="preview-calendar" ${(calendarIntegration.provider || 'preview-calendar') === 'preview-calendar' ? 'selected' : ''}>Preview data</option>
+                  <option value="ics" ${calendarIntegration.provider === 'ics' ? 'selected' : ''}>ICS feed</option>
+                </select>
               </div>
               <div class="form-field" style="margin:0 0 10px;">
                 <label style="color:rgba(255,255,255,0.3)">Calendar label</label>
@@ -4815,6 +4930,10 @@ function renderSettings(data, operating = null, billing = null) {
               <div class="form-field" style="margin:0 0 10px;">
                 <label style="color:rgba(255,255,255,0.3)">Calendar ID</label>
                 <input id="settings-workspace-calendar-id" value="${esc(calendarIntegration.config?.calendar_id || '')}" placeholder="primary / cal_123" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">ICS feed URL</label>
+                <input id="settings-workspace-calendar-ics-url" type="password" placeholder="${esc(calendarIntegration.config?.ics_url_saved ? `Saved ICS feed (${calendarIntegration.config?.ics_feed_host || 'hidden'})` : 'https://calendar.google.com/calendar/ical/...')}" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
               </div>
               <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px;">
                 <div class="form-field" style="margin:0;">
@@ -4835,16 +4954,29 @@ function renderSettings(data, operating = null, billing = null) {
                 <input id="settings-workspace-calendar-automation-enabled" type="checkbox" ${calendarIntegration.config?.automation_enabled === false ? '' : 'checked'}>
                 Auto-create prep briefs from upcoming events
               </label>
+              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-bottom:10px;font-family:'DM Mono',monospace;">${calendarIntegration.provider === 'ics'
+                ? (calendarIntegration.config?.ics_url_saved
+                  ? 'ICS feed secret is stored. Leave the field blank to keep the current feed URL.'
+                  : 'Save an ICS feed URL to switch this workspace from preview to live calendar sync.')
+                : 'Preview mode uses Ventura sample calendar signals until you switch to a live ICS feed.'}</div>
               <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-bottom:10px;font-family:'DM Mono',monospace;">Next sync: ${calendarSyncPlan.next_sync_at === 'on_cycle' ? 'every Ventura loop' : (calendarSyncPlan.next_sync_at ? new Date(calendarSyncPlan.next_sync_at).toLocaleString() : 'manual only')}</div>
+              ${calendarIntegration.config?.last_sync_error ? `<div style="font-size:11px;color:#ff9f78;margin-bottom:10px;font-family:'DM Mono',monospace;">Last sync error: ${esc(calendarIntegration.config.last_sync_error)}</div>` : ''}
               <button class="icon-btn" onclick="saveWorkspaceIntegration('calendar')">Save calendar sync</button>
             </div>
             <div style="padding:14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px;">
                 <div>
                   <div style="font-size:13px;color:#e0ddd5;">Accounting sync</div>
-                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(accountingIntegration.config?.account_label || 'No ledger linked yet.')}</div>
+                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(accountingIntegration.config?.account_label || 'No ledger linked yet.')}${accountingIntegration.provider === 'stripe' ? ' · Stripe ledger' : ''}</div>
                 </div>
                 <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(accountingIntegration.status || 'preview')};padding:4px 10px;background:${integrationBg(accountingIntegration.status || 'preview')};border-radius:999px;">${esc((accountingIntegration.status || 'preview').toUpperCase())}</span>
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Provider</label>
+                <select id="settings-workspace-accounting-provider" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                  <option value="preview-ledger" ${(accountingIntegration.provider || 'preview-ledger') === 'preview-ledger' ? 'selected' : ''}>Preview ledger</option>
+                  <option value="stripe" ${accountingIntegration.provider === 'stripe' ? 'selected' : ''}>Stripe Connect ledger</option>
+                </select>
               </div>
               <div class="form-field" style="margin:0 0 10px;">
                 <label style="color:rgba(255,255,255,0.3)">Ledger label</label>
@@ -4854,6 +4986,10 @@ function renderSettings(data, operating = null, billing = null) {
                 <label style="color:rgba(255,255,255,0.3)">External account ID</label>
                 <input id="settings-workspace-accounting-id" value="${esc(accountingIntegration.config?.account_external_id || '')}" placeholder="acct_123 / qb_123" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
               </div>
+              <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,0.62);margin-bottom:10px;">
+                <input id="settings-workspace-accounting-use-business-stripe" type="checkbox" ${accountingIntegration.config?.use_business_stripe_account === false ? '' : 'checked'}>
+                Use Ventura business Stripe account if no external account ID is set
+              </label>
               <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px;">
                 <div class="form-field" style="margin:0;">
                   <label style="color:rgba(255,255,255,0.3)">Sync cadence</label>
@@ -4873,7 +5009,11 @@ function renderSettings(data, operating = null, billing = null) {
                 <input id="settings-workspace-accounting-automation-enabled" type="checkbox" ${accountingIntegration.config?.automation_enabled === false ? '' : 'checked'}>
                 Auto-create reconciliation tasks
               </label>
+              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-bottom:10px;font-family:'DM Mono',monospace;">${accountingIntegration.provider === 'stripe'
+                ? 'Ventura will pull recent Stripe balance transactions for this business and turn them into finance signals.'
+                : 'Preview mode uses Ventura sample ledger data until you switch to a live accounting provider.'}</div>
               <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-bottom:10px;font-family:'DM Mono',monospace;">Next sync: ${accountingSyncPlan.next_sync_at === 'on_cycle' ? 'every Ventura loop' : (accountingSyncPlan.next_sync_at ? new Date(accountingSyncPlan.next_sync_at).toLocaleString() : 'manual only')}</div>
+              ${accountingIntegration.config?.last_sync_error ? `<div style="font-size:11px;color:#ff9f78;margin-bottom:10px;font-family:'DM Mono',monospace;">Last sync error: ${esc(accountingIntegration.config.last_sync_error)}</div>` : ''}
               <button class="icon-btn" onclick="saveWorkspaceIntegration('accounting')">Save accounting sync</button>
             </div>
           </div>
@@ -5018,8 +5158,11 @@ async function syncIntegrations() {
 async function syncWorkspaceContext(kinds = null) {
   if (!state.activeBiz) return;
   try {
-    await POST(`/businesses/${state.activeBiz.id}/workspace/sync`, kinds ? { kinds } : {});
-    showToast(kinds?.length ? `${titleCase(kinds[0])} sync complete` : 'Workspace sync complete');
+    const result = await POST(`/businesses/${state.activeBiz.id}/workspace/sync`, kinds ? { kinds } : {});
+    const failures = (result.results || []).filter(item => item.status === 'failed');
+    showToast(failures.length
+      ? `${failures.length} workspace sync ${failures.length === 1 ? 'issue' : 'issues'} detected`
+      : (kinds?.length ? `${titleCase(kinds[0])} sync complete` : 'Workspace sync complete'));
     await loadDashboard();
   } catch (err) {
     showToast(`Workspace sync failed: ${err.message}`);
@@ -5046,27 +5189,38 @@ async function saveWorkspaceIntegration(kind) {
   let payload = {};
   if (kind === 'inbox') {
     payload = {
+      provider: document.getElementById('settings-workspace-inbox-provider')?.value || 'preview-inbox',
       inboxAddress: document.getElementById('settings-workspace-inbox-address')?.value?.trim() || '',
       supportAliases: (document.getElementById('settings-workspace-inbox-aliases')?.value || '')
         .split(',')
         .map(v => v.trim())
         .filter(Boolean),
+      imapHost: document.getElementById('settings-workspace-inbox-imap-host')?.value?.trim() || '',
+      imapPort: parseOptionalInt(document.getElementById('settings-workspace-inbox-imap-port')?.value || '993'),
+      imapSecure: !!document.getElementById('settings-workspace-inbox-imap-secure')?.checked,
+      imapUsername: document.getElementById('settings-workspace-inbox-imap-username')?.value?.trim() || '',
+      imapPassword: document.getElementById('settings-workspace-inbox-imap-password')?.value || '',
+      imapMailbox: document.getElementById('settings-workspace-inbox-imap-mailbox')?.value?.trim() || '',
       syncMode: document.getElementById('settings-workspace-inbox-sync-mode')?.value || 'hourly',
       syncIntervalHours: parseOptionalInt(document.getElementById('settings-workspace-inbox-interval')?.value || '4'),
       automationEnabled: !!document.getElementById('settings-workspace-inbox-automation-enabled')?.checked
     };
   } else if (kind === 'calendar') {
     payload = {
+      provider: document.getElementById('settings-workspace-calendar-provider')?.value || 'preview-calendar',
       calendarLabel: document.getElementById('settings-workspace-calendar-label')?.value?.trim() || '',
       calendarId: document.getElementById('settings-workspace-calendar-id')?.value?.trim() || '',
+      icsUrl: document.getElementById('settings-workspace-calendar-ics-url')?.value?.trim() || '',
       syncMode: document.getElementById('settings-workspace-calendar-sync-mode')?.value || 'daily',
       syncIntervalHours: parseOptionalInt(document.getElementById('settings-workspace-calendar-interval')?.value || '12'),
       automationEnabled: !!document.getElementById('settings-workspace-calendar-automation-enabled')?.checked
     };
   } else if (kind === 'accounting') {
     payload = {
+      provider: document.getElementById('settings-workspace-accounting-provider')?.value || 'preview-ledger',
       accountLabel: document.getElementById('settings-workspace-accounting-label')?.value?.trim() || '',
       accountExternalId: document.getElementById('settings-workspace-accounting-id')?.value?.trim() || '',
+      useBusinessStripeAccount: !!document.getElementById('settings-workspace-accounting-use-business-stripe')?.checked,
       syncMode: document.getElementById('settings-workspace-accounting-sync-mode')?.value || 'derived',
       syncIntervalHours: parseOptionalInt(document.getElementById('settings-workspace-accounting-interval')?.value || '24'),
       automationEnabled: !!document.getElementById('settings-workspace-accounting-automation-enabled')?.checked
@@ -5079,6 +5233,60 @@ async function saveWorkspaceIntegration(kind) {
     await loadDashboard();
   } catch (err) {
     showToast(`${titleCase(kind)} settings failed: ${err.message}`);
+  }
+}
+
+async function saveDeploymentSettings() {
+  if (!state.activeBiz) return;
+  try {
+    await PATCH(`/businesses/${state.activeBiz.id}/infrastructure/deployment`, {
+      provider: document.getElementById('settings-deployment-provider')?.value || 'track-only',
+      targetUrl: document.getElementById('settings-deployment-target-url')?.value?.trim() || '',
+      smokePath: document.getElementById('settings-deployment-smoke-path')?.value?.trim() || '/',
+      repoUrl: document.getElementById('settings-deployment-repo-url')?.value?.trim() || '',
+      gitBranch: document.getElementById('settings-deployment-branch')?.value?.trim() || 'main',
+      buildCommand: document.getElementById('settings-deployment-build-command')?.value?.trim() || '',
+      outputDirectory: document.getElementById('settings-deployment-output-directory')?.value?.trim() || '',
+      releaseChannel: document.getElementById('settings-deployment-release-channel')?.value?.trim() || 'production',
+      autoReleaseEnabled: !!document.getElementById('settings-deployment-auto-release')?.checked
+    });
+    showToast('Deployment controls saved');
+    await loadDashboard();
+    activateDashboardPage('settings');
+  } catch (err) {
+    showToast(`Deployment update failed: ${err.message}`);
+  }
+}
+
+async function runDeploymentSmokeCheck() {
+  if (!state.activeBiz) return;
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/infrastructure/deployment/smoke`, {
+      path: document.getElementById('settings-deployment-smoke-path')?.value?.trim() || '/'
+    });
+    showToast('Deployment smoke check finished');
+    await loadDashboard();
+    activateDashboardPage('settings');
+  } catch (err) {
+    showToast(`Smoke check failed: ${err.message}`);
+  }
+}
+
+async function logDeploymentRelease() {
+  if (!state.activeBiz) return;
+  const versionNote = prompt('Release note for this deployment log:') || '';
+  if (!versionNote.trim()) return;
+
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/infrastructure/deployment/release`, {
+      versionNote,
+      runSmokeCheck: true
+    });
+    showToast('Deployment release logged');
+    await loadDashboard();
+    activateDashboardPage('settings');
+  } catch (err) {
+    showToast(`Release log failed: ${err.message}`);
   }
 }
 

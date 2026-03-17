@@ -313,6 +313,19 @@ function mergeIntegrationSpec(spec, existing) {
     };
   }
 
+  if (['inbox', 'calendar', 'accounting'].includes(spec.kind)) {
+    return {
+      ...spec,
+      provider: existing.provider || spec.provider,
+      status: existing.status || spec.status,
+      config: {
+        ...(spec.config || {}),
+        ...(existing.config || {})
+      },
+      secrets: existing.secrets || {}
+    };
+  }
+
   return {
     ...spec,
     provider: spec.provider,

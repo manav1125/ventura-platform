@@ -1,6 +1,11 @@
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db/migrate.js';
 import { getIntegration, upsertIntegration } from './registry.js';
+import {
+  loadAccountingProviderRecords,
+  loadCalendarProviderRecords,
+  loadInboxProviderRecords
+} from './workspace-connectors.js';
 
 export const WORKSPACE_KINDS = ['inbox', 'calendar', 'accounting'];
 const DEFAULT_SYNC_INTERVAL_HOURS = {
@@ -45,6 +50,17 @@ function hoursAgo(hours) {
   return new Date(Date.now() - (hours * 60 * 60 * 1000)).toISOString();
 }
 
+function providerHost(value) {
+  const raw = cleanString(value);
+  if (!raw) return null;
+
+  try {
+    return new URL(raw).host || null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeSyncMode(kind, value) {
   const raw = cleanString(value).toLowerCase();
   if (!raw) {
@@ -64,41 +80,68 @@ function clampSyncInterval(value, fallback) {
   return Math.min(168, Math.max(1, parseInteger(value, fallback)));
 }
 
+function clampPort(value, fallback) {
+  return Math.min(65535, Math.max(1, parseInteger(value, fallback)));
+}
+
 function isDueAt(timestamp) {
   return !!timestamp && new Date(timestamp).getTime() <= Date.now();
 }
 
-function normalizeInboxConfig(config = {}) {
+function normalizeInboxConfig(config = {}, secrets = {}) {
   const inboxAddress = cleanString(config.inbox_address || config.inboxAddress || config.address);
-  const provider = cleanString(config.provider) || (inboxAddress ? 'business-inbox' : 'preview-inbox');
+  const imapHost = cleanString(config.imap_host || config.imapHost);
+  const imapUsername = cleanString(config.imap_username || config.imapUsername);
+  const imapPasswordSaved = !!cleanString(secrets.imap_password);
+  const provider = cleanString(config.provider)
+    || ((imapHost || imapUsername || imapPasswordSaved) ? 'imap' : 'preview-inbox');
   const supportAliases = toStringArray(config.support_aliases || config.supportAliases);
-  const connected = !!(config.connected || inboxAddress);
+  const usesImap = provider === 'imap';
+  const connected = usesImap
+    ? !!(imapHost && imapUsername && imapPasswordSaved)
+    : !!(config.connected || inboxAddress);
   const syncMode = normalizeSyncMode('inbox', config.sync_mode || config.syncMode);
   const syncIntervalHours = clampSyncInterval(
     config.sync_interval_hours || config.syncIntervalHours,
     getDefaultSyncInterval('inbox')
   );
+  const partialImap = !!(imapHost || imapUsername || imapPasswordSaved);
   return {
     provider,
-    status: connected ? 'connected' : 'preview',
+    status: usesImap
+      ? (connected ? 'connected' : (partialImap ? 'configured' : 'preview'))
+      : (connected ? 'configured' : 'preview'),
     config: {
       connected,
       inbox_address: inboxAddress || null,
       support_aliases: supportAliases,
       owner_email: cleanString(config.owner_email || config.ownerEmail) || null,
+      imap_host: imapHost || null,
+      imap_port: clampPort(config.imap_port || config.imapPort, 993),
+      imap_secure: config.imap_secure !== false && config.imapSecure !== false,
+      imap_username: imapUsername || null,
+      imap_mailbox: cleanString(config.imap_mailbox || config.imapMailbox) || 'INBOX',
+      imap_password_saved: imapPasswordSaved,
       sync_mode: syncMode,
       sync_interval_hours: syncIntervalHours,
       automation_enabled: config.automation_enabled !== false && config.automationEnabled !== false,
       last_message_at: cleanString(config.last_message_at || config.lastMessageAt) || null,
-      preview: !connected
+      last_sync_error: cleanString(config.last_sync_error || config.lastSyncError) || null,
+      preview: !usesImap
+    },
+    secrets: {
+      imap_password: cleanString(secrets.imap_password) || ''
     }
   };
 }
 
-function normalizeCalendarConfig(config = {}) {
-  const provider = cleanString(config.provider) || (cleanString(config.calendar_id || config.calendarId) ? 'business-calendar' : 'preview-calendar');
+function normalizeCalendarConfig(config = {}, secrets = {}) {
+  const icsUrl = cleanString(secrets.ics_url);
+  const provider = cleanString(config.provider) || (icsUrl ? 'ics' : 'preview-calendar');
   const calendarId = cleanString(config.calendar_id || config.calendarId);
-  const connected = !!(config.connected || calendarId);
+  const connected = provider === 'ics'
+    ? !!icsUrl
+    : !!(config.connected || calendarId);
   const syncMode = normalizeSyncMode('calendar', config.sync_mode || config.syncMode);
   const syncIntervalHours = clampSyncInterval(
     config.sync_interval_hours || config.syncIntervalHours,
@@ -106,7 +149,9 @@ function normalizeCalendarConfig(config = {}) {
   );
   return {
     provider,
-    status: connected ? 'connected' : 'preview',
+    status: provider === 'ics'
+      ? (connected ? 'connected' : 'configured')
+      : (connected ? 'configured' : 'preview'),
     config: {
       connected,
       calendar_id: calendarId || null,
@@ -116,15 +161,26 @@ function normalizeCalendarConfig(config = {}) {
       sync_interval_hours: syncIntervalHours,
       automation_enabled: config.automation_enabled !== false && config.automationEnabled !== false,
       calendar_label: cleanString(config.calendar_label || config.calendarLabel) || null,
-      preview: !connected
+      ics_url_saved: !!icsUrl,
+      ics_feed_host: providerHost(icsUrl),
+      last_sync_error: cleanString(config.last_sync_error || config.lastSyncError) || null,
+      preview: provider !== 'ics'
+    },
+    secrets: {
+      ics_url: icsUrl || ''
     }
   };
 }
 
-function normalizeAccountingConfig(config = {}) {
-  const provider = cleanString(config.provider) || (cleanString(config.account_external_id || config.accountExternalId) ? 'business-ledger' : 'preview-ledger');
+function normalizeAccountingConfig(config = {}, secrets = {}) {
+  void secrets;
+  const provider = cleanString(config.provider)
+    || (cleanString(config.account_external_id || config.accountExternalId) ? 'stripe' : 'preview-ledger');
   const externalId = cleanString(config.account_external_id || config.accountExternalId);
-  const connected = !!(config.connected || externalId || cleanString(config.account_label || config.accountLabel));
+  const usesBusinessStripeAccount = config.use_business_stripe_account !== false && config.useBusinessStripeAccount !== false;
+  const connected = provider === 'stripe'
+    ? true
+    : !!(config.connected || externalId || cleanString(config.account_label || config.accountLabel));
   const syncMode = normalizeSyncMode('accounting', config.sync_mode || config.syncMode);
   const syncIntervalHours = clampSyncInterval(
     config.sync_interval_hours || config.syncIntervalHours,
@@ -132,25 +188,30 @@ function normalizeAccountingConfig(config = {}) {
   );
   return {
     provider,
-    status: connected ? 'configured' : 'preview',
+    status: provider === 'stripe'
+      ? 'configured'
+      : (connected ? 'configured' : 'preview'),
     config: {
       connected,
       account_external_id: externalId || null,
       account_label: cleanString(config.account_label || config.accountLabel) || null,
       currency: cleanString(config.currency) || 'usd',
+      use_business_stripe_account: usesBusinessStripeAccount,
       sync_mode: syncMode,
       sync_interval_hours: syncIntervalHours,
       automation_enabled: config.automation_enabled !== false && config.automationEnabled !== false,
       owner_email: cleanString(config.owner_email || config.ownerEmail) || null,
-      preview: !connected
-    }
+      last_sync_error: cleanString(config.last_sync_error || config.lastSyncError) || null,
+      preview: provider !== 'stripe'
+    },
+    secrets: {}
   };
 }
 
-function normalizeWorkspaceIntegration(kind, updates = {}) {
-  if (kind === 'inbox') return normalizeInboxConfig(updates);
-  if (kind === 'calendar') return normalizeCalendarConfig(updates);
-  if (kind === 'accounting') return normalizeAccountingConfig(updates);
+function normalizeWorkspaceIntegration(kind, updates = {}, secrets = {}) {
+  if (kind === 'inbox') return normalizeInboxConfig(updates, secrets);
+  if (kind === 'calendar') return normalizeCalendarConfig(updates, secrets);
+  if (kind === 'accounting') return normalizeAccountingConfig(updates, secrets);
   throw new Error(`Unsupported workspace integration: ${kind}`);
 }
 
@@ -231,12 +292,26 @@ export function getWorkspaceSyncPlan(businessId) {
   });
 }
 
-export function saveWorkspaceIntegrationSettings({ businessId, kind, updates = {} }) {
+export function saveWorkspaceIntegrationSettings({
+  businessId,
+  kind,
+  updates = {},
+  secretUpdates = {}
+}) {
   const existing = getIntegration(businessId, kind, { includeSecrets: true });
+  const nextSecrets = {
+    ...(existing?.secrets || {}),
+    ...(kind === 'inbox' && cleanString(secretUpdates.imapPassword || secretUpdates.imap_password)
+      ? { imap_password: cleanString(secretUpdates.imapPassword || secretUpdates.imap_password) }
+      : {}),
+    ...(kind === 'calendar' && cleanString(secretUpdates.icsUrl || secretUpdates.ics_url)
+      ? { ics_url: cleanString(secretUpdates.icsUrl || secretUpdates.ics_url) }
+      : {})
+  };
   const normalized = normalizeWorkspaceIntegration(kind, {
     ...(existing?.config || {}),
     ...updates
-  });
+  }, nextSecrets);
 
   upsertIntegration({
     businessId,
@@ -244,7 +319,7 @@ export function saveWorkspaceIntegrationSettings({ businessId, kind, updates = {
     provider: normalized.provider,
     status: normalized.status,
     config: normalized.config,
-    secrets: existing?.secrets || {},
+    secrets: normalized.secrets,
     lastSyncAt: existing?.last_sync_at || null
   });
 
@@ -594,7 +669,8 @@ export function getWorkspaceSnapshot(businessId) {
       posted_entries: accounting.filter(item => item.status === 'posted').length,
       pending_entries: accounting.filter(item => item.status === 'pending').length,
       last_sync_at: syncRuns[0]?.completed_at || syncRuns[0]?.created_at || null,
-      due_syncs: syncPlan.filter(item => item.due && item.mode !== 'manual').length
+      due_syncs: syncPlan.filter(item => item.due && item.mode !== 'manual').length,
+      failed_syncs: syncRuns.filter(item => item.status === 'failed').length
     },
     inbox,
     calendar,
@@ -626,7 +702,44 @@ export function getWorkspacePromptContext(businessId) {
   };
 }
 
-export function syncWorkspaceData({
+async function loadRecordsForKind(kind, business, integration) {
+  const fallback = () => recordsForKind(kind, business, integration);
+
+  if (kind === 'inbox') {
+    return loadInboxProviderRecords({ business, integration, fallback });
+  }
+  if (kind === 'calendar') {
+    return loadCalendarProviderRecords({ business, integration, fallback });
+  }
+  if (kind === 'accounting') {
+    return loadAccountingProviderRecords({ business, integration, fallback });
+  }
+  return fallback();
+}
+
+function successStatusForIntegration(kind, integration) {
+  if (kind === 'inbox' && integration.provider === 'imap') return 'connected';
+  if (kind === 'calendar' && integration.provider === 'ics') return 'connected';
+  if (kind === 'accounting' && integration.provider === 'stripe') return 'connected';
+  return integration.status || 'preview';
+}
+
+function failureStatusForIntegration(kind, integration) {
+  if (kind === 'inbox' && integration.provider === 'imap') return 'configured';
+  if (kind === 'calendar' && integration.provider === 'ics') return 'configured';
+  if (kind === 'accounting' && integration.provider === 'stripe') return 'configured';
+  return integration.status || 'preview';
+}
+
+function isConnectedProvider(kind, provider) {
+  return (
+    (kind === 'inbox' && provider === 'imap')
+    || (kind === 'calendar' && provider === 'ics')
+    || (kind === 'accounting' && provider === 'stripe')
+  );
+}
+
+export async function syncWorkspaceData({
   business,
   kinds = WORKSPACE_KINDS,
   triggeredBy = 'founder',
@@ -636,8 +749,11 @@ export function syncWorkspaceData({
   const results = [];
 
   for (const kind of normalizedKinds) {
-    const existing = getIntegration(business.id, kind, { includeSecrets: true });
-    const integration = existing || saveWorkspaceIntegrationSettings({ businessId: business.id, kind, updates: {} });
+    let integration = getIntegration(business.id, kind, { includeSecrets: true });
+    if (!integration) {
+      saveWorkspaceIntegrationSettings({ businessId: business.id, kind, updates: {} });
+      integration = getIntegration(business.id, kind, { includeSecrets: true });
+    }
     const schedule = getSyncStatus(kind, integration);
 
     if (respectSchedule && !schedule.due) {
@@ -659,7 +775,9 @@ export function syncWorkspaceData({
     });
 
     try {
-      const records = recordsForKind(kind, business, integration);
+      const records = await loadRecordsForKind(kind, business, integration);
+      const syncedAt = nowIso();
+      const nextSyncAt = computeNextSyncAt(kind, integration.config || {}, new Date());
       for (const record of records) {
         upsertWorkspaceRecord({
           businessId: business.id,
@@ -673,15 +791,18 @@ export function syncWorkspaceData({
         businessId: business.id,
         kind,
         provider: integration.provider,
-        status: integration.status,
+        status: successStatusForIntegration(kind, integration),
         config: {
           ...(integration.config || {}),
-          last_synced_at: nowIso(),
+          connected: isConnectedProvider(kind, integration.provider),
+          last_synced_at: syncedAt,
           items_synced: records.length,
-          next_sync_at: computeNextSyncAt(kind, integration.config || {}, new Date())
+          next_sync_at: nextSyncAt,
+          last_sync_error: null,
+          last_sync_error_at: null
         },
         secrets: integration.secrets || {},
-        lastSyncAt: nowIso()
+        lastSyncAt: syncedAt
       });
 
       finishSyncRun(runId, {
@@ -695,9 +816,23 @@ export function syncWorkspaceData({
         provider: integration.provider,
         items_synced: records.length,
         status: 'complete',
-        next_sync_at: computeNextSyncAt(kind, integration.config || {}, new Date())
+        next_sync_at: nextSyncAt
       });
     } catch (err) {
+      const failedAt = nowIso();
+      upsertIntegration({
+        businessId: business.id,
+        kind,
+        provider: integration.provider,
+        status: failureStatusForIntegration(kind, integration),
+        config: {
+          ...(integration.config || {}),
+          last_sync_error: err.message,
+          last_sync_error_at: failedAt
+        },
+        secrets: integration.secrets || {},
+        lastSyncAt: integration.last_sync_at || null
+      });
       finishSyncRun(runId, {
         status: 'failed',
         summary: `${kind} sync failed`,

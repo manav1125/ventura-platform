@@ -779,8 +779,48 @@ describe('Control center', () => {
     assert.ok(body.readiness);
     assert.ok(Array.isArray(body.readiness.providers));
     assert.ok(body.assets.find(asset => asset.kind === 'domain'));
+    assert.ok(body.assets.find(asset => asset.kind === 'deployment'));
     assert.ok(body.assets.find(asset => asset.kind === 'mailbox'));
     assert.ok(body.assets.find(asset => asset.kind === 'analytics'));
+  });
+
+  it('stores workspace provider secrets without leaking them', async () => {
+    const inbox = await PATCH(`/api/businesses/${bizId}/integrations/workspace/inbox`, {
+      provider: 'imap',
+      inboxAddress: 'support@testsaas.dev',
+      imapHost: 'imap.testsaas.dev',
+      imapPort: 993,
+      imapSecure: true,
+      imapUsername: 'support@testsaas.dev',
+      imapPassword: 'app-password-123',
+      imapMailbox: 'INBOX',
+      syncMode: 'hourly'
+    }, tokens.access);
+    assert.equal(inbox.status, 200);
+    assert.equal(inbox.body.integration.provider, 'imap');
+    assert.equal(inbox.body.integration.config.imap_host, 'imap.testsaas.dev');
+    assert.equal(inbox.body.integration.config.imap_password_saved, true);
+    assert.ok(!Object.prototype.hasOwnProperty.call(inbox.body.integration, 'secrets'));
+
+    const calendar = await PATCH(`/api/businesses/${bizId}/integrations/workspace/calendar`, {
+      provider: 'ics',
+      calendarLabel: 'Founder ops calendar',
+      icsUrl: 'https://calendar.testsaas.dev/private.ics',
+      syncMode: 'daily'
+    }, tokens.access);
+    assert.equal(calendar.status, 200);
+    assert.equal(calendar.body.integration.provider, 'ics');
+    assert.equal(calendar.body.integration.config.ics_url_saved, true);
+    assert.equal(calendar.body.integration.config.ics_feed_host, 'calendar.testsaas.dev');
+    assert.ok(!('ics_url' in calendar.body.integration.config));
+
+    const workspace = await GET(`/api/businesses/${bizId}/workspace`, tokens.access);
+    assert.equal(workspace.status, 200);
+    const savedInbox = workspace.body.integrations.find(item => item.kind === 'inbox');
+    const savedCalendar = workspace.body.integrations.find(item => item.kind === 'calendar');
+    assert.equal(savedInbox.config.imap_password_saved, true);
+    assert.equal(savedCalendar.config.ics_url_saved, true);
+    assert.ok(!Object.prototype.hasOwnProperty.call(savedInbox, 'secrets'));
   });
 
   it('saves and verifies a custom domain plan', async () => {
@@ -824,6 +864,38 @@ describe('Control center', () => {
     assert.equal(tested.body.preview, true);
     assert.equal(tested.body.target, 'alerts@testsaas.dev');
     assert.equal(tested.body.asset.checks.last_test_status, 'success');
+  });
+
+  it('updates deployment controls, logs a release, and records a smoke check', async () => {
+    const saved = await PATCH(`/api/businesses/${bizId}/infrastructure/deployment`, {
+      provider: 'track-only',
+      targetUrl: 'https://app.testsaas.dev',
+      smokePath: '/health',
+      repoUrl: 'https://github.com/example/testsaas',
+      gitBranch: 'main',
+      buildCommand: 'npm run build',
+      outputDirectory: 'ventura'
+    }, tokens.access);
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.asset.kind, 'deployment');
+    assert.equal(saved.body.asset.config.target_url, 'https://app.testsaas.dev');
+    assert.equal(saved.body.asset.status, 'configured');
+
+    const release = await POST(`/api/businesses/${bizId}/infrastructure/deployment/release`, {
+      versionNote: 'Ship founder inbox improvements',
+      filesChanged: 4
+    }, tokens.access);
+    assert.equal(release.status, 200);
+    assert.ok(release.body.deployment.version);
+    assert.equal(release.body.asset.checks.last_release_note, 'Ship founder inbox improvements');
+
+    const smoke = await POST(`/api/businesses/${bizId}/infrastructure/deployment/smoke`, {
+      path: '/health'
+    }, tokens.access);
+    assert.equal(smoke.status, 200);
+    assert.equal(smoke.body.preview, true);
+    assert.equal(smoke.body.asset.checks.last_smoke_status, 'success');
+    assert.equal(smoke.body.asset.config.smoke_path, '/health');
   });
 
   it('updates analytics settings and records a test event', async () => {
@@ -880,6 +952,7 @@ describe('Control center', () => {
 
   it('stores workspace sync settings and syncs inbox, calendar, and accounting context', async () => {
     const inbox = await PATCH(`/api/businesses/${bizId}/integrations/workspace/inbox`, {
+      provider: 'preview-inbox',
       inboxAddress: 'support@testsaas.dev',
       supportAliases: ['sales@testsaas.dev', 'success@testsaas.dev'],
       syncMode: 'hourly',
@@ -893,6 +966,7 @@ describe('Control center', () => {
     assert.equal(inbox.body.integration.config.sync_interval_hours, 6);
 
     const calendar = await PATCH(`/api/businesses/${bizId}/integrations/workspace/calendar`, {
+      provider: 'preview-calendar',
       calendarLabel: 'Founder ops calendar',
       calendarId: 'primary',
       syncMode: 'daily',
@@ -905,6 +979,7 @@ describe('Control center', () => {
     assert.equal(calendar.body.integration.config.sync_mode, 'daily');
 
     const accounting = await PATCH(`/api/businesses/${bizId}/integrations/workspace/accounting`, {
+      provider: 'preview-ledger',
       accountLabel: 'Main operating ledger',
       accountExternalId: 'ledger-001',
       syncMode: 'derived',

@@ -37,6 +37,11 @@ function normalizeExternalId(value) {
     .replace(/^-+|-+$/g, '') || 'workspace-item';
 }
 
+function timestampMs(value) {
+  const ts = value ? new Date(value).getTime() : Number.NaN;
+  return Number.isFinite(ts) ? ts : null;
+}
+
 function buildFingerprint(record) {
   return JSON.stringify({
     status: record.status || null,
@@ -234,33 +239,107 @@ function upsertAction({
 }
 
 function buildInboxAction(record, business) {
+  const source = cleanString(record.metadata?.source || record.payload?.thread_state).toLowerCase();
+  const mapping = source.includes('investor')
+    ? {
+        actionKey: 'investor-reply',
+        department: 'strategy',
+        priority: 4,
+        prefix: 'Reply to investor thread',
+        objective: 'stabilize the relationship, answer the request clearly, and surface any founder-sensitive risk immediately.'
+      }
+    : source.includes('lead') || source.includes('prospect') || source.includes('sales')
+      ? {
+          actionKey: 'lead-follow-up',
+          department: 'sales',
+          priority: 4,
+          prefix: 'Reply to high-intent lead',
+          objective: 'move the buyer toward a demo, trial, or close while capturing any objections for the founder.'
+        }
+      : source.includes('customer')
+        ? {
+            actionKey: 'customer-follow-up',
+            department: 'operations',
+            priority: 3,
+            prefix: 'Resolve customer inbox thread',
+            objective: 'unblock the customer, preserve trust, and decide whether the founder needs to step in.'
+          }
+        : {
+            actionKey: 'reply',
+            department: 'operations',
+            priority: 2,
+            prefix: 'Reply to inbox thread',
+            objective: 'send the highest leverage reply, resolve the blocker, and update the founder on any risk or follow-up.'
+          };
+
   return {
-    actionKey: 'reply',
-    department: 'operations',
-    priority: 2,
-    workflowKey: `workspace.inbox.${normalizeExternalId(record.external_id || record.id)}.reply`,
-    title: `Reply to inbox thread: ${record.title}`,
+    actionKey: mapping.actionKey,
+    department: mapping.department,
+    priority: mapping.priority,
+    workflowKey: `workspace.inbox.${normalizeExternalId(record.external_id || record.id)}.${mapping.actionKey}`,
+    title: `${mapping.prefix}: ${record.title}`,
     description: [
       `Source thread: ${record.title}`,
       record.summary,
       `Business: ${business.name}`,
-      'Objective: send the highest leverage reply, resolve the blocker, and update the founder on any risk or follow-up.'
+      `Current thread state: ${record.payload?.thread_state || record.status || 'open'}`,
+      `Objective: ${mapping.objective}`
     ].filter(Boolean).join('\n\n')
   };
 }
 
 function buildCalendarAction(record, business) {
   const meetingType = cleanString(record.metadata?.type) || 'meeting';
+  const startsAt = timestampMs(record.payload?.starts_at || record.occurred_at);
+  const endsAt = timestampMs(record.payload?.ends_at) || startsAt;
+  const now = Date.now();
+  const completedRecently = endsAt && endsAt <= now && endsAt >= now - (8 * 60 * 60 * 1000);
   const mapping = meetingType === 'sales_demo'
-    ? { department: 'sales', actionKey: 'demo-brief', prefix: 'Prepare for sales demo' }
+    ? (completedRecently
+      ? {
+          department: 'sales',
+          actionKey: 'demo-follow-up',
+          prefix: 'Send demo follow-up',
+          objective: 'capture next steps, draft the follow-up sequence, and push the opportunity forward while the context is fresh.'
+        }
+      : {
+          department: 'sales',
+          actionKey: 'demo-brief',
+          prefix: 'Prepare for sales demo',
+          objective: 'gather account context, objections, and the best path to a strong live demo.'
+        })
     : meetingType === 'launch'
-      ? { department: 'engineering', actionKey: 'launch-prep', prefix: 'Prepare launch checklist' }
-      : { department: 'strategy', actionKey: 'meeting-brief', prefix: 'Prepare founder brief' };
+      ? (completedRecently
+        ? {
+            department: 'engineering',
+            actionKey: 'launch-retro',
+            prefix: 'Review launch outcome',
+            objective: 'capture launch results, remaining incidents, and the follow-up backlog.'
+          }
+        : {
+            department: 'engineering',
+            actionKey: 'launch-prep',
+            prefix: 'Prepare launch checklist',
+            objective: 'gather dependencies, release risks, and the exact checklist before the launch window begins.'
+          })
+      : (completedRecently
+        ? {
+            department: 'strategy',
+            actionKey: 'meeting-follow-up',
+            prefix: 'Capture founder follow-up',
+            objective: 'turn the meeting into concrete actions, owner assignments, and any founder notes that should persist.'
+          }
+        : {
+            department: 'strategy',
+            actionKey: 'meeting-brief',
+            prefix: 'Prepare founder brief',
+            objective: 'gather context, identify prep work, and leave the founder with a concise execution brief.'
+          });
 
   return {
     actionKey: mapping.actionKey,
     department: mapping.department,
-    priority: 3,
+    priority: completedRecently ? 4 : 3,
     workflowKey: `workspace.calendar.${normalizeExternalId(record.external_id || record.id)}.${mapping.actionKey}`,
     title: `${mapping.prefix}: ${record.title}`,
     description: [
@@ -268,25 +347,52 @@ function buildCalendarAction(record, business) {
       record.summary,
       `Business: ${business.name}`,
       `Starts at: ${record.payload?.starts_at || record.occurred_at || 'scheduled soon'}`,
-      'Objective: gather context, identify prep work, and leave the founder with a concise execution brief.'
+      record.payload?.ends_at ? `Ends at: ${record.payload.ends_at}` : null,
+      `Objective: ${mapping.objective}`
     ].filter(Boolean).join('\n\n')
   };
 }
 
 function buildAccountingAction(record, business) {
   const amount = Number(record.metadata?.amount_cents || record.payload?.amount_cents || 0);
+  const direction = cleanString(record.payload?.direction).toLowerCase();
+  const category = cleanString(record.metadata?.category).toLowerCase();
+  const mapping = direction === 'expense'
+    ? {
+        actionKey: 'expense-review',
+        prefix: 'Review expense outflow',
+        objective: 'confirm the expense is legitimate, categorize it correctly, and flag anything that threatens runway.'
+      }
+    : amount >= 100000
+      ? {
+          actionKey: 'large-payment-review',
+          prefix: 'Review large incoming payment',
+          objective: 'verify the transaction, route any follow-up, and update the founder on the revenue impact.'
+        }
+      : category === 'revenue_share'
+        ? {
+            actionKey: 'revenue-share-check',
+            prefix: 'Confirm revenue share accrual',
+            objective: 'verify the platform share math and confirm the founder-facing revenue picture stays accurate.'
+          }
+        : {
+            actionKey: 'reconcile',
+            prefix: 'Reconcile ledger item',
+            objective: 'reconcile the entry, determine whether founder review is required, and update the revenue picture.'
+          };
   return {
-    actionKey: 'reconcile',
+    actionKey: mapping.actionKey,
     department: 'finance',
-    priority: 2,
-    workflowKey: `workspace.accounting.${normalizeExternalId(record.external_id || record.id)}.reconcile`,
-    title: `Reconcile ledger item: ${record.title}`,
+    priority: amount >= 100000 ? 4 : 2,
+    workflowKey: `workspace.accounting.${normalizeExternalId(record.external_id || record.id)}.${mapping.actionKey}`,
+    title: `${mapping.prefix}: ${record.title}`,
     description: [
       `Ledger item: ${record.title}`,
       record.summary,
       amount ? `Amount: ${(amount / 100).toFixed(2)} ${(record.metadata?.currency || 'usd').toUpperCase()}` : null,
       `Business: ${business.name}`,
-      'Objective: reconcile the entry, determine whether founder review is required, and update the revenue picture.'
+      `Direction: ${direction || 'unknown'}`,
+      `Objective: ${mapping.objective}`
     ].filter(Boolean).join('\n\n')
   };
 }
@@ -301,9 +407,11 @@ function selectCandidates(kind, workspace, policy) {
   if (kind === 'calendar') {
     const now = Date.now();
     return workspace.calendar
-      .filter(item => ['upcoming', 'draft'].includes(item.status))
+      .filter(item => ['upcoming', 'draft'].includes(item.status) || !!timestampMs(item.payload?.ends_at))
       .filter(item => {
         const startsAt = item.payload?.starts_at ? new Date(item.payload.starts_at).getTime() : null;
+        const endsAt = item.payload?.ends_at ? new Date(item.payload.ends_at).getTime() : null;
+        if (endsAt && endsAt <= now && endsAt >= now - (8 * 60 * 60 * 1000)) return true;
         if (!startsAt) return true;
         return startsAt <= now + (policy.prep_window_hours * 60 * 60 * 1000);
       })
@@ -312,7 +420,7 @@ function selectCandidates(kind, workspace, policy) {
 
   if (kind === 'accounting') {
     return workspace.accounting
-      .filter(item => item.status === 'pending')
+      .filter(item => item.status === 'pending' || cleanString(item.metadata?.category).toLowerCase() === 'revenue_share')
       .slice(0, policy.max_items);
   }
 

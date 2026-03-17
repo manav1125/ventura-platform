@@ -5,6 +5,7 @@ import {
   BRAVE_SEARCH_API_KEY,
   LINKEDIN_CLIENT_ID,
   LINKEDIN_CLIENT_SECRET,
+  NODE_ENV,
   PLATFORM_DOMAIN,
   SMTP_FROM,
   SMTP_HOST,
@@ -22,8 +23,9 @@ import { getIntegration, upsertIntegration } from '../integrations/registry.js';
 
 const ASSET_ORDER = {
   domain: 0,
-  mailbox: 1,
-  analytics: 2
+  deployment: 1,
+  mailbox: 2,
+  analytics: 3
 };
 
 function parseJson(value, fallback = {}) {
@@ -37,6 +39,11 @@ function parseJson(value, fallback = {}) {
 
 function cleanString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function parseInteger(value, fallback = 0) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function normalizeDomain(value) {
@@ -233,15 +240,83 @@ function normalizeAnalyticsAsset(business, existing = null) {
   return { provider, status, config, checks };
 }
 
+function latestDeploymentForBusiness(businessId) {
+  if (!businessId) return null;
+  const db = getDb();
+  return db.prepare(`
+    SELECT version, description, status, created_at, files_changed
+    FROM deployments
+    WHERE business_id = ?
+    ORDER BY datetime(created_at) DESC
+    LIMIT 1
+  `).get(businessId) || null;
+}
+
+function normalizeDeploymentAsset(business, existing = null) {
+  const currentConfig = existing?.config || {};
+  const currentChecks = existing?.checks || {};
+  const latestDeployment = latestDeploymentForBusiness(business?.id);
+  const provider = cleanString(currentConfig.provider || existing?.provider)
+    || (VERCEL_TOKEN ? 'vercel-managed' : 'track-only');
+  const targetUrl = cleanString(currentConfig.target_url) || cleanString(business?.web_url) || null;
+  const smokePath = cleanString(currentConfig.smoke_path) || '/';
+  const repoUrl = cleanString(currentConfig.repo_url) || null;
+  const gitBranch = cleanString(currentConfig.git_branch) || 'main';
+  const buildCommand = cleanString(currentConfig.build_command) || 'npm run build';
+  const outputDirectory = cleanString(currentConfig.output_directory) || 'ventura';
+  const releaseChannel = cleanString(currentConfig.release_channel) || 'production';
+  const autoReleaseEnabled = currentConfig.auto_release_enabled !== false;
+
+  const config = {
+    provider,
+    target_url: targetUrl,
+    smoke_path: smokePath,
+    repo_url: repoUrl,
+    git_branch: gitBranch,
+    build_command: buildCommand,
+    output_directory: outputDirectory,
+    release_channel: releaseChannel,
+    auto_release_enabled: autoReleaseEnabled
+  };
+
+  const checks = {
+    last_release_version: cleanString(currentChecks.last_release_version) || latestDeployment?.version || null,
+    last_release_at: cleanString(currentChecks.last_release_at) || latestDeployment?.created_at || null,
+    last_release_status: cleanString(currentChecks.last_release_status) || latestDeployment?.status || null,
+    last_release_note: cleanString(currentChecks.last_release_note) || latestDeployment?.description || null,
+    last_release_files_changed: Number(currentChecks.last_release_files_changed ?? latestDeployment?.files_changed ?? 0),
+    last_smoke_status: cleanString(currentChecks.last_smoke_status) || null,
+    last_smoke_checked_at: cleanString(currentChecks.last_smoke_checked_at) || null,
+    last_smoke_url: cleanString(currentChecks.last_smoke_url) || null,
+    last_smoke_latency_ms: Number(currentChecks.last_smoke_latency_ms || 0) || null,
+    last_smoke_code: Number(currentChecks.last_smoke_code || 0) || null,
+    last_smoke_note: cleanString(currentChecks.last_smoke_note)
+      || (provider === 'track-only'
+        ? 'Ventura is tracking releases in preview mode. Add deploy provider credentials to run live smoke checks.'
+        : latestDeployment
+          ? 'Run a smoke check after a release to verify the live business site.'
+          : 'No release has been logged yet for this business.')
+  };
+
+  const status = checks.last_smoke_status === 'success'
+    ? 'connected'
+    : latestDeployment || repoUrl || targetUrl || provider !== 'track-only'
+      ? 'configured'
+      : 'preview';
+
+  return { provider, status, config, checks };
+}
+
 function normalizeAsset(kind, business, existing = null) {
   if (kind === 'domain') return normalizeDomainAsset(business, existing);
+  if (kind === 'deployment') return normalizeDeploymentAsset(business, existing);
   if (kind === 'mailbox') return normalizeMailboxAsset(business, existing);
   return normalizeAnalyticsAsset(business, existing);
 }
 
 function buildAssetList(business) {
   const existing = new Map(listInfrastructureAssets(business.id).map(asset => [asset.kind, asset]));
-  return ['domain', 'mailbox', 'analytics'].map(kind => {
+  return ['domain', 'deployment', 'mailbox', 'analytics'].map(kind => {
     const asset = normalizeAsset(kind, business, existing.get(kind));
     return { kind, ...asset };
   });
@@ -494,6 +569,157 @@ export function verifyDomainAsset(business, { dnsConfirmed = false } = {}) {
   return getInfrastructureAsset(business.id, 'domain');
 }
 
+export function updateDeploymentAsset(business, updates = {}) {
+  const current = getInfrastructureAsset(business.id, 'deployment') || normalizeAsset('deployment', business);
+  const next = normalizeDeploymentAsset(business, {
+    provider: cleanString(updates.provider ?? updates.deploymentProvider) || current.provider,
+    config: {
+      ...(current.config || {}),
+      provider: cleanString(updates.provider ?? updates.deploymentProvider) || current.config?.provider || current.provider,
+      target_url: cleanString(updates.targetUrl ?? updates.target_url) || current.config?.target_url || cleanString(business.web_url) || null,
+      smoke_path: cleanString(updates.smokePath ?? updates.smoke_path) || current.config?.smoke_path || '/',
+      repo_url: cleanString(updates.repoUrl ?? updates.repo_url) || current.config?.repo_url || null,
+      git_branch: cleanString(updates.gitBranch ?? updates.git_branch) || current.config?.git_branch || 'main',
+      build_command: cleanString(updates.buildCommand ?? updates.build_command) || current.config?.build_command || 'npm run build',
+      output_directory: cleanString(updates.outputDirectory ?? updates.output_directory) || current.config?.output_directory || 'ventura',
+      release_channel: cleanString(updates.releaseChannel ?? updates.release_channel) || current.config?.release_channel || 'production',
+      auto_release_enabled: updates.autoReleaseEnabled ?? updates.auto_release_enabled ?? current.config?.auto_release_enabled ?? true
+    },
+    checks: current.checks || {}
+  });
+
+  upsertInfrastructureAsset({
+    businessId: business.id,
+    kind: 'deployment',
+    provider: next.provider,
+    status: next.status,
+    config: next.config,
+    checks: next.checks,
+    lastCheckedAt: new Date().toISOString()
+  });
+
+  return getInfrastructureAsset(business.id, 'deployment');
+}
+
+export function recordDeploymentRelease(business, updates = {}) {
+  const current = getInfrastructureAsset(business.id, 'deployment') || syncInfrastructureAssets(business).find(asset => asset.kind === 'deployment');
+  const version = cleanString(updates.version) || `v${Date.now()}`;
+  const description = cleanString(updates.versionNote ?? updates.version_note) || 'Founder logged a production release';
+  const filesChanged = Math.max(0, parseInteger(updates.filesChanged ?? updates.files_changed, 0));
+  const createdAt = new Date().toISOString();
+  const id = `dep_${Date.now()}`;
+  const db = getDb();
+
+  db.prepare(`
+    INSERT INTO deployments (id, business_id, version, description, files_changed, status, created_at)
+    VALUES (?, ?, ?, ?, ?, 'live', ?)
+  `).run(id, business.id, version, description, filesChanged, createdAt);
+
+  const next = normalizeDeploymentAsset(business, {
+    provider: current?.provider,
+    config: current?.config || {},
+    checks: {
+      ...(current?.checks || {}),
+      last_release_version: version,
+      last_release_at: createdAt,
+      last_release_status: 'live',
+      last_release_note: description,
+      last_release_files_changed: filesChanged
+    }
+  });
+
+  upsertInfrastructureAsset({
+    businessId: business.id,
+    kind: 'deployment',
+    provider: next.provider,
+    status: next.status,
+    config: next.config,
+    checks: next.checks,
+    lastCheckedAt: createdAt
+  });
+
+  const deployment = db.prepare(`
+    SELECT *
+    FROM deployments
+    WHERE id = ?
+  `).get(id);
+
+  return {
+    deployment,
+    asset: getInfrastructureAsset(business.id, 'deployment')
+  };
+}
+
+export async function smokeTestDeploymentAsset(business, { path = '' } = {}) {
+  const current = getInfrastructureAsset(business.id, 'deployment') || syncInfrastructureAssets(business).find(asset => asset.kind === 'deployment');
+  if (!current?.config?.target_url && !business.web_url) {
+    throw Object.assign(new Error('Add a target URL before running a smoke check.'), { statusCode: 400 });
+  }
+
+  const smokeTarget = (() => {
+    try {
+      return new URL(cleanString(path) || current.config?.smoke_path || '/', current.config?.target_url || business.web_url).toString();
+    } catch {
+      return cleanString(current.config?.target_url || business.web_url);
+    }
+  })();
+
+  const startedAt = Date.now();
+  const preview = NODE_ENV === 'test' || current.provider === 'track-only';
+  let success = true;
+  let statusCode = null;
+  let note = preview
+    ? 'Smoke check recorded in preview mode. Ventura did not hit a live deployment target.'
+    : 'Smoke check passed.';
+
+  if (!preview) {
+    try {
+      const response = await fetch(smokeTarget, { method: 'GET', redirect: 'follow' });
+      statusCode = response.status;
+      success = response.ok;
+      note = response.ok
+        ? 'Smoke check passed against the live deployment target.'
+        : `Smoke check returned HTTP ${response.status}.`;
+    } catch (err) {
+      success = false;
+      note = err.message || 'Smoke check failed.';
+    }
+  }
+
+  const checkedAt = new Date().toISOString();
+  const next = normalizeDeploymentAsset(business, {
+    provider: current.provider,
+    config: current.config,
+    checks: {
+      ...(current.checks || {}),
+      last_smoke_status: success ? 'success' : 'failed',
+      last_smoke_checked_at: checkedAt,
+      last_smoke_url: smokeTarget,
+      last_smoke_latency_ms: Date.now() - startedAt,
+      last_smoke_code: statusCode,
+      last_smoke_note: note
+    }
+  });
+
+  upsertInfrastructureAsset({
+    businessId: business.id,
+    kind: 'deployment',
+    provider: next.provider,
+    status: next.status,
+    config: next.config,
+    checks: next.checks,
+    lastCheckedAt: checkedAt
+  });
+
+  return {
+    preview,
+    success,
+    target: smokeTarget,
+    statusCode,
+    asset: getInfrastructureAsset(business.id, 'deployment')
+  };
+}
+
 export function updateMailboxAsset(business, updates = {}) {
   const current = getInfrastructureAsset(business.id, 'mailbox') || normalizeAsset('mailbox', business);
   const next = normalizeMailboxAsset(business, {
@@ -663,6 +889,7 @@ function buildProviderReadiness(business, integrations = [], assets = []) {
   const accountingIntegration = integrations.find(item => item.kind === 'accounting');
   const socialConfig = socialIntegration?.config || {};
   const domainAsset = assets.find(asset => asset.kind === 'domain');
+  const deploymentAsset = assets.find(asset => asset.kind === 'deployment');
   const mailboxAsset = assets.find(asset => asset.kind === 'mailbox');
   const analyticsAsset = assets.find(asset => asset.kind === 'analytics');
 
@@ -686,6 +913,21 @@ function buildProviderReadiness(business, integrations = [], assets = []) {
         ? `Ventura can deploy and manage domains for ${cleanString(business?.name) || 'this business'}.`
         : 'Ventura is using the managed static fallback. Add VERCEL_TOKEN for automated deploys and domain APIs.',
       missing: VERCEL_TOKEN ? [] : ['VERCEL_TOKEN']
+    },
+    {
+      id: 'deployment_runtime',
+      label: 'Per-company deployment runtime',
+      status: deploymentAsset?.status || (VERCEL_TOKEN ? 'configured' : 'preview'),
+      configured: !!(deploymentAsset?.config?.target_url || deploymentAsset?.config?.repo_url || business?.web_url),
+      summary: deploymentAsset?.checks?.last_smoke_status === 'success'
+        ? 'Ventura has a passing smoke check against this company deployment target.'
+        : deploymentAsset?.checks?.last_release_at
+          ? 'A release has been logged for this business. Run a smoke check to validate the current live target.'
+          : VERCEL_TOKEN
+            ? 'Deploy provider credentials are available. Configure the per-business deployment target and smoke path.'
+            : 'Ventura is tracking deployment state in preview mode. Add deploy provider credentials for live release validation.',
+      missing: VERCEL_TOKEN || deploymentAsset?.config?.provider === 'track-only' ? [] : ['VERCEL_TOKEN'],
+      business_status: deploymentAsset?.status || 'preview'
     },
     {
       id: 'smtp',
@@ -764,33 +1006,49 @@ function buildProviderReadiness(business, integrations = [], assets = []) {
       id: 'inbox_sync',
       label: 'Business inbox sync',
       status: inboxIntegration?.status || 'preview',
-      configured: !!inboxIntegration?.config?.inbox_address,
-      summary: inboxIntegration?.config?.connected
-        ? 'Ventura can pull business-owned inbox threads into the operating loop.'
-        : 'Configure a business inbox address so Ventura can sync support and sales conversations.',
-      missing: inboxIntegration?.config?.connected ? [] : ['BUSINESS_INBOX_ADDRESS'],
+      configured: !!(inboxIntegration?.config?.inbox_address || inboxIntegration?.config?.imap_host),
+      summary: inboxIntegration?.provider === 'imap' && inboxIntegration?.config?.connected
+        ? 'Ventura can pull live business inbox threads through IMAP into the operating loop.'
+        : inboxIntegration?.provider === 'imap'
+          ? 'IMAP is selected, but the host, username, or password is still missing.'
+          : 'Configure a business inbox address or IMAP connection so Ventura can sync support and sales conversations.',
+      missing: inboxIntegration?.provider === 'imap'
+        ? [
+            ...(inboxIntegration?.config?.imap_host ? [] : ['IMAP_HOST']),
+            ...(inboxIntegration?.config?.imap_username ? [] : ['IMAP_USERNAME']),
+            ...(inboxIntegration?.config?.imap_password_saved ? [] : ['IMAP_PASSWORD'])
+          ]
+        : ['BUSINESS_INBOX_ADDRESS'],
       business_status: inboxIntegration?.status || 'preview'
     },
     {
       id: 'calendar_sync',
       label: 'Business calendar sync',
       status: calendarIntegration?.status || 'preview',
-      configured: !!calendarIntegration?.config?.calendar_id,
-      summary: calendarIntegration?.config?.connected
-        ? 'Upcoming meetings and launch windows are available to the autonomous loop.'
-        : 'Connect a company calendar so Ventura can factor meetings, demos, and deadlines into daily execution.',
-      missing: calendarIntegration?.config?.connected ? [] : ['BUSINESS_CALENDAR_ID'],
+      configured: !!(calendarIntegration?.config?.calendar_id || calendarIntegration?.config?.ics_url_saved),
+      summary: calendarIntegration?.provider === 'ics' && calendarIntegration?.config?.connected
+        ? 'Upcoming meetings and launch windows are flowing in from the live ICS feed.'
+        : calendarIntegration?.provider === 'ics'
+          ? 'ICS is selected, but the feed URL still needs to be saved.'
+          : 'Connect a company calendar so Ventura can factor meetings, demos, and deadlines into daily execution.',
+      missing: calendarIntegration?.provider === 'ics'
+        ? (calendarIntegration?.config?.ics_url_saved ? [] : ['ICS_URL'])
+        : ['BUSINESS_CALENDAR_ID'],
       business_status: calendarIntegration?.status || 'preview'
     },
     {
       id: 'accounting_sync',
       label: 'Accounting sync',
       status: accountingIntegration?.status || 'preview',
-      configured: !!(accountingIntegration?.config?.account_external_id || accountingIntegration?.config?.account_label),
-      summary: accountingIntegration?.config?.connected
-        ? 'Revenue, fees, and pending reconciliations are flowing into Ventura.'
-        : 'Add an accounting or ledger connection so Ventura can reason about cash movement and reconciliation.',
-      missing: accountingIntegration?.config?.connected ? [] : ['BUSINESS_ACCOUNT_LEDGER'],
+      configured: !!(accountingIntegration?.provider === 'stripe' || accountingIntegration?.config?.account_external_id || accountingIntegration?.config?.account_label),
+      summary: accountingIntegration?.provider === 'stripe'
+        ? 'Ventura can sync recent Stripe balance transactions into the finance loop.'
+        : accountingIntegration?.config?.connected
+          ? 'Revenue, fees, and pending reconciliations are flowing into Ventura.'
+          : 'Add an accounting or ledger connection so Ventura can reason about cash movement and reconciliation.',
+      missing: accountingIntegration?.provider === 'stripe'
+        ? []
+        : ['BUSINESS_ACCOUNT_LEDGER'],
       business_status: accountingIntegration?.status || 'preview'
     }
   ];
@@ -799,6 +1057,11 @@ function buildProviderReadiness(business, integrations = [], assets = []) {
     ...(domainAsset?.config?.custom_domain && domainAsset.status !== 'connected'
       ? ['Add the DNS records for the custom domain, then verify it in Ventura.']
       : []),
+    ...(!deploymentAsset?.checks?.last_release_at
+      ? ['Configure the deployment target and log the first release so Ventura can validate the live company surface.']
+      : deploymentAsset?.checks?.last_smoke_status === 'success'
+        ? []
+        : ['Run a deployment smoke check after each release so Ventura can validate the live business surface.']),
     ...(mailboxAsset?.status !== 'connected'
       ? ['Configure SMTP and send a mailbox test so founder alerts and outreach can deliver live.']
       : []),

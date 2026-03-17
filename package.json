@@ -1,7 +1,7 @@
 {
   "name": "ventura-backend",
   "version": "1.0.0",
-  "description": "Ventura \u2014 Agentic Business Platform Backend",
+  "description": "Ventura — Agentic Business Platform Backend",
   "main": "src/server.js",
   "type": "module",
   "scripts": {
@@ -19,8 +19,10 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.18.3",
+    "imapflow": "^1.2.15",
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
+    "node-ical": "^0.25.6",
     "nodemailer": "^6.9.13",
     "stripe": "^14.21.0",
     "uuid": "^9.0.1",
