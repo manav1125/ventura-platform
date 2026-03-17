@@ -2655,6 +2655,8 @@ let state = {
   wsReady:      false,
   wsReconnectTimer: null,
   wsShouldReconnect: false,
+  pendingLaunchBusinessId: null,
+  launchCycleInFlight: false,
 };
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -3113,10 +3115,11 @@ async function launchBusiness() {
       goal90d:        wizardData.goal90d || 'Get first customers',
       involvement:    wizardData.involvement || 'autopilot'
     });
+    state.pendingLaunchBusinessId = null;
     closeModal();
     await loadBusinesses();
     showDashboard(null);
-    showToast('🚀 Business launching — provisioning infrastructure...');
+    showToast('🚀 Business launching — provisioning infrastructure, then Ventura will begin the first work cycle automatically...');
   } catch (err) {
     errEl.textContent = 'Launch failed: ' + err.message;
     errEl.style.display = 'block';
@@ -3168,7 +3171,11 @@ function connectWS() {
       if (state.activeBiz) socket.send(JSON.stringify({ type: 'subscribe', businessId: state.activeBiz.id }));
     };
 
-    socket.onmessage = (e) => { try { handleWSEvent(JSON.parse(e.data)); } catch {} };
+    socket.onmessage = (e) => {
+      try {
+        Promise.resolve(handleWSEvent(JSON.parse(e.data))).catch(() => {});
+      } catch {}
+    };
     socket.onclose = () => {
       if (state.ws === socket) {
         state.ws = null;
@@ -3184,7 +3191,37 @@ function connectWS() {
   } catch {}
 }
 
-function handleWSEvent(msg) {
+async function maybeStartLaunchCycle(businessId, attempt = 0) {
+  if (!state.accessToken || !businessId || state.launchCycleInFlight) return;
+
+  state.launchCycleInFlight = true;
+  try {
+    await POST(`/businesses/${businessId}/run`, {});
+    state.pendingLaunchBusinessId = businessId;
+    showToast('Ventura is outlining the first work cycle and starting execution');
+  } catch (err) {
+    const message = err.message || '';
+    const alreadyRunning = /already running|cycle started/i.test(message);
+    const retryable = /not active|not found|HTTP 400|HTTP 404/i.test(message);
+
+    if (alreadyRunning) {
+      state.pendingLaunchBusinessId = businessId;
+      return;
+    }
+
+    if (retryable && attempt < 4) {
+      state.launchCycleInFlight = false;
+      setTimeout(() => maybeStartLaunchCycle(businessId, attempt + 1), 1200);
+      return;
+    }
+
+    showToast(`Could not auto-start the first cycle: ${message}`);
+  } finally {
+    state.launchCycleInFlight = false;
+  }
+}
+
+async function handleWSEvent(msg) {
   switch (msg.event) {
     case 'activity:new':       prependActivity(msg.activity); break;
     case 'task:complete':      showToast(`✓ ${msg.department}: ${msg.title}`); loadTasks(); break;
@@ -3198,7 +3235,14 @@ function handleWSEvent(msg) {
     case 'revenue:new':        showToast(`💰 Payment: $${(msg.amountCents/100).toFixed(2)}`); break;
     case 'message:new':        if (msg.role === 'assistant') appendChatMessage('ai', msg.content); break;
     case 'provisioning:step':  showToast(`Setting up: ${msg.step}...`); break;
-    case 'provisioning:complete': showToast('🚀 Business is live!'); loadBusinesses(); break;
+    case 'provisioning:complete': {
+      showToast('🚀 Business is live — starting the first Ventura cycle...');
+      await loadBusinesses();
+      const launchedBiz = state.businesses.find(b => b.id === msg.businessId);
+      if (launchedBiz) await setActiveBusiness(launchedBiz);
+      await maybeStartLaunchCycle(msg.businessId);
+      break;
+    }
     case 'approval:created':
       showToast(`Founder review needed: ${msg.approval?.title || 'pending approval'}`);
       loadDashboard();
