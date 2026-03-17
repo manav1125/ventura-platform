@@ -398,6 +398,37 @@ describe('Control center', () => {
     assert.equal(created.department, 'marketing');
   });
 
+  it('returns an operating-system snapshot for the business', async () => {
+    const { status, body } = await GET(`/api/businesses/${bizId}/operating-system`, tokens.access);
+    assert.equal(status, 200);
+    assert.ok(body.business);
+    assert.ok(body.engineering);
+    assert.ok(body.marketing);
+    assert.ok(body.operations);
+    assert.ok(body.analytics);
+    assert.ok(body.memory);
+    assert.ok(body.billing);
+    assert.ok(Array.isArray(body.analytics.trend));
+  });
+
+  it('lets the founder update agent memory', async () => {
+    const { status, body } = await PATCH(`/api/businesses/${bizId}/memory`, {
+      priorities: ['Ship onboarding improvements', 'Close first 10 paying users'],
+      learnings: ['Founder demo converts best when pricing is shown early'],
+      competitors: ['Plausible — strong simplicity positioning'],
+      customerInsights: ['Solo founders want setup under 10 minutes'],
+      notes: ['Bias toward experiments that improve activation']
+    }, tokens.access);
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(body.memory.priorities));
+    assert.equal(body.memory.priorities[0], 'Ship onboarding improvements');
+
+    const snapshot = await GET(`/api/businesses/${bizId}/operating-system`, tokens.access);
+    assert.equal(snapshot.status, 200);
+    assert.ok(snapshot.body.memory.priorities.includes('Close first 10 paying users'));
+    assert.ok(snapshot.body.memory.customer_insights.includes('Solo founders want setup under 10 minutes'));
+  });
+
   it('can approve a pending founder action', async () => {
     const { createApproval } = await import('../src/agents/approvals.js');
     const approval = await createApproval({
@@ -418,6 +449,24 @@ describe('Control center', () => {
     }, tokens.access);
     assert.equal(status, 200);
     assert.equal(body.approval.status, 'executed');
+  });
+
+  it('blocks Stripe onboarding when Stripe is not configured', async () => {
+    const { status, body } = await POST(`/api/businesses/${bizId}/stripe/onboarding`, {}, tokens.access);
+    assert.equal(status, 503);
+    assert.match(body.error, /stripe/i);
+  });
+});
+
+describe('Portfolio overview', () => {
+  it('returns multi-business summary data for the founder', async () => {
+    const { status, body } = await GET('/api/portfolio/overview', tokens.access);
+    assert.equal(status, 200);
+    assert.ok(body.summary);
+    assert.ok(Array.isArray(body.businesses));
+    assert.ok(body.plan);
+    assert.ok(body.usage);
+    assert.equal(body.summary.businesses, 1);
   });
 });
 

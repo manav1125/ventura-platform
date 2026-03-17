@@ -2002,23 +2002,23 @@
         <div class="metric-row">
           <div class="metric-card">
             <div class="metric-card-label">Monthly Revenue</div>
-            <div class="metric-card-value">$2,840</div>
-            <div class="metric-card-delta">↑ +$340 this week</div>
+            <div class="metric-card-value" id="metric-mrr">$2,840</div>
+            <div class="metric-card-delta" id="metric-mrr-delta">↑ +$340 this week</div>
           </div>
           <div class="metric-card">
             <div class="metric-card-label">Active Users</div>
-            <div class="metric-card-value">184</div>
-            <div class="metric-card-delta">↑ +22 this week</div>
+            <div class="metric-card-value" id="metric-users">184</div>
+            <div class="metric-card-delta" id="metric-users-delta">↑ +22 this week</div>
           </div>
           <div class="metric-card">
             <div class="metric-card-label">Tasks completed</div>
-            <div class="metric-card-value">127</div>
-            <div class="metric-card-delta">↑ 7 today</div>
+            <div class="metric-card-value" id="metric-tasks">127</div>
+            <div class="metric-card-delta" id="metric-tasks-delta">↑ 7 today</div>
           </div>
           <div class="metric-card">
             <div class="metric-card-label">Leads in pipeline</div>
-            <div class="metric-card-value">43</div>
-            <div class="metric-card-delta down">↓ -3 this week</div>
+            <div class="metric-card-value" id="metric-leads">43</div>
+            <div class="metric-card-delta down" id="metric-leads-delta">↓ -3 this week</div>
           </div>
         </div>
 
@@ -2047,7 +2047,7 @@
               <span class="panel-title">Today's tasks</span>
               <button class="panel-action" onclick="showPage('tasks',null)">view all</button>
             </div>
-            <div class="panel-body" style="padding:8px 16px;">
+            <div class="panel-body" id="overview-task-list" style="padding:8px 16px;">
               <div class="task-item done">
                 <div class="task-check">✓</div>
                 <div><div class="task-title">Deploy landing page v4</div><div class="task-meta">Completed 02:14 AM</div></div>
@@ -2067,6 +2067,17 @@
                 <div class="task-check"></div>
                 <div><div class="task-title">Run SEO audit + fixes</div><div class="task-meta">Running now...</div></div>
                 <span class="task-type type-mkt">mkt</span>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Portfolio pulse</span>
+              <button class="panel-action" onclick="showPage('settings',null)">open controls</button>
+            </div>
+            <div class="panel-body" id="portfolio-pulse">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">
+                Loading portfolio-level revenue, approvals, and business health...
               </div>
             </div>
           </div>
@@ -2238,14 +2249,22 @@
           <button class="btn-run" onclick="addTask()">+ Code task</button>
         </div>
         <div class="metric-row" style="grid-template-columns:repeat(3,1fr)">
-          <div class="metric-card"><div class="metric-card-label">Deployments this month</div><div class="metric-card-value">34</div><div class="metric-card-delta">↑ +6 vs last month</div></div>
-          <div class="metric-card"><div class="metric-card-label">Uptime</div><div class="metric-card-value">99.9%</div><div class="metric-card-delta">↑ stable</div></div>
-          <div class="metric-card"><div class="metric-card-label">Open bugs</div><div class="metric-card-value">2</div><div class="metric-card-delta down">↓ from 7</div></div>
+          <div class="metric-card"><div class="metric-card-label">Deployments this month</div><div class="metric-card-value" id="eng-deployments">34</div><div class="metric-card-delta" id="eng-deployments-delta">↑ +6 vs last month</div></div>
+          <div class="metric-card"><div class="metric-card-label">Uptime</div><div class="metric-card-value" id="eng-uptime">99.9%</div><div class="metric-card-delta" id="eng-uptime-delta">↑ stable</div></div>
+          <div class="metric-card"><div class="metric-card-label">Open bugs</div><div class="metric-card-value" id="eng-open-bugs">2</div><div class="metric-card-delta down" id="eng-open-bugs-delta">↓ from 7</div></div>
         </div>
-        <div class="panel"><div class="panel-header"><span class="panel-title">Deployment log</span></div><div class="panel-body" id="deployments-list" style="padding:0 20px;font-family:'DM Mono',monospace;font-size:12px;">
-          <div class="activity-item"><div class="activity-content"><div class="activity-title" style="font-family:'DM Mono',monospace;font-size:12px;">v0.9.4 — mobile nav, pricing page, hero redesign</div><div class="activity-meta">Today 03:05 AM · 3 files changed</div></div><span class="activity-status status-done">live</span></div>
-          <div class="activity-item"><div class="activity-content"><div class="activity-title" style="font-family:'DM Mono',monospace;font-size:12px;">v0.9.3 — fix Safari checkout bug, improve load time</div><div class="activity-meta">Yesterday 09:30 PM · 1 file changed</div></div><span class="activity-status status-done">live</span></div>
-          <div class="activity-item"><div class="activity-content"><div class="activity-title" style="font-family:'DM Mono',monospace;font-size:12px;">v0.9.2 — add annual pricing toggle, new onboarding flow</div><div class="activity-meta">2 days ago · 5 files changed</div></div><span class="activity-status status-done">live</span></div>
+        <div class="grid-2">
+          <div class="panel"><div class="panel-header"><span class="panel-title">Deployment log</span></div><div class="panel-body" id="deployments-list" style="padding:0 20px;font-family:'DM Mono',monospace;font-size:12px;">
+            <div class="activity-item"><div class="activity-content"><div class="activity-title" style="font-family:'DM Mono',monospace;font-size:12px;">v0.9.4 — mobile nav, pricing page, hero redesign</div><div class="activity-meta">Today 03:05 AM · 3 files changed</div></div><span class="activity-status status-done">live</span></div>
+            <div class="activity-item"><div class="activity-content"><div class="activity-title" style="font-family:'DM Mono',monospace;font-size:12px;">v0.9.3 — fix Safari checkout bug, improve load time</div><div class="activity-meta">Yesterday 09:30 PM · 1 file changed</div></div><span class="activity-status status-done">live</span></div>
+            <div class="activity-item"><div class="activity-content"><div class="activity-title" style="font-family:'DM Mono',monospace;font-size:12px;">v0.9.2 — add annual pricing toggle, new onboarding flow</div><div class="activity-meta">2 days ago · 5 files changed</div></div><span class="activity-status status-done">live</span></div>
+          </div></div>
+          <div class="panel"><div class="panel-header"><span class="panel-title">Website preview</span></div><div class="panel-body" id="engineering-preview">
+            <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Loading website endpoint, deploy target, and production preview...</div>
+          </div></div>
+        </div>
+        <div class="panel"><div class="panel-header"><span class="panel-title">Engineering queue</span></div><div class="panel-body" id="engineering-task-list" style="padding:0 20px;">
+          <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;">Loading engineering queue...</div>
         </div></div>
       </div>
 
@@ -2256,16 +2275,21 @@
           <button class="btn-run" onclick="addTask()">+ Campaign</button>
         </div>
         <div class="metric-row">
-          <div class="metric-card"><div class="metric-card-label">Emails sent (30d)</div><div class="metric-card-value">840</div><div class="metric-card-delta">↑ 38 replies</div></div>
-          <div class="metric-card"><div class="metric-card-label">Open rate</div><div class="metric-card-value">34%</div><div class="metric-card-delta">↑ above avg</div></div>
-          <div class="metric-card"><div class="metric-card-label">Blog posts</div><div class="metric-card-value">12</div><div class="metric-card-delta">↑ 3 this week</div></div>
-          <div class="metric-card"><div class="metric-card-label">Organic visitors</div><div class="metric-card-value">1,240</div><div class="metric-card-delta">↑ +320 vs last mo</div></div>
+          <div class="metric-card"><div class="metric-card-label">Emails sent (30d)</div><div class="metric-card-value" id="marketing-emails">840</div><div class="metric-card-delta" id="marketing-emails-delta">↑ 38 replies</div></div>
+          <div class="metric-card"><div class="metric-card-label">Qualified leads</div><div class="metric-card-value" id="marketing-qualified">34</div><div class="metric-card-delta" id="marketing-qualified-delta">↑ above avg</div></div>
+          <div class="metric-card"><div class="metric-card-label">Content shipped</div><div class="metric-card-value" id="marketing-content">12</div><div class="metric-card-delta" id="marketing-content-delta">↑ 3 this week</div></div>
+          <div class="metric-card"><div class="metric-card-label">Pipeline size</div><div class="metric-card-value" id="marketing-leads">1,240</div><div class="metric-card-delta" id="marketing-leads-delta">↑ +320 vs last mo</div></div>
         </div>
-        <div class="panel"><div class="panel-header"><span class="panel-title">Campaign history</span></div><div class="panel-body" style="padding:0 20px;">
-          <div class="activity-item"><div class="activity-icon mail">◆</div><div class="activity-content"><div class="activity-title">Cold email — SaaS founders segment — 40 sent</div><div class="activity-meta">Today · 3 replies (7.5%)</div></div><span class="activity-status status-done">done</span></div>
-          <div class="activity-item"><div class="activity-icon chart">▲</div><div class="activity-content"><div class="activity-title">Blog: "Analytics for bootstrapped founders"</div><div class="activity-meta">Yesterday · 240 views</div></div><span class="activity-status status-done">done</span></div>
-          <div class="activity-item"><div class="activity-icon mail">◆</div><div class="activity-content"><div class="activity-title">Cold email — agency owners segment — 60 sent</div><div class="activity-meta">3 days ago · 5 replies (8.3%)</div></div><span class="activity-status status-done">done</span></div>
-        </div></div>
+        <div class="grid-2">
+          <div class="panel"><div class="panel-header"><span class="panel-title">Campaign history</span></div><div class="panel-body" id="marketing-campaigns-list" style="padding:0 20px;">
+            <div class="activity-item"><div class="activity-icon mail">◆</div><div class="activity-content"><div class="activity-title">Cold email — SaaS founders segment — 40 sent</div><div class="activity-meta">Today · 3 replies (7.5%)</div></div><span class="activity-status status-done">done</span></div>
+            <div class="activity-item"><div class="activity-icon chart">▲</div><div class="activity-content"><div class="activity-title">Blog: "Analytics for bootstrapped founders"</div><div class="activity-meta">Yesterday · 240 views</div></div><span class="activity-status status-done">done</span></div>
+            <div class="activity-item"><div class="activity-icon mail">◆</div><div class="activity-content"><div class="activity-title">Cold email — agency owners segment — 60 sent</div><div class="activity-meta">3 days ago · 5 replies (8.3%)</div></div><span class="activity-status status-done">done</span></div>
+          </div></div>
+          <div class="panel"><div class="panel-header"><span class="panel-title">Lead pipeline</span></div><div class="panel-body" id="marketing-pipeline">
+            <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Loading lead funnel, sources, and recent prospects...</div>
+          </div></div>
+        </div>
       </div>
 
       <!-- OPERATIONS PAGE -->
@@ -2274,16 +2298,21 @@
           <div><div class="dash-title">Operations</div><div class="dash-subtitle">Your inbox and support, handled</div></div>
         </div>
         <div class="metric-row" style="grid-template-columns:repeat(3,1fr)">
-          <div class="metric-card"><div class="metric-card-label">Emails handled (30d)</div><div class="metric-card-value">128</div><div class="metric-card-delta">↑ 94% AI-resolved</div></div>
-          <div class="metric-card"><div class="metric-card-label">Avg response time</div><div class="metric-card-value">4m</div><div class="metric-card-delta">↑ faster than human</div></div>
-          <div class="metric-card"><div class="metric-card-label">Pending review</div><div class="metric-card-value">2</div><div class="metric-card-delta">Needs your eyes</div></div>
+          <div class="metric-card"><div class="metric-card-label">Emails handled (30d)</div><div class="metric-card-value" id="ops-handled">128</div><div class="metric-card-delta" id="ops-handled-delta">↑ 94% AI-resolved</div></div>
+          <div class="metric-card"><div class="metric-card-label">Running tasks</div><div class="metric-card-value" id="ops-running">4m</div><div class="metric-card-delta" id="ops-running-delta">↑ faster than human</div></div>
+          <div class="metric-card"><div class="metric-card-label">Pending review</div><div class="metric-card-value" id="ops-review">2</div><div class="metric-card-delta" id="ops-review-delta">Needs your eyes</div></div>
         </div>
-        <div class="panel"><div class="panel-header"><span class="panel-title">Inbox — founder review</span></div><div class="panel-body" id="operations-review-list" style="padding:0 20px;">
-          <div class="activity-item"><div class="activity-icon mail">✉</div><div class="activity-content"><div class="activity-title">RE: Partnership inquiry — Acme Corp</div><div class="activity-meta">Replied by agent · Today 01:22 AM</div></div><span class="activity-status status-done">handled</span></div>
-          <div class="activity-item"><div class="activity-icon mail">✉</div><div class="activity-content"><div class="activity-title">Support: Can't connect my data source</div><div class="activity-meta">Replied by agent · Yesterday 11:40 PM</div></div><span class="activity-status status-done">handled</span></div>
-          <div class="activity-item"><div class="activity-icon plan">⚑</div><div class="activity-content"><div class="activity-title">VC follow-up: term sheet attached</div><div class="activity-meta">Flagged for you · Yesterday 3:20 PM</div></div><span class="activity-status status-running">review</span></div>
-          <div class="activity-item"><div class="activity-icon plan">⚑</div><div class="activity-content"><div class="activity-title">Complaint: data accuracy concern from user #204</div><div class="activity-meta">Flagged for you · 2 days ago</div></div><span class="activity-status status-running">review</span></div>
-        </div></div>
+        <div class="grid-2">
+          <div class="panel"><div class="panel-header"><span class="panel-title">Inbox — founder review</span></div><div class="panel-body" id="operations-review-list" style="padding:0 20px;">
+            <div class="activity-item"><div class="activity-icon mail">✉</div><div class="activity-content"><div class="activity-title">RE: Partnership inquiry — Acme Corp</div><div class="activity-meta">Replied by agent · Today 01:22 AM</div></div><span class="activity-status status-done">handled</span></div>
+            <div class="activity-item"><div class="activity-icon mail">✉</div><div class="activity-content"><div class="activity-title">Support: Can't connect my data source</div><div class="activity-meta">Replied by agent · Yesterday 11:40 PM</div></div><span class="activity-status status-done">handled</span></div>
+            <div class="activity-item"><div class="activity-icon plan">⚑</div><div class="activity-content"><div class="activity-title">VC follow-up: term sheet attached</div><div class="activity-meta">Flagged for you · Yesterday 3:20 PM</div></div><span class="activity-status status-running">review</span></div>
+            <div class="activity-item"><div class="activity-icon plan">⚑</div><div class="activity-content"><div class="activity-title">Complaint: data accuracy concern from user #204</div><div class="activity-meta">Flagged for you · 2 days ago</div></div><span class="activity-status status-running">review</span></div>
+          </div></div>
+          <div class="panel"><div class="panel-header"><span class="panel-title">Ops health</span></div><div class="panel-body" id="operations-health-list">
+            <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Loading alerts, support health, and escalation signals...</div>
+          </div></div>
+        </div>
       </div>
 
       <!-- ANALYTICS PAGE -->
@@ -2292,10 +2321,10 @@
           <div><div class="dash-title">Analytics</div><div class="dash-subtitle">Your business metrics, at a glance</div></div>
         </div>
         <div class="metric-row">
-          <div class="metric-card"><div class="metric-card-label">MRR</div><div class="metric-card-value">$2,840</div><div class="metric-card-delta">↑ +13.6% MoM</div></div>
-          <div class="metric-card"><div class="metric-card-label">ARR Run Rate</div><div class="metric-card-value">$34k</div><div class="metric-card-delta">↑ growing</div></div>
-          <div class="metric-card"><div class="metric-card-label">Churn rate</div><div class="metric-card-value">2.1%</div><div class="metric-card-delta">↑ below industry avg</div></div>
-          <div class="metric-card"><div class="metric-card-label">LTV:CAC</div><div class="metric-card-value">4.2x</div><div class="metric-card-delta">↑ healthy</div></div>
+          <div class="metric-card"><div class="metric-card-label">MRR</div><div class="metric-card-value" id="analytics-mrr">$2,840</div><div class="metric-card-delta" id="analytics-mrr-delta">↑ +13.6% MoM</div></div>
+          <div class="metric-card"><div class="metric-card-label">ARR Run Rate</div><div class="metric-card-value" id="analytics-arr">$34k</div><div class="metric-card-delta" id="analytics-arr-delta">↑ growing</div></div>
+          <div class="metric-card"><div class="metric-card-label">Platform share</div><div class="metric-card-value" id="analytics-share">2.1%</div><div class="metric-card-delta" id="analytics-share-delta">↑ below industry avg</div></div>
+          <div class="metric-card"><div class="metric-card-label">Lead engine</div><div class="metric-card-value" id="analytics-leads">4.2x</div><div class="metric-card-delta" id="analytics-leads-delta">↑ healthy</div></div>
         </div>
         <div class="panel"><div class="panel-header"><span class="panel-title">Revenue — last 30 days</span></div>
           <div class="panel-body">
@@ -2312,6 +2341,14 @@
               </svg>
             </div>
           </div>
+        </div>
+        <div class="grid-2">
+          <div class="panel"><div class="panel-header"><span class="panel-title">Operating summary</span></div><div class="panel-body" id="analytics-summary-list">
+            <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Loading revenue, deployment, and growth summaries...</div>
+          </div></div>
+          <div class="panel"><div class="panel-header"><span class="panel-title">Plan economics</span></div><div class="panel-body" id="analytics-plan-context">
+            <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Loading subscription model, API budget, and revenue share...</div>
+          </div></div>
         </div>
       </div>
 
@@ -2346,6 +2383,24 @@
           <div class="panel-body" id="settings-infrastructure">
             <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">
               Loading provisioned stack and live MCP connections...
+            </div>
+          </div>
+        </div>
+        <div class="grid-2" style="margin-top:20px;">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Agent memory</span></div>
+            <div class="panel-body" id="settings-agent-memory">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">
+                Loading the memory thread Ventura carries across autonomous cycles...
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Monetization + website</span></div>
+            <div class="panel-body" id="settings-business-engine">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">
+                Loading website endpoint, Stripe status, and upgrade actions...
+              </div>
             </div>
           </div>
         </div>
@@ -2541,6 +2596,9 @@ let state = {
   businesses:   [],
   activeBiz:    null,
   control:      null,
+  operating:    null,
+  portfolio:    null,
+  billing:      null,
   live:         null,
   liveSlug:     null,
   liveDetail:   null,
@@ -2617,7 +2675,7 @@ async function doRegister(email, name, password) {
 
 function logout() {
   clearAuth();
-  state.businesses = []; state.activeBiz = null;
+  state.businesses = []; state.activeBiz = null; state.control = null; state.operating = null; state.portfolio = null; state.billing = null;
   state.ws?.close();
   // Update nav to show login button
   updateNavForAuth(false);
@@ -2935,6 +2993,7 @@ async function loadBusinesses() {
 function setActiveBusiness(biz) {
   state.activeBiz = biz;
   state.control = null;
+  state.operating = null;
   chatLoaded = false;
   if (state.wsReady) state.ws.send(JSON.stringify({ type: 'subscribe', businessId: biz.id }));
   document.querySelectorAll('.dash-co-name').forEach(el => el.textContent = biz.name);
@@ -2947,17 +3006,27 @@ function setActiveBusiness(biz) {
 async function loadDashboard() {
   if (!state.activeBiz) return;
   try {
-    const [mData, tData, aData, cData] = await Promise.all([
+    const [mData, tData, aData, cData, oData, pData, bData] = await Promise.all([
       GET(`/businesses/${state.activeBiz.id}/metrics`),
       GET(`/businesses/${state.activeBiz.id}/tasks`),
       GET(`/businesses/${state.activeBiz.id}/activity?limit=8`),
-      GET(`/businesses/${state.activeBiz.id}/control-center`)
+      GET(`/businesses/${state.activeBiz.id}/control-center`),
+      GET(`/businesses/${state.activeBiz.id}/operating-system`),
+      GET('/portfolio/overview'),
+      GET('/billing/plans')
     ]);
-    renderMetrics(mData);
+    state.control = cData;
+    state.operating = oData;
+    state.portfolio = pData;
+    state.billing = bData;
+    renderMetrics(mData, oData);
+    renderOverviewTasks(tData.tasks);
     renderTasks(tData.tasks);
     renderActivityFeed(cData.recentActivity || aData.activity);
-    renderRevChart(mData.daily);
+    renderRevChart(oData.analytics?.trend || mData.daily);
+    renderPortfolioPulse(pData);
     renderControlCenter(cData);
+    renderOperatingSystem(oData);
   } catch (err) { console.error('loadDashboard:', err); }
 }
 
@@ -2965,6 +3034,7 @@ async function loadTasks() {
   if (!state.activeBiz) return;
   try {
     const d = await GET(`/businesses/${state.activeBiz.id}/tasks`);
+    renderOverviewTasks(d.tasks);
     renderTasks(d.tasks);
   } catch {}
 }
@@ -3008,20 +3078,27 @@ async function loadLiveBusinessDetail(slug, { updateHash = true } = {}) {
 }
 
 // ── Render helpers ────────────────────────────────────────────────────────────
-function renderMetrics(data) {
+function renderMetrics(data, operating) {
   const biz = data.business || state.activeBiz;
   if (!biz) return;
-  setEl('metric-mrr',   `$${(biz.mrr_cents/100).toLocaleString('en-US', {minimumFractionDigits:0})}`);
+  const summary = operating?.analytics?.summary || {};
+  const marketing = operating?.marketing?.summary || {};
+  setEl('metric-mrr', formatMoney(biz.mrr_cents || summary.mrr_cents || 0));
   const day = data.daily?.[0];
-  setEl('metric-users', day?.active_users ?? '—');
-  setEl('metric-tasks', data.daily?.reduce((s,d) => s + (d.tasks_done||0), 0) ?? '—');
-  setEl('metric-leads', data.leads?.reduce((s,l) => s + l.count, 0) ?? '—');
+  setEl('metric-users', day?.active_users ?? summary.active_users ?? '—');
+  setEl('metric-tasks', data.daily?.reduce((s,d) => s + (d.tasks_done||0), 0) ?? summary.tasks_30d ?? '—');
+  setEl('metric-leads', data.leads?.reduce((s,l) => s + l.count, 0) ?? marketing.leads_total ?? '—');
+  setEl('metric-mrr-delta', formatSignedPct(summary.mrr_change_pct, 'vs prev week'));
+  setEl('metric-users-delta', formatSignedPct(summary.active_users_change_pct, 'user growth'));
+  setEl('metric-tasks-delta', `${summary.tasks_30d || 0} tasks shipped in 30 days`);
+  setEl('metric-leads-delta', `${marketing.qualified_leads || 0} qualified · ${marketing.won_leads || 0} won`);
 }
 
-function renderTasks(tasks) {
-  const el = document.getElementById('tasks-list');
-  if (!el) return;
-  el.innerHTML = (tasks || []).slice(0, 8).map(t => `
+function renderTaskRows(tasks, limit = 8) {
+  if (!(tasks || []).length) {
+    return `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding:16px 0;">No tasks queued right now.</div>`;
+  }
+  return (tasks || []).slice(0, limit).map(t => `
     <div class="task-item ${t.status==='complete'?'done':''}">
       <div class="task-check">${t.status==='complete'?'✓':''}</div>
       <div>
@@ -3030,6 +3107,18 @@ function renderTasks(tasks) {
       </div>
       <span class="task-type type-${deptColor(t.department)}">${shortDepartment(t.department)}</span>
     </div>`).join('');
+}
+
+function renderOverviewTasks(tasks) {
+  const el = document.getElementById('overview-task-list');
+  if (!el) return;
+  el.innerHTML = renderTaskRows(tasks, 4);
+}
+
+function renderTasks(tasks) {
+  const el = document.getElementById('tasks-list');
+  if (!el) return;
+  el.innerHTML = renderTaskRows(tasks, 8);
 }
 
 function renderActivityFeed(items) {
@@ -3082,6 +3171,293 @@ function renderRevChart(daily) {
       <path d="${areaD}" fill="url(#rg)"/>
       <path d="M ${pts.join(' L ')}" fill="none" stroke="#28ca41" stroke-width="1.5"/>`;
   });
+}
+
+function renderPortfolioPulse(data) {
+  const el = document.getElementById('portfolio-pulse');
+  if (!el) return;
+  const summary = data?.summary || {};
+  const businesses = data?.businesses || [];
+  const businessRows = businesses.length ? businesses.slice(0, 4).map(item => `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:12px;">
+      <div>
+        <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(item.name)}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${formatMoney(item.mrr_cents || 0)} MRR · ${item.pending_approvals || 0} approvals · ${item.latest_cycle_summary ? esc(item.latest_cycle_summary) : 'No cycle summary yet'}</div>
+      </div>
+      <span style="font-size:11px;font-family:'DM Mono',monospace;color:${item.status === 'active' ? '#28ca41' : 'var(--gold)'};padding:4px 10px;background:${item.status === 'active' ? 'rgba(40,202,65,0.1)' : 'rgba(200,168,75,0.1)'};border-radius:999px;">${esc((item.status || 'idle').toUpperCase())}</span>
+    </div>
+  `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Launch your first business to activate the portfolio layer.</div>`;
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:16px;">
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">TOTAL MRR</div>
+        <div style="font-size:20px;color:#e0ddd5;">${formatMoney(summary.total_mrr_cents || 0)}</div>
+      </div>
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">REVIEWS OPEN</div>
+        <div style="font-size:20px;color:#e0ddd5;">${summary.pending_approvals || 0}</div>
+      </div>
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">BUSINESSES</div>
+        <div style="font-size:20px;color:#e0ddd5;">${summary.active_businesses || 0}/${summary.businesses || 0}</div>
+      </div>
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">PLATFORM SHARE</div>
+        <div style="font-size:20px;color:#e0ddd5;">${formatMoney(summary.platform_share_cents || 0)}</div>
+      </div>
+    </div>
+    ${businessRows}
+  `;
+}
+
+function renderOperatingSystem(data) {
+  if (!data) return;
+  renderEngineeringPage(data);
+  renderMarketingPage(data);
+  renderOperationsPage(data);
+  renderAnalyticsPage(data);
+  renderMemoryPanel(data);
+  renderBusinessEnginePanel(data);
+  updateTicker(buildTickerMessage(data));
+}
+
+function renderEngineeringPage(data) {
+  const summary = data.engineering?.summary || {};
+  setEl('eng-deployments', summary.deployments_30d ?? 0);
+  setEl('eng-deployments-delta', `${data.engineering?.deployments?.length || 0} tracked releases`);
+  setEl('eng-uptime', `${Number(summary.uptime_pct || 0).toFixed(1)}%`);
+  setEl('eng-uptime-delta', data.engineering?.preview?.url ? 'Live website reachable' : 'Awaiting deploy target');
+  setEl('eng-open-bugs', summary.open_tasks ?? 0);
+  setEl('eng-open-bugs-delta', `${summary.completed_7d || 0} completed in the last 7d`);
+  renderDeployments(data.engineering?.deployments || []);
+
+  const previewEl = document.getElementById('engineering-preview');
+  if (previewEl) {
+    const preview = data.engineering?.preview || {};
+    previewEl.innerHTML = preview.url ? `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="font-size:12px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);">LIVE SITE</div>
+        <a href="${esc(preview.url)}" target="_blank" rel="noopener" style="font-size:16px;color:#e0ddd5;text-decoration:none;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:10px;">${esc(preview.url)} ↗</a>
+        <div style="font-size:13px;color:rgba(255,255,255,0.58);line-height:1.6;">Every deployment Ventura ships is recorded in the release log and published against this live business URL.</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.48);line-height:1.55;">Support inbox: ${esc(preview.email || 'Not assigned yet')}</div>
+      </div>
+    ` : `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No production website has been assigned yet.</div>`;
+  }
+
+  const tasksEl = document.getElementById('engineering-task-list');
+  if (tasksEl) tasksEl.innerHTML = renderTaskRows(data.engineering?.tasks || [], 8);
+}
+
+function renderMarketingPage(data) {
+  const summary = data.marketing?.summary || {};
+  setEl('marketing-emails', summary.emails_30d ?? 0);
+  setEl('marketing-emails-delta', `${summary.campaigns_30d || 0} campaign events tracked`);
+  setEl('marketing-qualified', summary.qualified_leads ?? 0);
+  setEl('marketing-qualified-delta', `${summary.won_leads || 0} converted to won`);
+  setEl('marketing-content', summary.content_30d ?? 0);
+  setEl('marketing-content-delta', `${(data.marketing?.tasks || []).filter(task => task.status === 'complete').length || 0} marketing tasks complete`);
+  setEl('marketing-leads', summary.leads_total ?? 0);
+  setEl('marketing-leads-delta', `${summary.qualified_leads || 0} qualified in CRM`);
+
+  const campaignsEl = document.getElementById('marketing-campaigns-list');
+  if (campaignsEl) {
+    const campaigns = data.marketing?.campaigns || [];
+    campaignsEl.innerHTML = campaigns.length ? campaigns.slice(0, 12).map(item => `
+      <div class="activity-item">
+        <div class="activity-icon ${typeIcon(item.type)}">${typeEmoji(item.type)}</div>
+        <div class="activity-content">
+          <div class="activity-title">${esc(item.title)}</div>
+          <div class="activity-meta">${displayDepartment(item.department)} · ${timeAgo(item.created_at)}</div>
+        </div>
+        <span class="activity-status ${statusClass(item.type)}">${statusLabel(item.type)}</span>
+      </div>
+    `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;">No marketing activity yet.</div>`;
+  }
+
+  const pipelineEl = document.getElementById('marketing-pipeline');
+  if (pipelineEl) {
+    const leadStatus = data.marketing?.leads?.by_status || [];
+    const leadSources = data.marketing?.leads?.by_source || [];
+    const recent = data.marketing?.leads?.recent || [];
+    pipelineEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:16px;">
+        ${(leadStatus.length ? leadStatus : [{ status: 'new', count: 0 }, { status: 'qualified', count: 0 }]).slice(0, 4).map(item => `
+          <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+            <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">${esc((item.status || 'unknown').toUpperCase())}</div>
+            <div style="font-size:22px;color:#e0ddd5;">${item.count || 0}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:8px;">TOP SOURCES</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+        ${(leadSources.length ? leadSources : [{ source: 'No sources yet', count: 0 }]).map(item => `
+          <span class="tag">${esc(titleCase(item.source || 'unknown'))} · ${item.count || 0}</span>
+        `).join('')}
+      </div>
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:8px;">RECENT LEADS</div>
+      ${(recent.length ? recent.slice(0, 5).map(item => `
+        <div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+          <div style="font-size:13px;color:#e0ddd5;">${esc(item.name || item.email)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(item.company || 'Independent buyer')} · ${esc(titleCase(item.status || 'new'))} · ${esc(titleCase(item.source || 'unknown'))}</div>
+        </div>
+      `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No leads captured yet.</div>`)}
+    `;
+  }
+}
+
+function renderOperationsPage(data) {
+  const summary = data.operations?.summary || {};
+  setEl('ops-handled', summary.handled_30d ?? 0);
+  setEl('ops-handled-delta', `${summary.alerts_14d || 0} alerts in the last 14d`);
+  setEl('ops-running', summary.running_tasks ?? 0);
+  setEl('ops-running-delta', `${(data.operations?.tasks || []).filter(task => task.status === 'queued').length || 0} queued next`);
+  setEl('ops-review', summary.pending_reviews ?? 0);
+  setEl('ops-review-delta', summary.pending_reviews ? 'Founder attention needed' : 'Inbox under control');
+
+  const healthEl = document.getElementById('operations-health-list');
+  if (healthEl) {
+    const alerts = data.operations?.alerts || [];
+    const tasks = data.operations?.tasks || [];
+    healthEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:16px;">
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">ALERTS</div>
+          <div style="font-size:22px;color:#e0ddd5;">${alerts.length}</div>
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">OPS TASKS</div>
+          <div style="font-size:22px;color:#e0ddd5;">${tasks.length}</div>
+        </div>
+      </div>
+      ${(alerts.length ? alerts.slice(0, 5).map(item => `
+        <div class="activity-item">
+          <div class="activity-icon ${typeIcon(item.type)}">${typeEmoji(item.type)}</div>
+          <div class="activity-content">
+            <div class="activity-title">${esc(item.title)}</div>
+            <div class="activity-meta">${timeAgo(item.created_at)}</div>
+          </div>
+          <span class="activity-status status-running">review</span>
+        </div>
+      `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No active operational alerts right now.</div>`)}
+    `;
+  }
+}
+
+function renderAnalyticsPage(data) {
+  const summary = data.analytics?.summary || {};
+  const economics = data.billing?.economics || {};
+  setEl('analytics-mrr', formatMoney(summary.mrr_cents || 0));
+  setEl('analytics-mrr-delta', formatSignedPct(summary.mrr_change_pct, 'vs prev week'));
+  setEl('analytics-arr', formatMoney(summary.arr_cents || 0));
+  setEl('analytics-arr-delta', `${formatMoney(summary.mrr_cents || 0)} monthly run-rate`);
+  setEl('analytics-share', formatMoney(summary.platform_share_cents || 0));
+  setEl('analytics-share-delta', `${summary.revenue_share_pct || 0}% of tracked revenue`);
+  setEl('analytics-leads', summary.leads_30d || 0);
+  setEl('analytics-leads-delta', `${summary.emails_30d || 0} emails · ${summary.deployments_30d || 0} deploys`);
+
+  const summaryEl = document.getElementById('analytics-summary-list');
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;">
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">ACTIVE USERS</div>
+          <div style="font-size:20px;color:#e0ddd5;">${summary.active_users || 0}</div>
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">REVENUE (30D)</div>
+          <div style="font-size:20px;color:#e0ddd5;">${formatMoney(summary.revenue_30d_cents || 0)}</div>
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">TASKS (30D)</div>
+          <div style="font-size:20px;color:#e0ddd5;">${summary.tasks_30d || 0}</div>
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">LEADS (30D)</div>
+          <div style="font-size:20px;color:#e0ddd5;">${summary.leads_30d || 0}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  const planEl = document.getElementById('analytics-plan-context');
+  if (planEl) {
+    planEl.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;margin-bottom:6px;">BUSINESS MODEL</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.72);line-height:1.6;">${formatMoney(economics.monthly_subscription_cents || 0)}/mo base fee with ${economics.revenue_share_pct || 0}% revenue share and ${formatMoney(economics.api_budget_cents || 0)} monthly model budget.</div>
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:8px;">FOUNDER PLAN</div>
+          <div style="font-size:18px;color:#e0ddd5;">${esc((state.billing?.current || data.billing?.plan?.id || 'trial').toUpperCase())}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.55;margin-top:6px;">${(state.portfolio?.usage?.tasks?.used || 0)}/${(state.portfolio?.usage?.tasks?.limit || 0)} founder-dispatched tasks used this month.</div>
+        </div>
+      </div>
+    `;
+  }
+}
+
+function renderMemoryPanel(data) {
+  const el = document.getElementById('settings-agent-memory');
+  if (!el) return;
+  const memory = data.memory || {};
+  el.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      ${renderMemoryTextarea('Priorities', 'settings-memory-priorities', memory.priorities, 'One priority per line')}
+      ${renderMemoryTextarea('Learnings', 'settings-memory-learnings', memory.learnings, 'Persisted takeaways from recent cycles')}
+      ${renderMemoryTextarea('Competitors', 'settings-memory-competitors', memory.competitors, 'Key competitors or alternatives')}
+      ${renderMemoryTextarea('Customer insights', 'settings-memory-customer-insights', memory.customer_insights, 'Pain points, objections, resonance')}
+      ${renderMemoryTextarea('Founder notes', 'settings-memory-notes', memory.notes, 'Anything you want Ventura to remember across days')}
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="font-size:12px;color:rgba(255,255,255,0.48);line-height:1.55;">Memory is injected into every autonomous cycle so Ventura keeps context across days.</div>
+        <button class="icon-btn" onclick="saveAgentMemory()">Save memory</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderBusinessEnginePanel(data) {
+  const el = document.getElementById('settings-business-engine');
+  if (!el) return;
+  const biz = data.business || {};
+  const stripe = data.billing?.stripe || {};
+  const economics = data.billing?.economics || {};
+  const availablePlans = state.billing?.plans || [];
+  const upgradeButtons = availablePlans
+    .filter(plan => plan.id !== (state.billing?.current || data.billing?.plan?.id))
+    .map(plan => `<button class="icon-btn" onclick="startUpgrade('${esc(plan.id)}')">Upgrade to ${esc(titleCase(plan.id))}</button>`)
+    .join('');
+  el.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">WEBSITE</div>
+        ${biz.web_url ? `<a href="${esc(biz.web_url)}" target="_blank" rel="noopener" style="font-size:16px;color:#e0ddd5;text-decoration:none;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:8px;display:inline-block;">${esc(biz.web_url)} ↗</a>` : `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No website URL assigned yet.</div>`}
+        <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:10px;">Business inbox: ${esc(biz.email_address || 'Not assigned')}</div>
+      </div>
+      <div style="padding:14px;background:${stripe.connected ? 'rgba(40,202,65,0.05)' : 'rgba(200,168,75,0.08)'};border:1px solid ${stripe.connected ? 'rgba(40,202,65,0.1)' : 'rgba(200,168,75,0.12)'};border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:${stripe.connected ? '#28ca41' : 'var(--gold)'};margin-bottom:6px;">STRIPE CONNECT</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.72);line-height:1.6;">${stripe.connected ? 'Revenue routing is connected and ready for onboarding/webhook-based tracking.' : stripe.configured ? 'Stripe is configured. Finish Connect onboarding to route real revenue into Ventura.' : 'Stripe is not configured on the backend yet, so billing actions stay in preview mode.'}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+          <button class="icon-btn" onclick="connectStripe()">Connect Stripe</button>
+          <button class="icon-btn" onclick="openBillingPortal()">Manage billing</button>
+        </div>
+      </div>
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:8px;">COMMERCIAL MODEL</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.72);line-height:1.6;">${formatMoney(economics.monthly_subscription_cents || 0)}/mo base fee · ${economics.revenue_share_pct || 0}% revenue share · ${formatMoney(economics.api_budget_cents || 0)} monthly model budget.</div>
+      </div>
+      ${upgradeButtons ? `<div style="display:flex;flex-wrap:wrap;gap:8px;">${upgradeButtons}</div>` : ''}
+    </div>
+  `;
+}
+
+function buildTickerMessage(data) {
+  const latestCycle = state.control?.latestCycle;
+  if (!latestCycle) return 'Ventura is monitoring your business and waiting for the next loop.';
+  const completedAt = latestCycle.completed_at || latestCycle.created_at;
+  const nextRun = completedAt ? new Date(new Date(completedAt).getTime() + (24 * 3600000)) : null;
+  return `Agent last ran ${completedAt ? timeAgo(completedAt) : 'recently'} — ${latestCycle.summary || 'Cycle finished successfully.'}${nextRun ? ` — Next nightly run ${nextRun.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' })}` : ''}`;
 }
 
 function renderLiveBoard(data) {
@@ -3273,8 +3649,8 @@ function renderControlCenter(data) {
   renderFounderControl(data);
   renderPlanning(data);
   renderDeployments(data.deployments || []);
-  renderApprovals(data.approvals || []);
-  renderSettings(data);
+  renderApprovals(data.approvals || [], state.operating);
+  renderSettings(data, state.operating, state.billing);
   updateBusinessStatus(data);
 }
 
@@ -3379,12 +3755,13 @@ function renderDeployments(deployments) {
   `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding:16px 0;">No deployments yet.</div>`;
 }
 
-function renderApprovals(approvals) {
+function renderApprovals(approvals, operating = null) {
   const el = document.getElementById('operations-review-list');
   if (!el) return;
+  const inbox = operating?.operations?.founder_inbox || [];
   const pending = approvals.filter(a => a.status === 'pending');
   const archive = approvals.filter(a => a.status !== 'pending').slice(0, 4);
-  const pendingHtml = pending.length ? pending.map(a => `
+  const inboxRows = pending.length ? pending.map(a => `
     <div class="activity-item" style="align-items:flex-start;gap:14px;">
       <div class="activity-icon plan">⚑</div>
       <div class="activity-content" style="flex:1;">
@@ -3400,7 +3777,17 @@ function renderApprovals(approvals) {
       </div>
       <span class="activity-status status-running">${esc(a.status)}</span>
     </div>
-  `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding:16px 0;">No founder review items waiting right now.</div>`;
+  `).join('') : (inbox.length ? inbox.slice(0, 8).map(item => `
+    <div class="activity-item" style="align-items:flex-start;gap:14px;">
+      <div class="activity-icon ${item.kind === 'alert' ? 'plan' : 'mail'}">${item.kind === 'alert' ? '⚑' : '✦'}</div>
+      <div class="activity-content" style="flex:1;">
+        <div class="activity-title">${esc(item.title)}</div>
+        <div class="activity-meta">${esc(titleCase(item.kind))} · ${timeAgo(item.created_at)}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.6);line-height:1.5;margin-top:6px;">${esc(item.summary || 'Founder attention requested.')}</div>
+      </div>
+      <span class="activity-status status-running">review</span>
+    </div>
+  `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding:16px 0;">No founder review items waiting right now.</div>`);
   const archiveHtml = archive.length ? `
     <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);padding:18px 0 8px;">RECENT DECISIONS</div>
     ${archive.map(a => `
@@ -3417,10 +3804,10 @@ function renderApprovals(approvals) {
       </div>
     `).join('')}
   ` : '';
-  el.innerHTML = pendingHtml + archiveHtml;
+  el.innerHTML = inboxRows + archiveHtml;
 }
 
-function renderSettings(data) {
+function renderSettings(data, operating = null, billing = null) {
   const biz = data.business;
   if (!biz) return;
 
@@ -3439,6 +3826,8 @@ function renderSettings(data) {
   if (controlsEl) {
     const pending = (data.approvals || []).filter(a => a.status === 'pending').length;
     const economics = data.economics || data.plan || {};
+    const currentPlan = billing?.current || data.plan?.id || 'trial';
+    const upgradeOptions = (billing?.plans || []).filter(plan => plan.id !== currentPlan);
     controlsEl.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px">
@@ -3477,6 +3866,7 @@ function renderSettings(data) {
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
           <button class="icon-btn" onclick="saveBusinessControls()">Save controls</button>
           <button class="icon-btn" onclick="syncIntegrations()">Sync integrations</button>
+          <button class="icon-btn" onclick="openBillingPortal()">Billing portal</button>
         </div>
         <div style="padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px;">
           <div style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;margin-bottom:10px;">PER-COMPANY ECONOMICS</div>
@@ -3499,6 +3889,14 @@ function renderSettings(data) {
             </div>
           </div>
         </div>
+        ${upgradeOptions.length ? `
+          <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+            <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.45);margin-bottom:10px;">PLAN OPTIONS</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+              ${upgradeOptions.map(plan => `<button class="icon-btn" onclick="startUpgrade('${esc(plan.id)}')">${esc(titleCase(plan.id))}</button>`).join('')}
+            </div>
+          </div>
+        ` : ''}
         <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
           <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.45);margin-bottom:10px;">SPECIALIST OVERRIDES</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
@@ -3649,6 +4047,63 @@ async function saveBusinessProfile() {
     await loadDashboard();
   } catch (err) {
     showToast(`Save failed: ${err.message}`);
+  }
+}
+
+async function saveAgentMemory() {
+  if (!state.activeBiz) return;
+  try {
+    await PATCH(`/businesses/${state.activeBiz.id}/memory`, {
+      priorities: textareaToList('settings-memory-priorities'),
+      learnings: textareaToList('settings-memory-learnings'),
+      competitors: textareaToList('settings-memory-competitors'),
+      customerInsights: textareaToList('settings-memory-customer-insights'),
+      notes: textareaToList('settings-memory-notes')
+    });
+    showToast('Agent memory updated');
+    await loadDashboard();
+  } catch (err) {
+    showToast(`Memory update failed: ${err.message}`);
+  }
+}
+
+async function connectStripe() {
+  if (!state.activeBiz) return;
+  try {
+    const session = await POST(`/businesses/${state.activeBiz.id}/stripe/onboarding`, {});
+    if (session.url) {
+      window.location.href = session.url;
+      return;
+    }
+    showToast('Stripe onboarding link unavailable');
+  } catch (err) {
+    showToast(`Stripe setup failed: ${err.message}`);
+  }
+}
+
+async function startUpgrade(plan) {
+  try {
+    const session = await POST('/billing/checkout', { plan });
+    if (session.url) {
+      window.location.href = session.url;
+      return;
+    }
+    showToast('Checkout link unavailable');
+  } catch (err) {
+    showToast(`Upgrade unavailable: ${err.message}`);
+  }
+}
+
+async function openBillingPortal() {
+  try {
+    const session = await POST('/billing/portal', {});
+    if (session.url) {
+      window.location.href = session.url;
+      return;
+    }
+    showToast('Billing portal unavailable');
+  } catch (err) {
+    showToast(`Billing portal unavailable: ${err.message}`);
   }
 }
 
@@ -3811,6 +4266,12 @@ async function routeFromHash() {
 function setEl(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function formatMoney(cents) { return `$${(Number(cents || 0) / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })}`; }
+function formatSignedPct(value, suffix = '') {
+  const num = Number(value || 0);
+  const arrow = num >= 0 ? '↑' : '↓';
+  const sign = num > 0 ? '+' : '';
+  return `${arrow} ${sign}${num}%${suffix ? ` ${suffix}` : ''}`;
+}
 function updateTicker(msg) { const el = document.getElementById('live-ticker-text'); if (el) el.textContent = msg; }
 function deptColor(d) { return {engineering:'code',marketing:'mkt',operations:'ops',sales:'mkt',strategy:'code',finance:'ops'}[d]||'ops'; }
 function normalizeDepartment(d) { return ({ planning:'strategy', strategy:'strategy', engineering:'engineering', marketing:'marketing', operations:'operations', sales:'sales', finance:'finance' }[(d || '').toLowerCase()] || 'operations'); }
@@ -3835,6 +4296,22 @@ function formatApprovalResult(result) {
   return keys.slice(0, 2).map(key => `${key}:${typeof result[key] === 'object' ? 'ok' : result[key]}`).join(' · ');
 }
 function titleCase(value) { return String(value || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); }
+function listToTextarea(items) { return (items || []).join('\n'); }
+function textareaToList(id) {
+  return (document.getElementById(id)?.value || '')
+    .split('\n')
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+function renderMemoryTextarea(label, id, items, hint) {
+  return `
+    <div class="form-field" style="margin:0;">
+      <label style="color:rgba(255,255,255,0.3)">${esc(label)}</label>
+      <textarea id="${esc(id)}" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;min-height:96px">${esc(listToTextarea(items))}</textarea>
+      <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-top:8px;font-family:'DM Mono',monospace;">${esc(hint)}</div>
+    </div>
+  `;
+}
 function timeAgo(iso) {
   if (!iso) return 'unknown';
   const diff = (Date.now() - new Date(iso)) / 1000;
@@ -3870,12 +4347,6 @@ window.addEventListener('hashchange', () => { routeFromHash(); });
 
 // ── Wire up metric card IDs and activity feed on DOM ready ────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  const cards = document.querySelectorAll('.metric-card');
-  const ids = ['metric-mrr','metric-users','metric-tasks','metric-leads'];
-  cards.forEach((c, i) => {
-    const val = c.querySelector('.metric-card-value');
-    if (val && ids[i]) val.id = ids[i];
-  });
   const feed = document.querySelector('#page-overview .panel-body .activity-item')?.parentElement;
   if (feed) feed.id = 'activity-feed';
   const tasksList = document.querySelector('#page-tasks .panel-body');

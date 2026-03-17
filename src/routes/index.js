@@ -15,13 +15,13 @@ import { listApprovals, decideApproval } from '../agents/approvals.js';
 import { getRecentActivity, logActivity } from '../agents/activity.js';
 import { getDb } from '../db/migrate.js';
 import { getStats } from '../ws/websocket.js';
-import { handleStripeWebhook } from '../integrations/stripe.js';
+import { handleStripeWebhook, createConnectAccount, createOnboardingLink } from '../integrations/stripe.js';
 import { getDeployments } from '../integrations/deploy.js';
-import { listIntegrations, syncBusinessIntegrations } from '../integrations/registry.js';
+import { listIntegrations, syncBusinessIntegrations, upsertIntegration } from '../integrations/registry.js';
 import { getPlanDefinition, resolveBusinessEconomics, serializePlan } from '../billing/plans.js';
 import { dispatchSpecialistTask } from '../business/specialists.js';
 import Anthropic from '@anthropic-ai/sdk';
-import { ANTHROPIC_API_KEY, AGENT_MODEL } from '../config.js';
+import { ANTHROPIC_API_KEY, AGENT_MODEL, STRIPE_SECRET_KEY } from '../config.js';
 
 const router = express.Router();
 
@@ -107,6 +107,356 @@ function getSpecialistSummary(db, businessId) {
 
 function getOwnedBusiness(db, businessId, userId) {
   return db.prepare('SELECT * FROM businesses WHERE id = ? AND user_id = ?').get(businessId, userId);
+}
+
+function parseJsonField(value, fallback = {}) {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function normaliseStringList(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(item => {
+      if (typeof item === 'string') return item.trim();
+      if (item && typeof item === 'object') {
+        return Object.values(item).filter(Boolean).join(' — ').trim();
+      }
+      return '';
+    })
+    .filter(Boolean);
+}
+
+function normaliseMemory(rawMemory, business = null) {
+  const parsed = parseJsonField(rawMemory, {});
+  return {
+    business: {
+      ...(parsed.business || {}),
+      ...(business ? {
+        name: business.name,
+        type: business.type,
+        description: business.description,
+        targetCustomer: business.target_customer,
+        goal90d: business.goal_90d,
+        involvement: business.involvement
+      } : {})
+    },
+    priorities: normaliseStringList(parsed.priorities),
+    learnings: normaliseStringList(parsed.learnings),
+    competitors: normaliseStringList(parsed.competitors),
+    customer_insights: normaliseStringList(parsed.customer_insights),
+    notes: normaliseStringList(parsed.notes),
+    history: Array.isArray(parsed.history) ? parsed.history.slice(-10) : [],
+    last_cycle: parsed.last_cycle || null
+  };
+}
+
+function sumBy(rows, field) {
+  return rows.reduce((total, row) => total + Number(row?.[field] || 0), 0);
+}
+
+function averageBy(rows, field) {
+  if (!rows.length) return 0;
+  return sumBy(rows, field) / rows.length;
+}
+
+function calcPctChange(current, previous) {
+  if (!previous && !current) return 0;
+  if (!previous) return 100;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+function getPortfolioOverview(db, userId, plan) {
+  const businesses = db.prepare(`
+    SELECT b.id, b.name, b.slug, b.type, b.status, b.involvement, b.day_count, b.web_url,
+           b.mrr_cents, b.total_revenue_cents, b.revenue_share_pct, b.monthly_subscription_cents,
+           (
+             SELECT COUNT(*)
+             FROM approvals a
+             WHERE a.business_id = b.id
+               AND a.status = 'pending'
+           ) AS pending_approvals,
+           (
+             SELECT c.status
+             FROM agent_cycles c
+             WHERE c.business_id = b.id
+             ORDER BY c.created_at DESC
+             LIMIT 1
+           ) AS latest_cycle_status,
+           (
+             SELECT c.summary
+             FROM agent_cycles c
+             WHERE c.business_id = b.id
+             ORDER BY c.created_at DESC
+             LIMIT 1
+           ) AS latest_cycle_summary,
+           (
+             SELECT a.created_at
+             FROM activity a
+             WHERE a.business_id = b.id
+             ORDER BY a.created_at DESC
+             LIMIT 1
+           ) AS latest_activity_at
+    FROM businesses b
+    WHERE b.user_id = ?
+    ORDER BY b.created_at DESC
+  `).all(userId);
+
+  const summary = businesses.reduce((acc, business) => {
+    acc.businesses += 1;
+    if (business.status === 'active') acc.active_businesses += 1;
+    acc.total_mrr_cents += Number(business.mrr_cents || 0);
+    acc.total_revenue_cents += Number(business.total_revenue_cents || 0);
+    acc.pending_approvals += Number(business.pending_approvals || 0);
+    acc.platform_share_cents += Math.floor(Number(business.total_revenue_cents || 0) * (Number(business.revenue_share_pct || 0) / 100));
+    return acc;
+  }, {
+    businesses: 0,
+    active_businesses: 0,
+    total_mrr_cents: 0,
+    total_revenue_cents: 0,
+    pending_approvals: 0,
+    platform_share_cents: 0
+  });
+
+  const running_cycles = db.prepare(`
+    SELECT COUNT(*) AS n
+    FROM agent_cycles c
+    JOIN businesses b ON b.id = c.business_id
+    WHERE b.user_id = ?
+      AND c.status = 'running'
+  `).get(userId).n;
+  const alerts_14d = db.prepare(`
+    SELECT COUNT(*) AS n
+    FROM activity a
+    JOIN businesses b ON b.id = a.business_id
+    WHERE b.user_id = ?
+      AND a.type = 'alert'
+      AND datetime(a.created_at) >= datetime('now', '-14 days')
+  `).get(userId).n;
+
+  return {
+    summary: {
+      ...summary,
+      running_cycles,
+      alerts_14d
+    },
+    businesses,
+    usage: getUserUsage(db, userId, plan),
+    plan: serializePlan(plan)
+  };
+}
+
+function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
+  const metrics = db.prepare(`
+    SELECT date, mrr_cents, active_users, new_users, tasks_done, leads, emails_sent, deployments, revenue_cents
+    FROM metrics
+    WHERE business_id = ?
+    ORDER BY date DESC
+    LIMIT 30
+  `).all(business.id);
+  const trend = metrics.slice().reverse();
+  const latest = trend[trend.length - 1] || {};
+  const previousWeek = trend.slice(Math.max(0, trend.length - 14), Math.max(0, trend.length - 7));
+  const latestWeek = trend.slice(Math.max(0, trend.length - 7));
+  const tasks = db.prepare(`
+    SELECT id, title, description, department, status, priority, triggered_by, created_at, completed_at
+    FROM tasks
+    WHERE business_id = ?
+    ORDER BY created_at DESC
+    LIMIT 60
+  `).all(business.id);
+  const activity = db.prepare(`
+    SELECT id, type, department, title, detail, created_at
+    FROM activity
+    WHERE business_id = ?
+    ORDER BY created_at DESC
+    LIMIT 80
+  `).all(business.id).map(item => ({
+    ...item,
+    detail: parseJsonField(item.detail, {})
+  }));
+  const deployments = getDeployments(business.id, 20);
+  const approvals = listApprovals(business.id, { limit: 25 });
+  const leadsByStatus = db.prepare(`
+    SELECT status, COUNT(*) AS count
+    FROM leads
+    WHERE business_id = ?
+    GROUP BY status
+    ORDER BY count DESC, status ASC
+  `).all(business.id);
+  const leadsBySource = db.prepare(`
+    SELECT source, COUNT(*) AS count
+    FROM leads
+    WHERE business_id = ?
+    GROUP BY source
+    ORDER BY count DESC, source ASC
+    LIMIT 8
+  `).all(business.id);
+  const recentLeads = db.prepare(`
+    SELECT id, name, email, company, status, source, created_at, last_contact
+    FROM leads
+    WHERE business_id = ?
+    ORDER BY created_at DESC
+    LIMIT 8
+  `).all(business.id);
+  const now = Date.now();
+  const since7d = now - (7 * 86400000);
+  const since14d = now - (14 * 86400000);
+  const since30d = now - (30 * 86400000);
+  const memory = normaliseMemory(business.agent_memory, business);
+  const economics = resolveBusinessEconomics(business, userPlan);
+  let integrations = listIntegrations(business.id);
+  if (!integrations.length) integrations = syncBusinessIntegrations(business);
+  const stripeIntegration = integrations.find(integration => integration.kind === 'stripe');
+  const engineeringTasks = tasks.filter(task => task.department === 'engineering');
+  const marketingTasks = tasks.filter(task => ['marketing', 'sales'].includes(task.department));
+  const operationsTasks = tasks.filter(task => ['operations', 'finance'].includes(task.department));
+  const engineeringActivity = activity.filter(item => ['deploy', 'code'].includes(item.type) || item.department === 'engineering');
+  const marketingActivity = activity.filter(item => ['marketing', 'sales'].includes(item.department) || ['email_sent', 'content', 'lead', 'research'].includes(item.type));
+  const operationsActivity = activity.filter(item => ['operations', 'finance'].includes(item.department) || ['alert', 'system'].includes(item.type));
+  const marketingActivity30d = marketingActivity.filter(item => new Date(item.created_at).getTime() >= since30d);
+  const operationsActivity30d = operationsActivity.filter(item => new Date(item.created_at).getTime() >= since30d);
+  const pendingApprovals = approvals.filter(item => item.status === 'pending');
+  const recentAlertItems = activity.filter(item => item.type === 'alert' && new Date(item.created_at).getTime() >= since14d);
+  const alertRows = recentAlertItems.slice(0, 8);
+  const founderInbox = [
+    ...pendingApprovals.map(approval => ({
+      kind: 'approval',
+      id: approval.id,
+      title: approval.title,
+      summary: approval.summary || 'Founder review required',
+      status: approval.status,
+      created_at: approval.created_at
+    })),
+    ...alertRows.map(alert => ({
+      kind: 'alert',
+      id: alert.id,
+      title: alert.title,
+      summary: alert.detail?.detail || alert.detail?.summary || 'Ventura flagged this for review',
+      status: 'review',
+      created_at: alert.created_at
+    }))
+  ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 12);
+
+  const deployments30d = sumBy(trend, 'deployments');
+  const tasks30d = sumBy(trend, 'tasks_done');
+  const leads30d = sumBy(trend, 'leads');
+  const emails30d = sumBy(trend, 'emails_sent');
+  const revenue30d = sumBy(trend, 'revenue_cents');
+  const activeUsersCurrent = Number(latest.active_users || 0);
+  const activeUsersPrevious = Math.round(averageBy(previousWeek, 'active_users'));
+  const mrrCurrent = Number(latest.mrr_cents || business.mrr_cents || 0);
+  const mrrPrevious = Math.round(averageBy(previousWeek, 'mrr_cents'));
+  const openEngineeringTasks = engineeringTasks.filter(task => !['complete', 'cancelled'].includes(task.status)).length;
+  const runningOperations = operationsTasks.filter(task => task.status === 'running').length;
+  const handledOps30d = operationsActivity30d.filter(item => item.type === 'email_sent').length;
+  const content30d = marketingActivity30d.filter(item => item.type === 'content').length;
+  const campaigns30d = marketingActivity30d.filter(item => ['email_sent', 'content', 'lead'].includes(item.type)).length;
+  const qualifiedLeads = leadsByStatus.find(item => item.status === 'qualified')?.count || 0;
+  const wonLeads = leadsByStatus.find(item => item.status === 'won')?.count || 0;
+  const totalLeads = db.prepare('SELECT COUNT(*) AS n FROM leads WHERE business_id = ?').get(business.id).n;
+  const openReviews = pendingApprovals.length + recentAlertItems.length;
+  const recentAlerts = recentAlertItems.length;
+  const uptimePct = Math.max(97, Number((99.9 - Math.min(recentAlerts * 0.3, 2.5)).toFixed(1)));
+
+  return {
+    business: {
+      id: business.id,
+      name: business.name,
+      slug: business.slug,
+      type: business.type,
+      description: business.description,
+      target_customer: business.target_customer,
+      goal_90d: business.goal_90d,
+      day_count: business.day_count,
+      web_url: business.web_url,
+      email_address: business.email_address,
+      involvement: business.involvement,
+      status: business.status,
+      stripe_account_id: business.stripe_account_id,
+      mrr_cents: business.mrr_cents,
+      arr_cents: business.arr_cents,
+      total_revenue_cents: business.total_revenue_cents
+    },
+    billing: {
+      plan: serializePlan(userPlan),
+      economics,
+      stripe: {
+        configured: !!STRIPE_SECRET_KEY,
+        connected: !!(business.stripe_account_id && !String(business.stripe_account_id).startsWith('acct_mock_')),
+        mocked: !!(business.stripe_account_id && String(business.stripe_account_id).startsWith('acct_mock_')),
+        status: stripeIntegration?.status || (STRIPE_SECRET_KEY ? 'pending' : 'mocked')
+      }
+    },
+    memory,
+    engineering: {
+      summary: {
+        deployments_30d: deployments30d,
+        open_tasks: openEngineeringTasks,
+        completed_7d: engineeringTasks.filter(task => task.status === 'complete' && new Date(task.completed_at || task.created_at).getTime() >= since7d).length,
+        uptime_pct: uptimePct
+      },
+      deployments,
+      tasks: engineeringTasks.slice(0, 12),
+      activity: engineeringActivity.slice(0, 12),
+      preview: {
+        url: business.web_url,
+        email: business.email_address
+      }
+    },
+    marketing: {
+      summary: {
+        emails_30d: emails30d,
+        campaigns_30d: campaigns30d,
+        content_30d: content30d,
+        leads_total: totalLeads,
+        qualified_leads: qualifiedLeads,
+        won_leads: wonLeads
+      },
+      campaigns: marketingActivity.slice(0, 14),
+      leads: {
+        by_status: leadsByStatus,
+        by_source: leadsBySource,
+        recent: recentLeads
+      },
+      tasks: marketingTasks.slice(0, 12)
+    },
+    operations: {
+      summary: {
+        pending_reviews: openReviews,
+        handled_30d: handledOps30d,
+        alerts_14d: recentAlerts,
+        running_tasks: runningOperations
+      },
+      founder_inbox: founderInbox,
+      alerts: alertRows,
+      tasks: operationsTasks.slice(0, 12)
+    },
+    analytics: {
+      summary: {
+        mrr_cents: mrrCurrent,
+        arr_cents: Number(business.arr_cents || (mrrCurrent * 12)),
+        total_revenue_cents: Number(business.total_revenue_cents || 0),
+        revenue_30d_cents: revenue30d,
+        revenue_share_pct: Number(economics.revenue_share_pct || business.revenue_share_pct || 0),
+        platform_share_cents: Math.floor(Number(business.total_revenue_cents || 0) * ((Number(economics.revenue_share_pct || business.revenue_share_pct || 0)) / 100)),
+        active_users: activeUsersCurrent,
+        active_users_change_pct: calcPctChange(activeUsersCurrent, activeUsersPrevious),
+        mrr_change_pct: calcPctChange(mrrCurrent, mrrPrevious),
+        tasks_30d: tasks30d,
+        leads_30d: leads30d,
+        emails_30d: emails30d,
+        deployments_30d: deployments30d
+      },
+      trend,
+      funnel: leadsByStatus
+    }
+  };
 }
 
 function sanitizePublicIntegration(kind, config = {}) {
@@ -753,6 +1103,111 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
     economics,
     plan: serializePlan(user.plan)
   });
+}));
+
+// GET /api/portfolio/overview — multi-business operating snapshot for founder
+router.get('/portfolio/overview', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(req.user.sub);
+  res.json(getPortfolioOverview(db, req.user.sub, user.plan));
+}));
+
+// GET /api/businesses/:id/operating-system — department-by-department dashboard data
+router.get('/businesses/:id/operating-system', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(req.user.sub);
+  res.json(getOperatingSystemSnapshot(db, business, user.plan));
+}));
+
+// PATCH /api/businesses/:id/memory — founder edits the agent memory thread
+router.patch('/businesses/:id/memory', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const schema = z.object({
+    priorities: z.array(z.string().min(1).max(280)).max(12).optional(),
+    learnings: z.array(z.string().min(1).max(400)).max(12).optional(),
+    competitors: z.array(z.string().min(1).max(400)).max(12).optional(),
+    customerInsights: z.array(z.string().min(1).max(400)).max(12).optional(),
+    notes: z.array(z.string().min(1).max(400)).max(12).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const memory = normaliseMemory(business.agent_memory, business);
+
+  if (body.priorities) memory.priorities = body.priorities;
+  if (body.learnings) memory.learnings = body.learnings;
+  if (body.competitors) memory.competitors = body.competitors;
+  if (body.customerInsights) memory.customer_insights = body.customerInsights;
+  if (body.notes) memory.notes = body.notes;
+  memory.last_cycle = {
+    ...(memory.last_cycle || {}),
+    founder_updated_at: new Date().toISOString()
+  };
+
+  db.prepare(`
+    UPDATE businesses
+    SET agent_memory = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(JSON.stringify(memory), req.params.id);
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'strategy',
+    title: 'Founder updated agent memory',
+    detail: {
+      priorities: memory.priorities.length,
+      learnings: memory.learnings.length,
+      competitors: memory.competitors.length,
+      customer_insights: memory.customer_insights.length
+    }
+  });
+
+  res.json({ memory });
+}));
+
+// POST /api/businesses/:id/stripe/onboarding — open Connect onboarding
+router.post('/businesses/:id/stripe/onboarding', requireAuth, asyncHandler(async (req, res) => {
+  if (!STRIPE_SECRET_KEY) {
+    return res.status(503).json({ error: 'Stripe Connect is not configured yet.' });
+  }
+
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  let stripeAccountId = business.stripe_account_id;
+  if (!stripeAccountId || String(stripeAccountId).startsWith('acct_mock_')) {
+    const user = getUserById(req.user.sub);
+    const account = await createConnectAccount(business, user);
+    stripeAccountId = account?.id || db.prepare('SELECT stripe_account_id FROM businesses WHERE id = ?').get(req.params.id)?.stripe_account_id;
+  }
+
+  if (!stripeAccountId) {
+    return res.status(400).json({ error: 'Could not create a Stripe account for this business.' });
+  }
+
+  const url = await createOnboardingLink(stripeAccountId, business.id);
+  upsertIntegration({
+    businessId: business.id,
+    kind: 'stripe',
+    provider: 'stripe',
+    status: 'connected',
+    config: { account_id: stripeAccountId },
+    lastSyncAt: new Date().toISOString()
+  });
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'finance',
+    title: 'Founder opened Stripe Connect onboarding',
+    detail: { stripe_account_id: stripeAccountId }
+  });
+
+  res.json({ url, stripeAccountId });
 }));
 
 // GET /api/live — public transparency feed

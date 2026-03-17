@@ -5,7 +5,7 @@
 //   - Platform fee is STRIPE_PLATFORM_FEE_PCT % on each transaction
 
 import Stripe from 'stripe';
-import { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PLATFORM_FEE_PCT } from '../config.js';
+import { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PLATFORM_FEE_PCT, FRONTEND_URL } from '../config.js';
 import { getDb } from '../db/migrate.js';
 import { logActivity } from '../agents/activity.js';
 import { emitToBusiness } from '../ws/websocket.js';
@@ -38,8 +38,8 @@ export async function createConnectAccount(business, user) {
 export async function createOnboardingLink(stripeAccountId, businessId) {
   const link = await stripe.accountLinks.create({
     account: stripeAccountId,
-    refresh_url: `https://ventura.ai/dashboard?stripe=refresh&business=${businessId}`,
-    return_url:  `https://ventura.ai/dashboard?stripe=complete&business=${businessId}`,
+    refresh_url: `${FRONTEND_URL}#settings?stripe=refresh&business=${businessId}`,
+    return_url:  `${FRONTEND_URL}#settings?stripe=complete&business=${businessId}`,
     type: 'account_onboarding'
   });
   return link.url;
