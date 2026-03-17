@@ -97,6 +97,11 @@ export function runMigrations() {
       involvement   TEXT NOT NULL DEFAULT 'autopilot',  -- autopilot | review | daily
       status        TEXT NOT NULL DEFAULT 'provisioning', -- provisioning | active | paused | cancelled
       day_count     INTEGER NOT NULL DEFAULT 0,
+      cadence_mode  TEXT NOT NULL DEFAULT 'daily', -- daily | hourly | manual
+      cadence_interval_hours INTEGER NOT NULL DEFAULT 24,
+      preferred_run_hour_utc INTEGER NOT NULL DEFAULT 2,
+      next_run_at   TEXT,
+      last_cycle_at TEXT,
 
       -- Infrastructure
       web_url       TEXT,
@@ -123,6 +128,7 @@ export function runMigrations() {
 
     CREATE INDEX IF NOT EXISTS idx_businesses_user ON businesses(user_id);
     CREATE INDEX IF NOT EXISTS idx_businesses_slug ON businesses(slug);
+    CREATE INDEX IF NOT EXISTS idx_businesses_next_run ON businesses(next_run_at);
 
     -- ─────────────────────────────────────────
     -- AGENT CYCLES
@@ -401,6 +407,98 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_recovery_cases_source ON recovery_cases(source_type, source_id);
 
     -- ─────────────────────────────────────────
+    -- WORKSPACE RECORDS (business-scoped synced context)
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS workspace_records (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      kind          TEXT NOT NULL,
+      provider      TEXT NOT NULL,
+      external_id   TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'active',
+      title         TEXT NOT NULL,
+      summary       TEXT,
+      owner         TEXT,
+      metadata      TEXT DEFAULT '{}',
+      payload       TEXT DEFAULT '{}',
+      occurred_at   TEXT,
+      last_synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(business_id, kind, external_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_workspace_records_business ON workspace_records(business_id);
+    CREATE INDEX IF NOT EXISTS idx_workspace_records_kind ON workspace_records(kind);
+    CREATE INDEX IF NOT EXISTS idx_workspace_records_status ON workspace_records(status);
+
+    -- ─────────────────────────────────────────
+    -- WORKSPACE SYNC RUNS
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS workspace_sync_runs (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      kind          TEXT NOT NULL,
+      provider      TEXT NOT NULL,
+      triggered_by  TEXT NOT NULL DEFAULT 'founder',
+      status        TEXT NOT NULL DEFAULT 'complete',
+      summary       TEXT,
+      items_synced  INTEGER NOT NULL DEFAULT 0,
+      error         TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at  TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_workspace_sync_runs_business ON workspace_sync_runs(business_id);
+    CREATE INDEX IF NOT EXISTS idx_workspace_sync_runs_kind ON workspace_sync_runs(kind);
+
+    -- ─────────────────────────────────────────
+    -- WORKSPACE AUTOMATION RUNS
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS workspace_automation_runs (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      triggered_by  TEXT NOT NULL DEFAULT 'agent',
+      status        TEXT NOT NULL DEFAULT 'complete',
+      summary       TEXT,
+      items_reviewed INTEGER NOT NULL DEFAULT 0,
+      tasks_created INTEGER NOT NULL DEFAULT 0,
+      error         TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at  TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_workspace_automation_runs_business ON workspace_automation_runs(business_id);
+    CREATE INDEX IF NOT EXISTS idx_workspace_automation_runs_status ON workspace_automation_runs(status);
+
+    -- ─────────────────────────────────────────
+    -- WORKSPACE AUTOMATION ACTIONS
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS workspace_automation_actions (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      kind          TEXT NOT NULL,
+      external_id   TEXT NOT NULL,
+      action_key    TEXT NOT NULL,
+      title         TEXT NOT NULL,
+      summary       TEXT,
+      department    TEXT NOT NULL,
+      workflow_key  TEXT NOT NULL,
+      source_status TEXT,
+      source_fingerprint TEXT NOT NULL,
+      task_id       TEXT REFERENCES tasks(id),
+      status        TEXT NOT NULL DEFAULT 'open', -- open | closed | needs_retry | suppressed
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at  TEXT,
+      UNIQUE(business_id, kind, external_id, action_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_workspace_automation_actions_business ON workspace_automation_actions(business_id);
+    CREATE INDEX IF NOT EXISTS idx_workspace_automation_actions_status ON workspace_automation_actions(status);
+    CREATE INDEX IF NOT EXISTS idx_workspace_automation_actions_task ON workspace_automation_actions(task_id);
+
+    -- ─────────────────────────────────────────
     -- INTEGRATIONS / INFRA REGISTRY
     -- ─────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS integrations (
@@ -504,6 +602,11 @@ export function runMigrations() {
   ensureColumn(db, 'businesses', 'revenue_share_pct', 'INTEGER NOT NULL DEFAULT -1');
   ensureColumn(db, 'businesses', 'tasks_included_per_month', 'INTEGER NOT NULL DEFAULT -1');
   ensureColumn(db, 'businesses', 'infrastructure_included', 'INTEGER NOT NULL DEFAULT -1');
+  ensureColumn(db, 'businesses', 'cadence_mode', "TEXT NOT NULL DEFAULT 'daily'");
+  ensureColumn(db, 'businesses', 'cadence_interval_hours', 'INTEGER NOT NULL DEFAULT 24');
+  ensureColumn(db, 'businesses', 'preferred_run_hour_utc', 'INTEGER NOT NULL DEFAULT 2');
+  ensureColumn(db, 'businesses', 'next_run_at', 'TEXT');
+  ensureColumn(db, 'businesses', 'last_cycle_at', 'TEXT');
   ensureColumn(db, 'tasks', 'workflow_key', 'TEXT');
   ensureColumn(db, 'tasks', 'brief_json', 'TEXT');
   ensureColumn(db, 'tasks', 'verification_status', 'TEXT');

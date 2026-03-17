@@ -8,6 +8,7 @@ import { getDb } from '../db/migrate.js';
 import { FRONTEND_URL, PLATFORM_DOMAIN, STRIPE_SECRET_KEY } from '../config.js';
 import { emitToUser } from '../ws/websocket.js';
 import { logActivity } from '../agents/activity.js';
+import { scheduleNextRun } from '../agents/cadence.js';
 import { queueTask } from '../agents/tasks.js';
 import { sendEmail } from '../integrations/email.js';
 import { createVercelProject } from '../integrations/deploy.js';
@@ -15,6 +16,7 @@ import { saveStripeIntegrationState, seedDefaultIntegrations, upsertIntegration 
 import { createConnectAccount, getConnectAccountSnapshot } from '../integrations/stripe.js';
 import { getPlanEconomics } from '../billing/plans.js';
 import { syncInfrastructureAssets } from '../infrastructure/assets.js';
+import { syncWorkspaceData } from '../integrations/workspace-sync.js';
 
 // ─── Slug generator ───────────────────────────────────────────────────────────
 
@@ -94,6 +96,9 @@ export async function provisionBusiness({ userId, name, type, description, targe
       email_address: emailAddress
     });
     await stepActivate(businessId, userId);
+    scheduleNextRun(businessId, { mode: 'daily', preferredHourUtc: 2 });
+    const activeBusiness = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
+    syncWorkspaceData({ business: activeBusiness, triggeredBy: 'provisioning' });
     await stepSeedAgentMemory(businessId, { name, type, description, targetCustomer, goal90d, involvement, webUrl, emailAddress });
     await stepQueueInitialTasks(businessId, type);
     await stepSendWelcomeEmail(userId, name, webUrl, emailAddress, slug);

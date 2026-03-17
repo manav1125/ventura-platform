@@ -20,7 +20,9 @@ const SORT_ORDER = {
   analytics: 4,
   search: 5,
   social: 6,
-  calendar: 7
+  inbox: 7,
+  calendar: 8,
+  accounting: 9
 };
 
 function parseJson(config, fallback = {}) {
@@ -234,10 +236,46 @@ function buildIntegrationSpecs({ slug, emailAddress, webUrl, stripeAccountId = n
       secrets: social.secrets
     },
     {
+      kind: 'inbox',
+      provider: 'preview-inbox',
+      status: 'preview',
+      config: {
+        connected: false,
+        inbox_address: emailAddress,
+        support_aliases: [emailAddress].filter(Boolean),
+        sync_mode: 'hourly',
+        sync_interval_hours: 4,
+        automation_enabled: true,
+        preview: true
+      }
+    },
+    {
       kind: 'calendar',
-      provider: 'pending',
-      status: 'pending',
-      config: { note: 'Calendar MCP not wired yet' }
+      provider: 'preview-calendar',
+      status: 'preview',
+      config: {
+        connected: false,
+        calendar_label: `${slug} founder calendar`,
+        timezone: 'UTC',
+        sync_mode: 'daily',
+        sync_interval_hours: 12,
+        automation_enabled: true,
+        preview: true
+      }
+    },
+    {
+      kind: 'accounting',
+      provider: 'preview-ledger',
+      status: 'preview',
+      config: {
+        connected: false,
+        account_label: `${slug} operating ledger`,
+        currency: 'usd',
+        sync_mode: 'derived',
+        sync_interval_hours: 24,
+        automation_enabled: true,
+        preview: true
+      }
     }
   ];
 }

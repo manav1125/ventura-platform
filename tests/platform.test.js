@@ -467,6 +467,8 @@ describe('Control center', () => {
     assert.ok(Array.isArray(body.specialists));
     assert.ok(Array.isArray(body.recoveryCases));
     assert.ok(body.recoverySummary);
+    assert.ok(body.cadence);
+    assert.ok(body.workspace);
     assert.ok(body.plan);
     assert.ok(body.usage);
     assert.ok(body.economics);
@@ -756,10 +758,13 @@ describe('Control center', () => {
     assert.ok(body.memory);
     assert.ok(body.billing);
     assert.ok(body.infrastructure);
+    assert.ok(body.cadence);
+    assert.ok(body.workspace);
     assert.ok(body.operations.action_summary);
     assert.ok(Array.isArray(body.operations.actions));
     assert.ok(body.operations.recovery_summary);
     assert.ok(Array.isArray(body.operations.recovery_cases));
+    assert.ok(body.operations.workspace);
     assert.ok(Array.isArray(body.infrastructure.assets));
     assert.ok(body.infrastructure.readiness);
     assert.ok(Array.isArray(body.analytics.trend));
@@ -854,6 +859,117 @@ describe('Control center', () => {
     assert.equal(snapshot.status, 200);
     assert.ok(snapshot.body.memory.priorities.includes('Close first 10 paying users'));
     assert.ok(snapshot.body.memory.customer_insights.includes('Solo founders want setup under 10 minutes'));
+  });
+
+  it('updates recurring cadence controls and surfaces them in the operating system', async () => {
+    const updated = await PATCH(`/api/businesses/${bizId}/cadence`, {
+      mode: 'hourly',
+      intervalHours: 6,
+      preferredHourUtc: 4
+    }, tokens.access);
+    assert.equal(updated.status, 200);
+    assert.equal(updated.body.cadence.mode, 'hourly');
+    assert.equal(updated.body.cadence.interval_hours, 6);
+
+    const snapshot = await GET(`/api/businesses/${bizId}/operating-system`, tokens.access);
+    assert.equal(snapshot.status, 200);
+    assert.equal(snapshot.body.cadence.mode, 'hourly');
+    assert.equal(snapshot.body.cadence.interval_hours, 6);
+    assert.ok(snapshot.body.cadence.next_run_at);
+  });
+
+  it('stores workspace sync settings and syncs inbox, calendar, and accounting context', async () => {
+    const inbox = await PATCH(`/api/businesses/${bizId}/integrations/workspace/inbox`, {
+      inboxAddress: 'support@testsaas.dev',
+      supportAliases: ['sales@testsaas.dev', 'success@testsaas.dev'],
+      syncMode: 'hourly',
+      syncIntervalHours: 6,
+      automationEnabled: true
+    }, tokens.access);
+    assert.equal(inbox.status, 200);
+    assert.equal(inbox.body.integration.kind, 'inbox');
+    assert.equal(inbox.body.integration.config.inbox_address, 'support@testsaas.dev');
+    assert.equal(inbox.body.integration.config.sync_mode, 'hourly');
+    assert.equal(inbox.body.integration.config.sync_interval_hours, 6);
+
+    const calendar = await PATCH(`/api/businesses/${bizId}/integrations/workspace/calendar`, {
+      calendarLabel: 'Founder ops calendar',
+      calendarId: 'primary',
+      syncMode: 'daily',
+      syncIntervalHours: 12,
+      automationEnabled: true
+    }, tokens.access);
+    assert.equal(calendar.status, 200);
+    assert.equal(calendar.body.integration.kind, 'calendar');
+    assert.equal(calendar.body.integration.config.calendar_id, 'primary');
+    assert.equal(calendar.body.integration.config.sync_mode, 'daily');
+
+    const accounting = await PATCH(`/api/businesses/${bizId}/integrations/workspace/accounting`, {
+      accountLabel: 'Main operating ledger',
+      accountExternalId: 'ledger-001',
+      syncMode: 'derived',
+      syncIntervalHours: 24,
+      automationEnabled: true
+    }, tokens.access);
+    assert.equal(accounting.status, 200);
+    assert.equal(accounting.body.integration.kind, 'accounting');
+    assert.equal(accounting.body.integration.config.account_external_id, 'ledger-001');
+    assert.equal(accounting.body.integration.config.sync_mode, 'derived');
+
+    const sync = await POST(`/api/businesses/${bizId}/workspace/sync`, {
+      kinds: ['inbox', 'calendar', 'accounting']
+    }, tokens.access);
+    assert.equal(sync.status, 200);
+    assert.equal(sync.body.results.length, 3);
+    assert.ok(sync.body.snapshot.summary.last_sync_at);
+    assert.ok(sync.body.snapshot.inbox.length >= 1);
+    assert.ok(sync.body.snapshot.calendar.length >= 1);
+    assert.ok(sync.body.snapshot.accounting.length >= 1);
+    assert.ok(Array.isArray(sync.body.syncPlan));
+    assert.ok(sync.body.syncPlan.some(item => item.kind === 'inbox'));
+
+    const workspace = await GET(`/api/businesses/${bizId}/workspace`, tokens.access);
+    assert.equal(workspace.status, 200);
+    assert.ok(Array.isArray(workspace.body.workspace.inbox));
+    assert.ok(Array.isArray(workspace.body.workspace.calendar));
+    assert.ok(Array.isArray(workspace.body.workspace.accounting));
+    assert.ok(Array.isArray(workspace.body.syncPlan));
+    assert.ok(workspace.body.automation.summary);
+    assert.ok(workspace.body.integrations.some(item => item.kind === 'inbox'));
+
+    const operating = await GET(`/api/businesses/${bizId}/operating-system`, tokens.access);
+    assert.equal(operating.status, 200);
+    assert.ok(operating.body.operations.workspace.summary.inbox_attention >= 0);
+    assert.ok(operating.body.workspace.summary.upcoming_events >= 1);
+  });
+
+  it('turns synced workspace signals into deduped operating tasks', async () => {
+    const first = await POST(`/api/businesses/${bizId}/workspace/automation/run`, {}, tokens.access);
+    assert.equal(first.status, 200);
+    assert.ok(first.body.automation.summary.open_actions >= 1);
+    const automationTaskIds = first.body.automation.actions
+      .map(item => item.task_id)
+      .filter(Boolean);
+    assert.ok(automationTaskIds.length >= 1);
+
+    const tasksBefore = await GET(`/api/businesses/${bizId}/tasks`, tokens.access);
+    assert.equal(tasksBefore.status, 200);
+    assert.ok(automationTaskIds.every(taskId => tasksBefore.body.tasks.some(task => task.id === taskId)));
+
+    const second = await POST(`/api/businesses/${bizId}/workspace/automation/run`, {}, tokens.access);
+    assert.equal(second.status, 200);
+    const secondTaskIds = second.body.automation.actions
+      .map(item => item.task_id)
+      .filter(Boolean);
+
+    const tasksAfter = await GET(`/api/businesses/${bizId}/tasks`, tokens.access);
+    assert.equal(secondTaskIds.length, automationTaskIds.length);
+    assert.ok(secondTaskIds.every(taskId => tasksAfter.body.tasks.some(task => task.id === taskId)));
+
+    const operating = await GET(`/api/businesses/${bizId}/operating-system`, tokens.access);
+    assert.equal(operating.status, 200);
+    assert.ok(operating.body.workspace_automation.summary.open_actions >= 1);
+    assert.ok(Array.isArray(operating.body.operations.workspace_automation.actions));
   });
 
   it('can approve a pending founder action', async () => {

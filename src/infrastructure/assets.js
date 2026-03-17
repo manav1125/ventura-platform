@@ -658,6 +658,9 @@ export function testAnalyticsAsset(business) {
 function buildProviderReadiness(business, integrations = [], assets = []) {
   const stripeIntegration = integrations.find(item => item.kind === 'stripe');
   const socialIntegration = integrations.find(item => item.kind === 'social');
+  const inboxIntegration = integrations.find(item => item.kind === 'inbox');
+  const calendarIntegration = integrations.find(item => item.kind === 'calendar');
+  const accountingIntegration = integrations.find(item => item.kind === 'accounting');
   const socialConfig = socialIntegration?.config || {};
   const domainAsset = assets.find(asset => asset.kind === 'domain');
   const mailboxAsset = assets.find(asset => asset.kind === 'mailbox');
@@ -756,6 +759,39 @@ function buildProviderReadiness(business, integrations = [], assets = []) {
         ? 'Agents can enrich decisions with live search results.'
         : 'Optional: add BRAVE_SEARCH_API_KEY so Ventura can pull live research during cycles.',
       missing: BRAVE_SEARCH_API_KEY ? [] : ['BRAVE_SEARCH_API_KEY']
+    },
+    {
+      id: 'inbox_sync',
+      label: 'Business inbox sync',
+      status: inboxIntegration?.status || 'preview',
+      configured: !!inboxIntegration?.config?.inbox_address,
+      summary: inboxIntegration?.config?.connected
+        ? 'Ventura can pull business-owned inbox threads into the operating loop.'
+        : 'Configure a business inbox address so Ventura can sync support and sales conversations.',
+      missing: inboxIntegration?.config?.connected ? [] : ['BUSINESS_INBOX_ADDRESS'],
+      business_status: inboxIntegration?.status || 'preview'
+    },
+    {
+      id: 'calendar_sync',
+      label: 'Business calendar sync',
+      status: calendarIntegration?.status || 'preview',
+      configured: !!calendarIntegration?.config?.calendar_id,
+      summary: calendarIntegration?.config?.connected
+        ? 'Upcoming meetings and launch windows are available to the autonomous loop.'
+        : 'Connect a company calendar so Ventura can factor meetings, demos, and deadlines into daily execution.',
+      missing: calendarIntegration?.config?.connected ? [] : ['BUSINESS_CALENDAR_ID'],
+      business_status: calendarIntegration?.status || 'preview'
+    },
+    {
+      id: 'accounting_sync',
+      label: 'Accounting sync',
+      status: accountingIntegration?.status || 'preview',
+      configured: !!(accountingIntegration?.config?.account_external_id || accountingIntegration?.config?.account_label),
+      summary: accountingIntegration?.config?.connected
+        ? 'Revenue, fees, and pending reconciliations are flowing into Ventura.'
+        : 'Add an accounting or ledger connection so Ventura can reason about cash movement and reconciliation.',
+      missing: accountingIntegration?.config?.connected ? [] : ['BUSINESS_ACCOUNT_LEDGER'],
+      business_status: accountingIntegration?.status || 'preview'
     }
   ];
 
@@ -777,7 +813,16 @@ function buildProviderReadiness(business, integrations = [], assets = []) {
       : []),
     ...(!socialConfig?.linkedin?.publish_ready && LINKEDIN_CLIENT_ID && LINKEDIN_CLIENT_SECRET
       ? ['Connect a LinkedIn founder account and choose the page Ventura should publish from.']
-      : [])
+      : []),
+    ...(inboxIntegration?.config?.connected
+      ? []
+      : ['Connect the business inbox so Ventura can triage support, sales, and investor threads.']),
+    ...(calendarIntegration?.config?.connected
+      ? []
+      : ['Connect the business calendar so Ventura can plan around demos, launches, and founder reviews.']),
+    ...(accountingIntegration?.config?.connected
+      ? []
+      : ['Connect a business ledger or accounting system so Ventura can track cash movement and reconciliations.'])
   ];
 
   return {
@@ -800,7 +845,10 @@ export function getInfrastructureSnapshot(business, integrations = null) {
     getIntegration(business.id, 'email'),
     getIntegration(business.id, 'analytics'),
     getIntegration(business.id, 'stripe'),
-    getIntegration(business.id, 'social')
+    getIntegration(business.id, 'social'),
+    getIntegration(business.id, 'inbox'),
+    getIntegration(business.id, 'calendar'),
+    getIntegration(business.id, 'accounting')
   ].filter(Boolean);
   const readiness = buildProviderReadiness(business, activeIntegrations, assets);
 

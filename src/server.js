@@ -44,7 +44,11 @@ app.use(express.urlencoded({ extended: true }));
 // Simple in-memory rate limiter (replace with Redis in production)
 const rateLimitMap = new Map();
 app.use((req, res, next) => {
-  const key = req.ip;
+  if (req.path === '/api/health') {
+    return next();
+  }
+
+  const key = `${req.ip}:${req.baseUrl || ''}${req.path}`;
   const now = Date.now();
   const windowStart = now - RATE_LIMIT_WINDOW_MS;
 

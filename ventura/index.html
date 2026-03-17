@@ -3420,6 +3420,7 @@ function renderPortfolioPulse(data) {
       <div>
         <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(item.name)}</div>
         <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${formatMoney(item.mrr_cents || 0)} MRR · ${item.pending_approvals || 0} approvals · ${item.latest_cycle_summary ? esc(item.latest_cycle_summary) : 'No cycle summary yet'}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.42);line-height:1.5;margin-top:4px;">${esc(item.cadence_mode || 'daily')} cadence${item.next_run_at ? ` · next ${new Date(item.next_run_at).toLocaleString()}` : ''}</div>
       </div>
       <span style="font-size:11px;font-family:'DM Mono',monospace;color:${item.status === 'active' ? '#28ca41' : 'var(--gold)'};padding:4px 10px;background:${item.status === 'active' ? 'rgba(40,202,65,0.1)' : 'rgba(200,168,75,0.1)'};border-radius:999px;">${esc((item.status || 'idle').toUpperCase())}</span>
     </div>
@@ -3558,6 +3559,8 @@ function renderOperationsPage(data) {
     const tasks = data.operations?.tasks || [];
     const actions = data.operations?.actions || [];
     const recoveryCases = data.operations?.recovery_cases || [];
+    const workspace = data.operations?.workspace || data.workspace || { summary: {}, inbox: [], calendar: [], accounting: [] };
+    const workspaceAutomation = data.operations?.workspace_automation || data.workspace_automation || { summary: {}, actions: [], runs: [] };
     healthEl.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:16px;">
         <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
@@ -3584,6 +3587,14 @@ function renderOperationsPage(data) {
           <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">RETRYABLE</div>
           <div style="font-size:22px;color:#e0ddd5;">${summary.retryable_cases ?? 0}</div>
         </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">WORKSPACE AUTO</div>
+          <div style="font-size:22px;color:#e0ddd5;">${summary.workspace_actions_open ?? 0}</div>
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">AUTO RETRIES</div>
+          <div style="font-size:22px;color:#e0ddd5;">${summary.workspace_actions_retry ?? 0}</div>
+        </div>
       </div>
       ${(alerts.length ? alerts.slice(0, 5).map(item => `
         <div class="activity-item">
@@ -3595,6 +3606,61 @@ function renderOperationsPage(data) {
           <span class="activity-status status-running">review</span>
         </div>
       `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No active operational alerts right now.</div>`)}
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);padding:18px 0 8px;">SYNCED WORKSPACE</div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px;">
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">INBOX ATTENTION</div>
+          <div style="font-size:22px;color:#e0ddd5;">${workspace.summary?.inbox_attention ?? 0}</div>
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">UPCOMING EVENTS</div>
+          <div style="font-size:22px;color:#e0ddd5;">${workspace.summary?.upcoming_events ?? 0}</div>
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">PENDING ENTRIES</div>
+          <div style="font-size:22px;color:#e0ddd5;">${workspace.summary?.pending_entries ?? 0}</div>
+        </div>
+      </div>
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);padding:0 0 8px;">WORKSPACE AUTOMATION</div>
+      ${(workspaceAutomation.actions || []).length ? (workspaceAutomation.actions || []).slice(0, 4).map(item => `
+        <div class="activity-item">
+          <div class="activity-icon ${item.status === 'needs_retry' ? 'type-alert' : 'type-task'}">${item.status === 'needs_retry' ? '!' : '↺'}</div>
+          <div class="activity-content">
+            <div class="activity-title">${esc(item.title)}</div>
+            <div class="activity-meta">${esc(titleCase(item.department || 'operations'))} · ${timeAgo(item.updated_at || item.created_at)}</div>
+          </div>
+          <span class="activity-status ${item.status === 'closed' ? 'status-done' : item.status === 'needs_retry' ? 'status-running' : 'status-queued'}">${esc((item.status || 'open').replace('_', ' '))}</span>
+        </div>
+      `).join('') : `<div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.6;margin-bottom:14px;">No workspace automation actions yet. Sync workspace data or let the nightly loop review it.</div>`}
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:16px;">
+        <div style="padding:14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:8px;">INBOX</div>
+          ${(workspace.inbox || []).slice(0, 3).map(item => `
+            <div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+              <div style="font-size:13px;color:#e0ddd5;">${esc(item.title)}</div>
+              <div style="font-size:11px;color:rgba(255,255,255,0.5);line-height:1.5;">${esc(item.summary || '')}</div>
+            </div>
+          `).join('') || `<div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.6;">No inbox threads synced yet.</div>`}
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:8px;">CALENDAR</div>
+          ${(workspace.calendar || []).slice(0, 3).map(item => `
+            <div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+              <div style="font-size:13px;color:#e0ddd5;">${esc(item.title)}</div>
+              <div style="font-size:11px;color:rgba(255,255,255,0.5);line-height:1.5;">${item.payload?.starts_at ? new Date(item.payload.starts_at).toLocaleString() : timeAgo(item.occurred_at)}</div>
+            </div>
+          `).join('') || `<div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.6;">No calendar events synced yet.</div>`}
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:8px;">ACCOUNTING</div>
+          ${(workspace.accounting || []).slice(0, 3).map(item => `
+            <div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+              <div style="font-size:13px;color:#e0ddd5;">${esc(item.title)}</div>
+              <div style="font-size:11px;color:rgba(255,255,255,0.5);line-height:1.5;">${formatMoney(item.metadata?.amount_cents || item.payload?.amount_cents || 0)} · ${esc(titleCase(item.status || 'posted'))}</div>
+            </div>
+          `).join('') || `<div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.6;">No ledger records synced yet.</div>`}
+        </div>
+      </div>
       <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);padding:18px 0 8px;">RECOVERY QUEUE</div>
       ${(recoveryCases.length ? recoveryCases.slice(0, 5).map(item => `
         <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
@@ -3737,10 +3803,14 @@ function renderBusinessEnginePanel(data) {
 
 function buildTickerMessage(data) {
   const latestCycle = state.control?.latestCycle;
-  if (!latestCycle) return 'Ventura is monitoring your business and waiting for the next loop.';
+  const cadence = data?.cadence || state.control?.cadence || state.operating?.cadence || {};
+  if (!latestCycle) {
+    return cadence.next_run_at
+      ? `Ventura is monitoring your business — ${cadence.label || 'autonomous cadence active'} — next run ${new Date(cadence.next_run_at).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' })}.`
+      : 'Ventura is waiting for a founder-triggered run.';
+  }
   const completedAt = latestCycle.completed_at || latestCycle.created_at;
-  const nextRun = completedAt ? new Date(new Date(completedAt).getTime() + (24 * 3600000)) : null;
-  return `Agent last ran ${completedAt ? timeAgo(completedAt) : 'recently'} — ${latestCycle.summary || 'Cycle finished successfully.'}${nextRun ? ` — Next nightly run ${nextRun.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' })}` : ''}`;
+  return `Agent last ran ${completedAt ? timeAgo(completedAt) : 'recently'} — ${latestCycle.summary || 'Cycle finished successfully.'}${cadence.next_run_at ? ` — Next run ${new Date(cadence.next_run_at).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' })}` : ''}`;
 }
 
 function renderLiveBoard(data) {
@@ -3975,6 +4045,9 @@ function renderFounderControl(data) {
   const biz = data.business || {};
   const pending = (data.approvals || []).filter(a => a.status === 'pending');
   const recoveries = data.recoveryCases || [];
+  const cadence = data.cadence || {};
+  const workspace = data.workspace || { summary: {} };
+  const workspaceAutomation = data.workspaceAutomation || data.workspace_automation || { summary: {} };
   const connected = (data.integrations || []).filter(i => i.status === 'connected').length;
   const totalIntegrations = (data.integrations || []).length;
   const latestSummary = data.latestCycle?.summary || 'No autonomous cycle summary yet.';
@@ -3992,6 +4065,7 @@ function renderFounderControl(data) {
       <div style="padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px;">
         <div style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;margin-bottom:6px;">AUTONOMOUS LOOP</div>
         <div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.55;">${esc(latestSummary)}</div>
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-top:8px;">${esc(cadence.label || 'Daily at 02:00 UTC')} · next ${cadence.next_run_at ? new Date(cadence.next_run_at).toLocaleString() : 'manual only'}</div>
       </div>
       ${approvalHtml || `
         <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
@@ -4012,6 +4086,14 @@ function renderFounderControl(data) {
       <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
         <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">LIVE STACK</div>
         <div style="font-size:22px;color:#e0ddd5;">${connected}/${totalIntegrations || 0}</div>
+      </div>
+      <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">WORKSPACE SIGNALS</div>
+        <div style="font-size:22px;color:#e0ddd5;">${workspace.summary?.inbox_attention || 0} inbox · ${workspace.summary?.upcoming_events || 0} calendar</div>
+      </div>
+      <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">WORKSPACE AUTO</div>
+        <div style="font-size:22px;color:#e0ddd5;">${workspaceAutomation.summary?.open_actions || 0} open · ${workspaceAutomation.summary?.retry_actions || 0} retry</div>
       </div>
       <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
         <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:10px;">FOUNDER OVERRIDES</div>
@@ -4036,6 +4118,7 @@ function renderPlanning(data) {
   if (cyclesEl) {
     const cycles = data.recentCycles || data.planning?.recent_cycles || [];
     const workflows = data.workflows || data.planning?.workflows || [];
+    const cadence = data.cadence || data.planning?.cadence || {};
     const cycleRows = cycles.length ? cycles.map(c => `
       <div class="activity-item">
         <div class="activity-content">
@@ -4060,6 +4143,11 @@ function renderPlanning(data) {
       </div>
     `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding-top:12px;">Workflow continuity will appear here after Ventura completes tasks.</div>`;
     cyclesEl.innerHTML = `
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;margin-bottom:14px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">RUN CADENCE</div>
+        <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(cadence.label || 'Daily at 02:00 UTC')}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.55;">${cadence.next_run_at ? `Next scheduled loop ${new Date(cadence.next_run_at).toLocaleString()}.` : 'Ventura will only run when a founder starts a cycle manually.'}</div>
+      </div>
       ${cycleRows}
       <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);padding:18px 0 8px;">WORKFLOW STATE</div>
       ${workflowRows}
@@ -4211,6 +4299,7 @@ function renderSettings(data, operating = null, billing = null) {
   if (controlsEl) {
     const pending = (data.approvals || []).filter(a => a.status === 'pending').length;
     const economics = data.economics || data.plan || {};
+    const cadence = data.cadence || operating?.cadence || {};
     const currentPlan = billing?.current || data.plan?.id || 'trial';
     const upgradeOptions = (billing?.plans || []).filter(plan => plan.id !== currentPlan);
     controlsEl.innerHTML = `
@@ -4226,6 +4315,10 @@ function renderSettings(data, operating = null, billing = null) {
         <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
           <span style="font-size:13px;color:rgba(255,255,255,0.7)">Control mode</span>
           <span style="font-size:11px;font-family:'DM Mono',monospace;color:${biz.involvement === 'autopilot' ? '#28ca41' : 'var(--gold)'};padding:3px 10px;background:${biz.involvement === 'autopilot' ? 'rgba(40,202,65,0.1)' : 'rgba(200,168,75,0.1)'};border-radius:2px">${esc(biz.involvement).toUpperCase()}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
+          <span style="font-size:13px;color:rgba(255,255,255,0.7)">Run cadence</span>
+          <span style="font-size:11px;font-family:'DM Mono',monospace;color:#e0ddd5;padding:3px 10px;background:rgba(255,255,255,0.08);border-radius:2px">${esc(cadence.label || 'Daily at 02:00 UTC')}</span>
         </div>
         <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
           <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.45);margin-bottom:8px;">FOUNDER INBOX</div>
@@ -4248,9 +4341,29 @@ function renderSettings(data, operating = null, billing = null) {
             </select>
           </div>
         </div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;">
+          <div class="form-field" style="margin:0;">
+            <label style="color:rgba(255,255,255,0.3)">Cadence mode</label>
+            <select id="settings-cadence-mode" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              <option value="daily" ${(cadence.mode || 'daily') === 'daily' ? 'selected' : ''}>Daily</option>
+              <option value="hourly" ${cadence.mode === 'hourly' ? 'selected' : ''}>Hourly</option>
+              <option value="manual" ${cadence.mode === 'manual' ? 'selected' : ''}>Manual only</option>
+            </select>
+          </div>
+          <div class="form-field" style="margin:0;">
+            <label style="color:rgba(255,255,255,0.3)">Interval hours</label>
+            <input id="settings-cadence-interval" type="number" min="1" max="168" value="${esc(String(cadence.interval_hours || 24))}" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+          </div>
+          <div class="form-field" style="margin:0;">
+            <label style="color:rgba(255,255,255,0.3)">Preferred UTC hour</label>
+            <input id="settings-cadence-hour" type="number" min="0" max="23" value="${esc(String(cadence.preferred_run_hour_utc ?? 2))}" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+          </div>
+        </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
           <button class="icon-btn" onclick="saveBusinessControls()">Save controls</button>
           <button class="icon-btn" onclick="syncIntegrations()">Sync integrations</button>
+          <button class="icon-btn" onclick="syncWorkspaceContext()">Sync workspace</button>
+          <button class="icon-btn" onclick="runWorkspaceAutomationNow()">Run workspace automation</button>
           <button class="icon-btn" onclick="openBillingPortal()">Billing portal</button>
         </div>
         <div style="padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px;">
@@ -4307,6 +4420,14 @@ function renderSettings(data, operating = null, billing = null) {
       ...((stripeIntegration?.config) || {})
     };
     const socialIntegration = integrations.find(i => i.kind === 'social') || { status: 'pending', config: {} };
+    const inboxIntegration = integrations.find(i => i.kind === 'inbox') || { status: 'preview', config: {} };
+    const calendarIntegration = integrations.find(i => i.kind === 'calendar') || { status: 'preview', config: {} };
+    const accountingIntegration = integrations.find(i => i.kind === 'accounting') || { status: 'preview', config: {} };
+    const workspace = operating?.workspace || data.workspace || { summary: {}, inbox: [], calendar: [], accounting: [], sync_runs: [] };
+    const workspaceAutomation = operating?.workspace_automation || data.workspaceAutomation || data.workspace_automation || { summary: {}, actions: [], runs: [] };
+    const inboxSyncPlan = (workspace.sync_plan || []).find(item => item.kind === 'inbox') || {};
+    const calendarSyncPlan = (workspace.sync_plan || []).find(item => item.kind === 'calendar') || {};
+    const accountingSyncPlan = (workspace.sync_plan || []).find(item => item.kind === 'accounting') || {};
     const twitter = socialIntegration.config?.twitter || {};
     const linkedin = socialIntegration.config?.linkedin || {};
     const twitterOauth = twitter.oauth || {};
@@ -4633,6 +4754,140 @@ function renderSettings(data, operating = null, billing = null) {
         </div>
 
         <div style="padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px;">
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:6px;">WORKSPACE SYNC</div>
+              <div style="font-size:14px;color:#e0ddd5;line-height:1.6;">Business-owned inbox, calendar, and accounting context is injected into Ventura's operating loop. Sync it here so the agent works from current operational data instead of stale assumptions.</div>
+            </div>
+            <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor((workspace.summary?.last_sync_at ? 'connected' : 'preview'))};padding:4px 10px;background:${integrationBg((workspace.summary?.last_sync_at ? 'connected' : 'preview'))};border-radius:999px;white-space:nowrap;">${workspace.summary?.last_sync_at ? `SYNCED ${timeAgo(workspace.summary.last_sync_at)}` : 'NOT SYNCED'}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;">
+            <div style="padding:14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px;">
+                <div>
+                  <div style="font-size:13px;color:#e0ddd5;">Inbox sync</div>
+                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(inboxIntegration.config?.inbox_address || 'No inbox connected yet.')}</div>
+                </div>
+                <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(inboxIntegration.status || 'preview')};padding:4px 10px;background:${integrationBg(inboxIntegration.status || 'preview')};border-radius:999px;">${esc((inboxIntegration.status || 'preview').toUpperCase())}</span>
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Inbox address</label>
+                <input id="settings-workspace-inbox-address" value="${esc(inboxIntegration.config?.inbox_address || biz.email_address || '')}" placeholder="support@yourdomain.com" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Support aliases</label>
+                <input id="settings-workspace-inbox-aliases" value="${esc((inboxIntegration.config?.support_aliases || []).join(', '))}" placeholder="sales@, success@" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px;">
+                <div class="form-field" style="margin:0;">
+                  <label style="color:rgba(255,255,255,0.3)">Sync cadence</label>
+                  <select id="settings-workspace-inbox-sync-mode" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                    <option value="manual" ${(inboxIntegration.config?.sync_mode || 'hourly') === 'manual' ? 'selected' : ''}>Manual</option>
+                    <option value="hourly" ${(inboxIntegration.config?.sync_mode || 'hourly') === 'hourly' ? 'selected' : ''}>Hourly</option>
+                    <option value="daily" ${inboxIntegration.config?.sync_mode === 'daily' ? 'selected' : ''}>Daily</option>
+                    <option value="on_cycle" ${inboxIntegration.config?.sync_mode === 'on_cycle' ? 'selected' : ''}>Every Ventura loop</option>
+                  </select>
+                </div>
+                <div class="form-field" style="margin:0;">
+                  <label style="color:rgba(255,255,255,0.3)">Interval hours</label>
+                  <input id="settings-workspace-inbox-interval" type="number" min="1" max="168" value="${esc(String(inboxIntegration.config?.sync_interval_hours || inboxSyncPlan.interval_hours || 4))}" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                </div>
+              </div>
+              <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,0.62);margin-bottom:10px;">
+                <input id="settings-workspace-inbox-automation-enabled" type="checkbox" ${inboxIntegration.config?.automation_enabled === false ? '' : 'checked'}>
+                Auto-create inbox follow-up tasks
+              </label>
+              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-bottom:10px;font-family:'DM Mono',monospace;">Next sync: ${inboxSyncPlan.next_sync_at === 'on_cycle' ? 'every Ventura loop' : (inboxSyncPlan.next_sync_at ? new Date(inboxSyncPlan.next_sync_at).toLocaleString() : 'manual only')}</div>
+              <button class="icon-btn" onclick="saveWorkspaceIntegration('inbox')">Save inbox sync</button>
+            </div>
+            <div style="padding:14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px;">
+                <div>
+                  <div style="font-size:13px;color:#e0ddd5;">Calendar sync</div>
+                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(calendarIntegration.config?.calendar_label || 'No calendar linked yet.')}</div>
+                </div>
+                <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(calendarIntegration.status || 'preview')};padding:4px 10px;background:${integrationBg(calendarIntegration.status || 'preview')};border-radius:999px;">${esc((calendarIntegration.status || 'preview').toUpperCase())}</span>
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Calendar label</label>
+                <input id="settings-workspace-calendar-label" value="${esc(calendarIntegration.config?.calendar_label || '')}" placeholder="Founder ops calendar" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Calendar ID</label>
+                <input id="settings-workspace-calendar-id" value="${esc(calendarIntegration.config?.calendar_id || '')}" placeholder="primary / cal_123" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px;">
+                <div class="form-field" style="margin:0;">
+                  <label style="color:rgba(255,255,255,0.3)">Sync cadence</label>
+                  <select id="settings-workspace-calendar-sync-mode" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                    <option value="manual" ${(calendarIntegration.config?.sync_mode || 'daily') === 'manual' ? 'selected' : ''}>Manual</option>
+                    <option value="hourly" ${calendarIntegration.config?.sync_mode === 'hourly' ? 'selected' : ''}>Hourly</option>
+                    <option value="daily" ${(calendarIntegration.config?.sync_mode || 'daily') === 'daily' ? 'selected' : ''}>Daily</option>
+                    <option value="on_cycle" ${calendarIntegration.config?.sync_mode === 'on_cycle' ? 'selected' : ''}>Every Ventura loop</option>
+                  </select>
+                </div>
+                <div class="form-field" style="margin:0;">
+                  <label style="color:rgba(255,255,255,0.3)">Interval hours</label>
+                  <input id="settings-workspace-calendar-interval" type="number" min="1" max="168" value="${esc(String(calendarIntegration.config?.sync_interval_hours || calendarSyncPlan.interval_hours || 12))}" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                </div>
+              </div>
+              <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,0.62);margin-bottom:10px;">
+                <input id="settings-workspace-calendar-automation-enabled" type="checkbox" ${calendarIntegration.config?.automation_enabled === false ? '' : 'checked'}>
+                Auto-create prep briefs from upcoming events
+              </label>
+              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-bottom:10px;font-family:'DM Mono',monospace;">Next sync: ${calendarSyncPlan.next_sync_at === 'on_cycle' ? 'every Ventura loop' : (calendarSyncPlan.next_sync_at ? new Date(calendarSyncPlan.next_sync_at).toLocaleString() : 'manual only')}</div>
+              <button class="icon-btn" onclick="saveWorkspaceIntegration('calendar')">Save calendar sync</button>
+            </div>
+            <div style="padding:14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px;">
+                <div>
+                  <div style="font-size:13px;color:#e0ddd5;">Accounting sync</div>
+                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(accountingIntegration.config?.account_label || 'No ledger linked yet.')}</div>
+                </div>
+                <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(accountingIntegration.status || 'preview')};padding:4px 10px;background:${integrationBg(accountingIntegration.status || 'preview')};border-radius:999px;">${esc((accountingIntegration.status || 'preview').toUpperCase())}</span>
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">Ledger label</label>
+                <input id="settings-workspace-accounting-label" value="${esc(accountingIntegration.config?.account_label || '')}" placeholder="Main operating ledger" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div class="form-field" style="margin:0 0 10px;">
+                <label style="color:rgba(255,255,255,0.3)">External account ID</label>
+                <input id="settings-workspace-accounting-id" value="${esc(accountingIntegration.config?.account_external_id || '')}" placeholder="acct_123 / qb_123" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px;">
+                <div class="form-field" style="margin:0;">
+                  <label style="color:rgba(255,255,255,0.3)">Sync cadence</label>
+                  <select id="settings-workspace-accounting-sync-mode" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                    <option value="derived" ${(accountingIntegration.config?.sync_mode || 'derived') === 'derived' ? 'selected' : ''}>Derived</option>
+                    <option value="manual" ${accountingIntegration.config?.sync_mode === 'manual' ? 'selected' : ''}>Manual</option>
+                    <option value="daily" ${accountingIntegration.config?.sync_mode === 'daily' ? 'selected' : ''}>Daily</option>
+                    <option value="on_cycle" ${accountingIntegration.config?.sync_mode === 'on_cycle' ? 'selected' : ''}>Every Ventura loop</option>
+                  </select>
+                </div>
+                <div class="form-field" style="margin:0;">
+                  <label style="color:rgba(255,255,255,0.3)">Interval hours</label>
+                  <input id="settings-workspace-accounting-interval" type="number" min="1" max="168" value="${esc(String(accountingIntegration.config?.sync_interval_hours || accountingSyncPlan.interval_hours || 24))}" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                </div>
+              </div>
+              <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,0.62);margin-bottom:10px;">
+                <input id="settings-workspace-accounting-automation-enabled" type="checkbox" ${accountingIntegration.config?.automation_enabled === false ? '' : 'checked'}>
+                Auto-create reconciliation tasks
+              </label>
+              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-bottom:10px;font-family:'DM Mono',monospace;">Next sync: ${accountingSyncPlan.next_sync_at === 'on_cycle' ? 'every Ventura loop' : (accountingSyncPlan.next_sync_at ? new Date(accountingSyncPlan.next_sync_at).toLocaleString() : 'manual only')}</div>
+              <button class="icon-btn" onclick="saveWorkspaceIntegration('accounting')">Save accounting sync</button>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;">
+            <button class="icon-btn" onclick="syncWorkspaceContext()">Sync all workspace data</button>
+            <button class="icon-btn" onclick="runWorkspaceAutomationNow()">Run automation</button>
+            <button class="icon-btn" onclick="syncWorkspaceContext(['inbox'])">Sync inbox</button>
+            <button class="icon-btn" onclick="syncWorkspaceContext(['calendar'])">Sync calendar</button>
+            <button class="icon-btn" onclick="syncWorkspaceContext(['accounting'])">Sync accounting</button>
+          </div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-top:10px;font-family:'DM Mono',monospace;">Automation open: ${workspaceAutomation.summary?.open_actions || 0} · retry: ${workspaceAutomation.summary?.retry_actions || 0} · last run: ${workspaceAutomation.summary?.last_run_at ? timeAgo(workspaceAutomation.summary.last_run_at) : 'never'}</div>
+        </div>
+
+        <div style="padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
           <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:10px;">STACK REGISTRY</div>
           ${stackRows || `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No integrations provisioned yet.</div>`}
         </div>
@@ -4718,8 +4973,16 @@ async function saveBusinessControls() {
   if (!state.activeBiz) return;
   const involvement = document.getElementById('settings-control-mode')?.value || state.control?.business?.involvement || 'autopilot';
   const status = document.getElementById('settings-loop-status')?.value || state.control?.business?.status || 'active';
+  const cadenceMode = document.getElementById('settings-cadence-mode')?.value || state.control?.cadence?.mode || 'daily';
+  const intervalHours = parseInt(document.getElementById('settings-cadence-interval')?.value || state.control?.cadence?.interval_hours || '24', 10);
+  const preferredHourUtc = parseInt(document.getElementById('settings-cadence-hour')?.value || state.control?.cadence?.preferred_run_hour_utc || '2', 10);
   try {
     await PATCH(`/businesses/${state.activeBiz.id}`, { involvement, status });
+    await PATCH(`/businesses/${state.activeBiz.id}/cadence`, {
+      mode: cadenceMode,
+      intervalHours,
+      preferredHourUtc
+    });
     showToast('Founder controls updated');
     await loadBusinesses();
     await loadDashboard();
@@ -4749,6 +5012,73 @@ async function syncIntegrations() {
     await loadDashboard();
   } catch (err) {
     showToast(`Sync failed: ${err.message}`);
+  }
+}
+
+async function syncWorkspaceContext(kinds = null) {
+  if (!state.activeBiz) return;
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/workspace/sync`, kinds ? { kinds } : {});
+    showToast(kinds?.length ? `${titleCase(kinds[0])} sync complete` : 'Workspace sync complete');
+    await loadDashboard();
+  } catch (err) {
+    showToast(`Workspace sync failed: ${err.message}`);
+  }
+}
+
+async function runWorkspaceAutomationNow() {
+  if (!state.activeBiz) return;
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/workspace/automation/run`, {});
+    showToast('Workspace automation run queued');
+    await loadDashboard();
+  } catch (err) {
+    showToast(`Workspace automation failed: ${err.message}`);
+  }
+}
+
+async function saveWorkspaceIntegration(kind) {
+  if (!state.activeBiz) return;
+  const parseOptionalInt = (value) => {
+    const parsed = parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+  let payload = {};
+  if (kind === 'inbox') {
+    payload = {
+      inboxAddress: document.getElementById('settings-workspace-inbox-address')?.value?.trim() || '',
+      supportAliases: (document.getElementById('settings-workspace-inbox-aliases')?.value || '')
+        .split(',')
+        .map(v => v.trim())
+        .filter(Boolean),
+      syncMode: document.getElementById('settings-workspace-inbox-sync-mode')?.value || 'hourly',
+      syncIntervalHours: parseOptionalInt(document.getElementById('settings-workspace-inbox-interval')?.value || '4'),
+      automationEnabled: !!document.getElementById('settings-workspace-inbox-automation-enabled')?.checked
+    };
+  } else if (kind === 'calendar') {
+    payload = {
+      calendarLabel: document.getElementById('settings-workspace-calendar-label')?.value?.trim() || '',
+      calendarId: document.getElementById('settings-workspace-calendar-id')?.value?.trim() || '',
+      syncMode: document.getElementById('settings-workspace-calendar-sync-mode')?.value || 'daily',
+      syncIntervalHours: parseOptionalInt(document.getElementById('settings-workspace-calendar-interval')?.value || '12'),
+      automationEnabled: !!document.getElementById('settings-workspace-calendar-automation-enabled')?.checked
+    };
+  } else if (kind === 'accounting') {
+    payload = {
+      accountLabel: document.getElementById('settings-workspace-accounting-label')?.value?.trim() || '',
+      accountExternalId: document.getElementById('settings-workspace-accounting-id')?.value?.trim() || '',
+      syncMode: document.getElementById('settings-workspace-accounting-sync-mode')?.value || 'derived',
+      syncIntervalHours: parseOptionalInt(document.getElementById('settings-workspace-accounting-interval')?.value || '24'),
+      automationEnabled: !!document.getElementById('settings-workspace-accounting-automation-enabled')?.checked
+    };
+  }
+
+  try {
+    await PATCH(`/businesses/${state.activeBiz.id}/integrations/workspace/${kind}`, payload);
+    showToast(`${titleCase(kind)} sync settings saved`);
+    await loadDashboard();
+  } catch (err) {
+    showToast(`${titleCase(kind)} settings failed: ${err.message}`);
   }
 }
 

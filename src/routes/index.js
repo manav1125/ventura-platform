@@ -12,6 +12,7 @@ import {
 } from '../auth/auth.js';
 import { provisionBusiness } from '../provisioning/provision.js';
 import { runBusinessCycle } from '../agents/runner.js';
+import { ensureBusinessCadence, getCadenceSnapshot, scheduleNextRun } from '../agents/cadence.js';
 import { queueTask, getAllTasks, getQueuedTasks } from '../agents/tasks.js';
 import { listApprovals, decideApproval } from '../agents/approvals.js';
 import {
@@ -28,6 +29,10 @@ import {
   listRecoveryCases,
   resolveRecoveryCase
 } from '../agents/recovery.js';
+import {
+  getWorkspaceAutomationSnapshot,
+  runWorkspaceAutomation
+} from '../agents/workspace-automation.js';
 import { getDb } from '../db/migrate.js';
 import { getStats } from '../ws/websocket.js';
 import {
@@ -47,6 +52,12 @@ import {
   saveStripeIntegrationState,
   syncBusinessIntegrations
 } from '../integrations/registry.js';
+import {
+  getWorkspaceSyncPlan,
+  getWorkspaceSnapshot,
+  saveWorkspaceIntegrationSettings,
+  syncWorkspaceData
+} from '../integrations/workspace-sync.js';
 import {
   completeSocialOauthCallback,
   createSocialOauthSession,
@@ -335,6 +346,7 @@ function calcPctChange(current, previous) {
 function getPortfolioOverview(db, userId, plan) {
   const businesses = db.prepare(`
     SELECT b.id, b.name, b.slug, b.type, b.status, b.involvement, b.day_count, b.web_url,
+           b.cadence_mode, b.cadence_interval_hours, b.preferred_run_hour_utc, b.next_run_at, b.last_cycle_at,
            b.mrr_cents, b.total_revenue_cents, b.revenue_share_pct, b.monthly_subscription_cents,
            (
              SELECT COUNT(*)
@@ -375,6 +387,9 @@ function getPortfolioOverview(db, userId, plan) {
     acc.total_revenue_cents += Number(business.total_revenue_cents || 0);
     acc.pending_approvals += Number(business.pending_approvals || 0);
     acc.platform_share_cents += Math.floor(Number(business.total_revenue_cents || 0) * (Number(business.revenue_share_pct || 0) / 100));
+    if (business.next_run_at && new Date(business.next_run_at) <= new Date(Date.now() + (6 * 60 * 60 * 1000))) {
+      acc.runs_due_6h += 1;
+    }
     return acc;
   }, {
     businesses: 0,
@@ -382,7 +397,8 @@ function getPortfolioOverview(db, userId, plan) {
     total_mrr_cents: 0,
     total_revenue_cents: 0,
     pending_approvals: 0,
-    platform_share_cents: 0
+    platform_share_cents: 0,
+    runs_due_6h: 0
   });
 
   const running_cycles = db.prepare(`
@@ -414,6 +430,7 @@ function getPortfolioOverview(db, userId, plan) {
 }
 
 function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
+  const cadence = ensureBusinessCadence(business.id);
   const metrics = db.prepare(`
     SELECT date, mrr_cents, active_users, new_users, tasks_done, leads, emails_sent, deployments, revenue_cents
     FROM metrics
@@ -481,6 +498,8 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   const economics = resolveBusinessEconomics(business, userPlan);
   const integrations = getBusinessIntegrations(business);
   const infrastructure = getInfrastructureSnapshot(business, integrations);
+  const workspace = getWorkspaceSnapshot(business.id);
+  const workspaceAutomation = getWorkspaceAutomationSnapshot(business.id);
   const execution = getExecutionIntelligenceSnapshot(business.id);
   const operations = listActionOperations(business.id, 20);
   const operationSummary = getActionOperationSummary(business.id);
@@ -508,6 +527,28 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       status: approval.status,
       created_at: approval.created_at
     })),
+    ...workspace.inbox
+      .filter(item => item.status === 'attention')
+      .map(item => ({
+        kind: 'inbox',
+        id: item.id,
+        title: item.title,
+        summary: item.summary || 'A business inbox thread needs attention.',
+        status: item.status,
+        retryable: false,
+        created_at: item.occurred_at || item.last_synced_at || item.created_at
+      })),
+    ...workspaceAutomation.actions
+      .filter(item => item.status === 'needs_retry')
+      .map(item => ({
+        kind: 'workspace_automation',
+        id: item.id,
+        title: item.title,
+        summary: item.summary || 'A workspace-derived operating task needs another pass.',
+        status: item.status,
+        retryable: true,
+        created_at: item.updated_at || item.created_at
+      })),
     ...recoveryCases.map(item => ({
       kind: 'recovery',
       id: item.id,
@@ -544,7 +585,11 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   const qualifiedLeads = leadsByStatus.find(item => item.status === 'qualified')?.count || 0;
   const wonLeads = leadsByStatus.find(item => item.status === 'won')?.count || 0;
   const totalLeads = db.prepare('SELECT COUNT(*) AS n FROM leads WHERE business_id = ?').get(business.id).n;
-  const openReviews = pendingApprovals.length + recentAlertItems.length + recoveryCases.length;
+  const openReviews = pendingApprovals.length
+    + recentAlertItems.length
+    + recoveryCases.length
+    + workspace.inbox.filter(item => item.status === 'attention').length
+    + Number(workspaceAutomation.summary.retry_actions || 0);
   const recentAlerts = recentAlertItems.length;
   const uptimePct = Math.max(97, Number((99.9 - Math.min(recentAlerts * 0.3, 2.5)).toFixed(1)));
 
@@ -567,6 +612,7 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       arr_cents: business.arr_cents,
       total_revenue_cents: business.total_revenue_cents
     },
+    cadence,
     billing: {
       plan: serializePlan(userPlan),
       economics,
@@ -592,9 +638,10 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
         healthy_workflows: execution.workflows.filter(item => item.status === 'healthy').length,
         review_workflows: execution.workflows.filter(item => item.status === 'review').length,
         attention_workflows: execution.workflows.filter(item => item.status === 'attention').length,
-        verification_pass_rate: execution.verification_summary.total
+      verification_pass_rate: execution.verification_summary.total
           ? Math.round((Number(execution.verification_summary.passed || 0) / Number(execution.verification_summary.total || 1)) * 100)
-          : 0
+          : 0,
+        cadence_label: cadence?.label || 'Daily at 02:00 UTC'
       },
       recent_cycles: recentCycles,
       workflows: execution.workflows,
@@ -602,7 +649,8 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       verification_summary: execution.verification_summary,
       skill_library: execution.skill_library,
       operations,
-      operation_summary: operationSummary
+      operation_summary: operationSummary,
+      cadence
     },
     engineering: {
       summary: {
@@ -646,7 +694,11 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
         action_replays: Number(operationSummary.replayed || 0),
         recovery_open: Number(recoverySummary.open || 0),
         retryable_cases: Number(recoverySummary.retryable || 0),
-        critical_cases: Number(recoverySummary.critical || 0)
+        critical_cases: Number(recoverySummary.critical || 0),
+        inbox_attention: Number(workspace.summary.inbox_attention || 0),
+        upcoming_events: Number(workspace.summary.upcoming_events || 0),
+        workspace_actions_open: Number(workspaceAutomation.summary.open_actions || 0),
+        workspace_actions_retry: Number(workspaceAutomation.summary.retry_actions || 0)
       },
       founder_inbox: founderInbox,
       alerts: alertRows,
@@ -654,7 +706,9 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       actions: operations.slice(0, 12),
       action_summary: operationSummary,
       recovery_cases: recoveryCases,
-      recovery_summary: recoverySummary
+      recovery_summary: recoverySummary,
+      workspace,
+      workspace_automation: workspaceAutomation
     },
     analytics: {
       summary: {
@@ -675,7 +729,9 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       trend,
       funnel: leadsByStatus
     },
-    infrastructure
+    infrastructure,
+    workspace,
+    workspace_automation: workspaceAutomation
   };
 }
 
@@ -695,7 +751,28 @@ function sanitizePublicIntegration(kind, config = {}) {
     twitter: !!(config.twitter?.connected || config.twitter === true),
     linkedin: !!(config.linkedin?.connected || config.linkedin === true)
   };
-  if (kind === 'calendar') return { note: config.note || null };
+  if (kind === 'inbox') return {
+    connected: !!config.connected,
+    inbox_address: config.inbox_address || null,
+    sync_mode: config.sync_mode || null,
+    sync_interval_hours: Number(config.sync_interval_hours || 0) || null,
+    automation_enabled: config.automation_enabled !== false
+  };
+  if (kind === 'calendar') return {
+    connected: !!config.connected,
+    calendar_label: config.calendar_label || null,
+    sync_mode: config.sync_mode || null,
+    sync_interval_hours: Number(config.sync_interval_hours || 0) || null,
+    automation_enabled: config.automation_enabled !== false
+  };
+  if (kind === 'accounting') return {
+    connected: !!config.connected,
+    account_label: config.account_label || null,
+    currency: config.currency || null,
+    sync_mode: config.sync_mode || null,
+    sync_interval_hours: Number(config.sync_interval_hours || 0) || null,
+    automation_enabled: config.automation_enabled !== false
+  };
   return {};
 }
 
@@ -1198,6 +1275,80 @@ router.post('/businesses/:id/integrations/sync', requireAuth, asyncHandler(async
   res.json({ integrations, infrastructure, syncedAt: new Date().toISOString() });
 }));
 
+// PATCH /api/businesses/:id/integrations/workspace/:kind
+router.patch('/businesses/:id/integrations/workspace/:kind', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const kind = req.params.kind;
+  if (!['inbox', 'calendar', 'accounting'].includes(kind)) {
+    return res.status(400).json({ error: 'Unsupported workspace integration kind' });
+  }
+
+  const schema = kind === 'inbox'
+    ? z.object({
+        provider: z.string().max(120).optional(),
+        inboxAddress: z.union([z.string().email(), z.literal('')]).optional(),
+        supportAliases: z.array(z.string().email()).max(8).optional(),
+        ownerEmail: z.union([z.string().email(), z.literal('')]).optional(),
+        syncMode: z.enum(['manual', 'hourly', 'daily', 'on_cycle', 'live', 'preview']).optional(),
+        syncIntervalHours: z.number().int().min(1).max(168).optional(),
+        automationEnabled: z.boolean().optional()
+      })
+    : kind === 'calendar'
+      ? z.object({
+          provider: z.string().max(120).optional(),
+          calendarId: z.string().max(180).optional(),
+          calendarLabel: z.string().max(180).optional(),
+          ownerEmail: z.union([z.string().email(), z.literal('')]).optional(),
+          timezone: z.string().max(120).optional(),
+          syncMode: z.enum(['manual', 'hourly', 'daily', 'on_cycle', 'live', 'preview']).optional(),
+          syncIntervalHours: z.number().int().min(1).max(168).optional(),
+          automationEnabled: z.boolean().optional()
+        })
+      : z.object({
+          provider: z.string().max(120).optional(),
+          accountExternalId: z.string().max(180).optional(),
+          accountLabel: z.string().max(180).optional(),
+          ownerEmail: z.union([z.string().email(), z.literal('')]).optional(),
+          currency: z.string().max(12).optional(),
+          syncMode: z.enum(['derived', 'manual', 'hourly', 'daily', 'on_cycle', 'live', 'preview']).optional(),
+          syncIntervalHours: z.number().int().min(1).max(168).optional(),
+          automationEnabled: z.boolean().optional()
+        });
+
+  const body = validate(schema, req.body || {});
+  const integration = saveWorkspaceIntegrationSettings({
+    businessId: business.id,
+    kind,
+    updates: {
+      provider: body.provider,
+      inbox_address: body.inboxAddress,
+      support_aliases: body.supportAliases,
+      owner_email: body.ownerEmail,
+      sync_mode: body.syncMode,
+      sync_interval_hours: body.syncIntervalHours,
+      automation_enabled: body.automationEnabled,
+      calendar_id: body.calendarId,
+      calendar_label: body.calendarLabel,
+      timezone: body.timezone,
+      account_external_id: body.accountExternalId,
+      account_label: body.accountLabel,
+      currency: body.currency
+    }
+  });
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: kind === 'accounting' ? 'finance' : 'operations',
+    title: `Founder updated ${kind} sync settings`,
+    detail: { kind, provider: integration.provider }
+  });
+
+  res.json({ integration });
+}));
+
 // POST /api/businesses/:id/integrations/social/:provider/oauth/start
 router.post('/businesses/:id/integrations/social/:provider/oauth/start', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
@@ -1570,9 +1721,13 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
   const operationSummary = getActionOperationSummary(req.params.id);
   const recoveryCases = listRecoveryCases(req.params.id, { limit: 16 });
   const recoverySummary = getRecoverySummary(req.params.id);
+  const cadence = ensureBusinessCadence(req.params.id);
+  const workspace = getWorkspaceSnapshot(req.params.id);
+  const workspaceAutomation = getWorkspaceAutomationSnapshot(req.params.id);
 
   res.json({
     business: hydratedBusiness,
+    cadence,
     latestCycle,
     recentCycles,
     recentActivity,
@@ -1589,6 +1744,8 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
     operationSummary,
     recoveryCases,
     recoverySummary,
+    workspace,
+    workspaceAutomation,
     usage,
     economics,
     plan: serializePlan(user.plan)
@@ -1788,6 +1945,117 @@ router.get('/businesses/:id/operating-system', requireAuth, asyncHandler(async (
 
   const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(req.user.sub);
   res.json(getOperatingSystemSnapshot(db, business, user.plan));
+}));
+
+// PATCH /api/businesses/:id/cadence — founder tunes recurring run cadence
+router.patch('/businesses/:id/cadence', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const schema = z.object({
+    mode: z.enum(['daily', 'hourly', 'manual']),
+    intervalHours: z.number().int().min(1).max(168).optional(),
+    preferredHourUtc: z.number().int().min(0).max(23).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const cadence = scheduleNextRun(req.params.id, body);
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'strategy',
+    title: `Founder updated run cadence to ${cadence.label}`,
+    detail: cadence
+  });
+
+  res.json({ cadence });
+}));
+
+// GET /api/businesses/:id/workspace — synced inbox, calendar, and accounting context
+router.get('/businesses/:id/workspace', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  res.json({
+    workspace: getWorkspaceSnapshot(req.params.id),
+    syncPlan: getWorkspaceSyncPlan(req.params.id),
+    automation: getWorkspaceAutomationSnapshot(req.params.id),
+    integrations: ['inbox', 'calendar', 'accounting']
+      .map(kind => getIntegration(req.params.id, kind))
+      .filter(Boolean)
+  });
+}));
+
+// POST /api/businesses/:id/workspace/sync — refresh business-scoped ops context
+router.post('/businesses/:id/workspace/sync', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const schema = z.object({
+    kinds: z.array(z.enum(['inbox', 'calendar', 'accounting'])).max(3).optional(),
+    runAutomation: z.boolean().optional()
+  });
+  const body = validate(schema, req.body || {});
+  const sync = syncWorkspaceData({
+    business,
+    kinds: body.kinds || ['inbox', 'calendar', 'accounting'],
+    triggeredBy: 'founder'
+  });
+  const automation = body.runAutomation === false
+    ? getWorkspaceAutomationSnapshot(req.params.id)
+    : await runWorkspaceAutomation({
+        business,
+        workspace: sync.snapshot,
+        triggeredBy: 'founder'
+      });
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'operations',
+    title: 'Founder refreshed the workspace sync layer',
+    detail: {
+      kinds: sync.results.map(item => item.kind),
+      items_synced: sync.results.reduce((total, item) => total + Number(item.items_synced || 0), 0)
+    }
+  });
+
+  res.json({
+    ...sync,
+    syncPlan: getWorkspaceSyncPlan(req.params.id),
+    automation
+  });
+}));
+
+// GET /api/businesses/:id/workspace/automation — recurring workspace-to-task engine
+router.get('/businesses/:id/workspace/automation', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  res.json({ automation: getWorkspaceAutomationSnapshot(req.params.id) });
+}));
+
+// POST /api/businesses/:id/workspace/automation/run — founder manually triggers workspace automation
+router.post('/businesses/:id/workspace/automation/run', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const automation = await runWorkspaceAutomation({
+    business,
+    triggeredBy: 'founder'
+  });
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'operations',
+    title: 'Founder ran the workspace automation engine',
+    detail: automation.summary
+  });
+
+  res.json({ automation });
 }));
 
 // GET /api/businesses/:id/recovery — founder-facing reliability queue

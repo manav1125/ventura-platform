@@ -12,6 +12,7 @@ import {
   normalizeWorkflowKey,
   persistExecutionIntelligence
 } from './execution-intelligence.js';
+import { getWorkspacePromptContext } from '../integrations/workspace-sync.js';
 
 const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
@@ -73,7 +74,7 @@ const AGENT_TOOLS = [
   }
 ];
 
-function buildSystemPrompt(business, memory, workflowState = null) {
+function buildSystemPrompt(business, memory, workflowState = null, workspace = null) {
   return `You are the autonomous AI operator for "${business.name}", a ${business.type} business on day ${business.day_count}.
 
 CONTEXT:
@@ -87,6 +88,7 @@ CONTEXT:
 
 MEMORY: ${JSON.stringify(memory, null, 2)}
 WORKFLOW STATE: ${JSON.stringify(workflowState || {}, null, 2)}
+WORKSPACE SNAPSHOT: ${JSON.stringify(workspace || {}, null, 2)}
 
 PRINCIPLES:
 1. You are an OPERATOR. Bias for action. Execute, don't plan.
@@ -108,6 +110,7 @@ export async function runTask(task, business, cycleId = null) {
   const memory = JSON.parse(business.agent_memory || '{}');
   const workflowKey = normalizeWorkflowKey(task.workflow_key || task.department, task.department);
   const workflowState = getWorkflowState(business.id, workflowKey);
+  const workspace = getWorkspacePromptContext(business.id);
   const brief = task.brief || composeTaskBrief({
     business,
     title: task.title,
@@ -128,6 +131,7 @@ export async function runTask(task, business, cycleId = null) {
         open_loops: workflowState.open_loops,
         evidence: workflowState.evidence
       }, null, 2)}` : '',
+      workspace ? `LIVE WORKSPACE DATA:\n${JSON.stringify(workspace, null, 2)}` : '',
       'Execute now.'
     ].filter(Boolean).join('\n\n')
   }];
@@ -142,7 +146,7 @@ export async function runTask(task, business, cycleId = null) {
     const response = await client.messages.create({
       model: AGENT_MODEL,
       max_tokens: AGENT_MAX_TOKENS,
-      system: buildSystemPrompt(business, memory, workflowState),
+      system: buildSystemPrompt(business, memory, workflowState, workspace),
       tools: AGENT_TOOLS,
       messages
     });

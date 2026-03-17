@@ -9,9 +9,12 @@ import { v4 as uuid } from 'uuid';
 import cron from 'node-cron';
 import { getDb } from '../db/migrate.js';
 import { runTask } from './brain.js';
+import { ensureBusinessCadence, isBusinessDue, markCycleRun } from './cadence.js';
 import { getQueuedTasks, startTask, completeTask, failTask, queueTask } from './tasks.js';
 import { logActivity } from './activity.js';
 import { openRecoveryCase, resolveRecoveryCasesForSource } from './recovery.js';
+import { syncWorkspaceData } from '../integrations/workspace-sync.js';
+import { markWorkspaceAutomationTaskOutcome, runWorkspaceAutomation } from './workspace-automation.js';
 import { emitToBusiness, emitToUser } from '../ws/websocket.js';
 import { AGENT_CRON_SCHEDULE } from '../config.js';
 
@@ -40,13 +43,19 @@ export function stopAgentScheduler() {
 
 export async function runAllBusinesses(triggeredBy = 'cron') {
   const db = getDb();
-  const businesses = db.prepare(`SELECT * FROM businesses WHERE status = 'active'`).all();
+  const activeBusinesses = db.prepare(`SELECT * FROM businesses WHERE status = 'active'`).all();
+  const dueBusinesses = activeBusinesses
+    .map(business => {
+      ensureBusinessCadence(business.id);
+      return db.prepare('SELECT * FROM businesses WHERE id = ?').get(business.id);
+    })
+    .filter(business => triggeredBy !== 'cron' || isBusinessDue(business));
 
-  console.log(`📊 Running agents for ${businesses.length} active businesses`);
+  console.log(`📊 Running agents for ${dueBusinesses.length} due businesses (${activeBusinesses.length} active total)`);
 
   // Run sequentially to manage API rate limits
   // In production, parallelise with a concurrency limiter
-  for (const business of businesses) {
+  for (const business of dueBusinesses) {
     try {
       await runBusinessCycle(business, triggeredBy);
     } catch (err) {
@@ -87,12 +96,24 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
   let errors = 0;
 
   try {
+    const refreshedBusiness = db.prepare('SELECT * FROM businesses WHERE id = ?').get(business.id);
+    const workspaceSync = syncWorkspaceData({
+      business: refreshedBusiness,
+      triggeredBy: triggeredBy === 'cron' ? 'agent' : triggeredBy,
+      respectSchedule: triggeredBy === 'cron'
+    });
+    const workspaceAutomation = await runWorkspaceAutomation({
+      business: refreshedBusiness,
+      workspace: workspaceSync.snapshot,
+      triggeredBy: triggeredBy === 'cron' ? 'agent' : triggeredBy
+    });
+
     // ── Generate new tasks for this cycle ────────────────────────────────────
-    const newTasks = await generateCycleTasks(business);
+    const newTasks = await generateCycleTasks(refreshedBusiness);
     for (const t of newTasks) {
       await queueTask({
         businessId: business.id,
-        business,
+        business: refreshedBusiness,
         title: t.title,
         description: t.description,
         department: t.department,
@@ -114,6 +135,7 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
 
         const result = await runTask(task, currentBusiness, cycleId);
         completeTask(task.id, result);
+        markWorkspaceAutomationTaskOutcome(task.id, 'complete');
         resolveRecoveryCasesForSource(
           business.id,
           'task',
@@ -142,6 +164,7 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
 
       } catch (err) {
         failTask(task.id, err.message);
+        markWorkspaceAutomationTaskOutcome(task.id, 'failed');
         errors++;
         console.error(`  ✗ Failed: ${task.title} — ${err.message}`);
 
@@ -178,6 +201,7 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
       SET day_count = day_count + 1, updated_at = datetime('now')
       WHERE id = ?
     `).run(business.id);
+    const cadence = markCycleRun(business.id, new Date(), { failure: false });
 
     // Refresh business object for summary
     const updatedBusiness = db.prepare('SELECT * FROM businesses WHERE id=?').get(business.id);
@@ -204,7 +228,12 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
       cycleId,
       tasksRun,
       errors,
-      summary
+      summary,
+      cadence,
+      workspace: {
+        sync: workspaceSync.results,
+        automation: workspaceAutomation.summary
+      }
     });
 
     if (user) {
@@ -225,6 +254,7 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
       UPDATE agent_cycles SET status='failed', error=?, completed_at=datetime('now') WHERE id=?
     `).run(err.message, cycleId);
 
+    const cadence = markCycleRun(business.id, new Date(), { failure: true });
     emitToBusiness(business.id, { event: 'cycle:failed', cycleId, error: err.message });
     openRecoveryCase({
       businessId: business.id,
@@ -244,6 +274,7 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
           }
         : null
     });
+    emitToBusiness(business.id, { event: 'cadence:updated', businessId: business.id, cadence });
     throw err;
   }
 }
@@ -254,6 +285,7 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
 async function generateCycleTasks(business) {
   const db = getDb();
   const memory = JSON.parse(business.agent_memory || '{}');
+  const { getWorkspacePromptContext } = await import('../integrations/workspace-sync.js');
   const recentActivity = db.prepare(`
     SELECT type, department, title FROM activity
     WHERE business_id = ? ORDER BY created_at DESC LIMIT 20
@@ -262,6 +294,7 @@ async function generateCycleTasks(business) {
   const recentMetrics = db.prepare(`
     SELECT * FROM metrics WHERE business_id = ? ORDER BY date DESC LIMIT 7
   `).all(business.id);
+  const workspace = getWorkspacePromptContext(business.id);
 
   // Use a fast, focused call to decide what to work on
   const Anthropic = (await import('@anthropic-ai/sdk')).default;
@@ -274,13 +307,14 @@ Business goal: ${business.goal_90d}
 Day: ${business.day_count}
 Current MRR: $${(business.mrr_cents / 100).toFixed(2)}
 Business memory: ${JSON.stringify(memory, null, 2)}
+Workspace snapshot: ${JSON.stringify(workspace, null, 2)}
 
 Recent activity: ${JSON.stringify(recentActivity, null, 2)}
 Recent metrics: ${JSON.stringify(recentMetrics, null, 2)}
 
 Return a JSON array of 3-5 tasks to execute today. Each task: { title, description, department }.
 Departments: engineering | marketing | operations | strategy | sales | finance
-Focus on highest-impact actions toward the 90-day goal. Vary departments each cycle.
+Focus on highest-impact actions toward the 90-day goal. Use the inbox, calendar, and accounting context where relevant. Vary departments each cycle.
 
 IMPORTANT: Return ONLY a JSON array, no other text.`;
 
