@@ -6,6 +6,7 @@ import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import { v4 as uuid } from 'uuid';
 import { runMigrations, getDb } from './migrate.js';
+import { seedDefaultIntegrations } from '../integrations/registry.js';
 
 async function seed() {
   console.log('🌱 Seeding database...\n');
@@ -136,6 +137,20 @@ async function seed() {
   }
   console.log(`✅ ${activities.length} activity items`);
 
+  const deployments = [
+    { version: 'v0.9.4', description: 'mobile nav, pricing page, hero redesign', files_changed: 3, hours_ago: 2 },
+    { version: 'v0.9.3', description: 'annual pricing toggle, new onboarding flow', files_changed: 5, hours_ago: 52 },
+  ];
+
+  for (const d of deployments) {
+    const date = new Date(Date.now() - d.hours_ago * 3600000).toISOString();
+    db.prepare(`
+      INSERT OR IGNORE INTO deployments (id, business_id, version, description, files_changed, status, created_at)
+      VALUES (?, ?, ?, ?, ?, 'live', ?)
+    `).run(uuid(), biz.id, d.version, d.description, d.files_changed, date);
+  }
+  console.log(`✅ ${deployments.length} deployment records`);
+
   // ── Seed metrics (30 days of daily data) ──────────────────────────────────
   for (let i = 29; i >= 0; i--) {
     const date = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
@@ -186,6 +201,15 @@ async function seed() {
     db.prepare('INSERT OR IGNORE INTO messages (id, business_id, role, content) VALUES (?, ?, ?, ?)').run(uuid(), biz.id, m.role, m.content);
   }
   console.log('✅ Chat messages');
+
+  seedDefaultIntegrations({
+    businessId: biz.id,
+    slug: biz.slug,
+    emailAddress: biz.email_address,
+    webUrl: biz.web_url,
+    stripeAccountId: biz.stripe_account_id
+  });
+  console.log('✅ Integration registry');
 
   console.log(`\n🎉 Seed complete!\n`);
   console.log(`   Login: demo@ventura.ai / password123`);

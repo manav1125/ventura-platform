@@ -17,8 +17,8 @@ import { getDb } from '../db/migrate.js';
 import { getStats } from '../ws/websocket.js';
 import { handleStripeWebhook } from '../integrations/stripe.js';
 import { getDeployments } from '../integrations/deploy.js';
-import { listIntegrations } from '../integrations/registry.js';
-import { getPlanDefinition } from '../billing/plans.js';
+import { listIntegrations, seedDefaultIntegrations } from '../integrations/registry.js';
+import { getPlanDefinition, serializePlan } from '../billing/plans.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { ANTHROPIC_API_KEY, AGENT_MODEL } from '../config.js';
 
@@ -474,8 +474,33 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
 
   const latestCycle = recentCycles[0] || null;
   const approvals = listApprovals(req.params.id, { limit: 10 });
-  const deployments = getDeployments(req.params.id, 10);
-  const integrations = listIntegrations(req.params.id);
+  let deployments = getDeployments(req.params.id, 10);
+  let integrations = listIntegrations(req.params.id);
+  if (!integrations.length) {
+    seedDefaultIntegrations({
+      businessId: business.id,
+      slug: business.slug,
+      emailAddress: business.email_address,
+      webUrl: business.web_url,
+      stripeAccountId: business.stripe_account_id
+    });
+    integrations = listIntegrations(req.params.id);
+  }
+  if (!deployments.length) {
+    deployments = db.prepare(`
+      SELECT id,
+             business_id,
+             printf('activity-%s', substr(id, 1, 8)) AS version,
+             title AS description,
+             0 AS files_changed,
+             'live' AS status,
+             created_at
+      FROM activity
+      WHERE business_id = ? AND type = 'deploy'
+      ORDER BY created_at DESC
+      LIMIT 10
+    `).all(req.params.id);
+  }
   const specialists = getSpecialistSummary(db, req.params.id);
   const recentActivity = getRecentActivity(req.params.id, 8);
   const usage = getUserUsage(db, req.user.sub, user.plan);
@@ -490,7 +515,7 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
     integrations,
     specialists,
     usage,
-    plan: getPlanDefinition(user.plan)
+    plan: serializePlan(user.plan)
   });
 }));
 
