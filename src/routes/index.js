@@ -14,9 +14,20 @@ import { provisionBusiness } from '../provisioning/provision.js';
 import { runBusinessCycle } from '../agents/runner.js';
 import { queueTask, getAllTasks, getQueuedTasks } from '../agents/tasks.js';
 import { listApprovals, decideApproval } from '../agents/approvals.js';
-import { listActionOperations, getActionOperationSummary } from '../agents/action-operations.js';
+import {
+  getActionOperationById,
+  getActionOperationSummary,
+  listActionOperations,
+  runGuardedOperation
+} from '../agents/action-operations.js';
 import { getRecentActivity, logActivity } from '../agents/activity.js';
 import { getExecutionIntelligenceSnapshot } from '../agents/execution-intelligence.js';
+import {
+  getRecoveryCaseById,
+  getRecoverySummary,
+  listRecoveryCases,
+  resolveRecoveryCase
+} from '../agents/recovery.js';
 import { getDb } from '../db/migrate.js';
 import { getStats } from '../ws/websocket.js';
 import {
@@ -182,6 +193,82 @@ function getBusinessIntegrations(business) {
       }
     };
   });
+}
+
+async function replayActionOperation(operation, business) {
+  const payload = operation.payload || {};
+
+  if (operation.action_type === 'send_email') {
+    const { sendEmail } = await import('../integrations/email.js');
+    return runGuardedOperation({
+      businessId: operation.business_id,
+      taskId: operation.task_id,
+      approvalId: operation.approval_id,
+      actionType: operation.action_type,
+      summary: operation.summary || `${payload.subject || 'Ventura email'} → ${payload.to || 'recipient'}`,
+      payload,
+      execute: () => sendEmail({
+        from: payload.from || business.email_address,
+        to: payload.to,
+        subject: payload.subject,
+        html: payload.body
+      })
+    });
+  }
+
+  if (operation.action_type === 'deploy_website') {
+    const { deployFiles } = await import('../integrations/deploy.js');
+    return runGuardedOperation({
+      businessId: operation.business_id,
+      taskId: operation.task_id,
+      approvalId: operation.approval_id,
+      actionType: operation.action_type,
+      summary: payload.versionNote || payload.version_note || operation.summary || 'Retried deployment',
+      payload,
+      execute: () => deployFiles(
+        operation.business_id,
+        payload.files || [],
+        payload.versionNote || payload.version_note || operation.summary || 'Retried deployment'
+      )
+    });
+  }
+
+  if (operation.action_type === 'post_social') {
+    const { postTweet, postLinkedIn, postThread } = await import('../integrations/social.js');
+    return runGuardedOperation({
+      businessId: operation.business_id,
+      taskId: operation.task_id,
+      approvalId: operation.approval_id,
+      actionType: operation.action_type,
+      summary: operation.summary || `Retry social publish to ${payload.platform || 'social'}`,
+      payload,
+      execute: async () => {
+        const platform = payload.platform || 'twitter';
+        const content = payload.content;
+        if (platform === 'twitter') {
+          return Array.isArray(content)
+            ? postThread(operation.business_id, content)
+            : postTweet(operation.business_id, content);
+        }
+        if (platform === 'linkedin') {
+          return postLinkedIn(operation.business_id, { text: Array.isArray(content) ? content.join('\n\n') : content });
+        }
+        if (platform === 'both' && payload.thread) {
+          return postThread(operation.business_id, Array.isArray(content) ? content : [content]);
+        }
+        if (platform === 'both') {
+          const twitterContent = Array.isArray(content) ? content[0] : content;
+          const linkedinContent = Array.isArray(content) ? content.join('\n\n') : content;
+          const twitter = await postTweet(operation.business_id, twitterContent);
+          const linkedin = await postLinkedIn(operation.business_id, { text: linkedinContent });
+          return { twitter, linkedin };
+        }
+        throw new Error(`Unsupported action retry: ${operation.action_type}`);
+      }
+    });
+  }
+
+  throw new Error(`Unsupported action retry: ${operation.action_type}`);
 }
 
 function parseJsonField(value, fallback = {}) {
@@ -397,6 +484,8 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   const execution = getExecutionIntelligenceSnapshot(business.id);
   const operations = listActionOperations(business.id, 20);
   const operationSummary = getActionOperationSummary(business.id);
+  const recoveryCases = listRecoveryCases(business.id, { limit: 12 });
+  const recoverySummary = getRecoverySummary(business.id);
   const stripeIntegration = integrations.find(integration => integration.kind === 'stripe');
   const stripeConfig = stripeIntegration?.config || {};
   const engineeringTasks = tasks.filter(task => task.department === 'engineering');
@@ -418,6 +507,15 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       summary: approval.summary || 'Founder review required',
       status: approval.status,
       created_at: approval.created_at
+    })),
+    ...recoveryCases.map(item => ({
+      kind: 'recovery',
+      id: item.id,
+      title: item.title,
+      summary: item.summary || 'Ventura needs founder help to recover safely.',
+      status: item.severity,
+      retryable: item.retryable,
+      created_at: item.last_seen_at || item.created_at
     })),
     ...alertRows.map(alert => ({
       kind: 'alert',
@@ -446,7 +544,7 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   const qualifiedLeads = leadsByStatus.find(item => item.status === 'qualified')?.count || 0;
   const wonLeads = leadsByStatus.find(item => item.status === 'won')?.count || 0;
   const totalLeads = db.prepare('SELECT COUNT(*) AS n FROM leads WHERE business_id = ?').get(business.id).n;
-  const openReviews = pendingApprovals.length + recentAlertItems.length;
+  const openReviews = pendingApprovals.length + recentAlertItems.length + recoveryCases.length;
   const recentAlerts = recentAlertItems.length;
   const uptimePct = Math.max(97, Number((99.9 - Math.min(recentAlerts * 0.3, 2.5)).toFixed(1)));
 
@@ -545,13 +643,18 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
         alerts_14d: recentAlerts,
         running_tasks: runningOperations,
         action_failures: Number(operationSummary.failed || 0),
-        action_replays: Number(operationSummary.replayed || 0)
+        action_replays: Number(operationSummary.replayed || 0),
+        recovery_open: Number(recoverySummary.open || 0),
+        retryable_cases: Number(recoverySummary.retryable || 0),
+        critical_cases: Number(recoverySummary.critical || 0)
       },
       founder_inbox: founderInbox,
       alerts: alertRows,
       tasks: operationsTasks.slice(0, 12),
       actions: operations.slice(0, 12),
-      action_summary: operationSummary
+      action_summary: operationSummary,
+      recovery_cases: recoveryCases,
+      recovery_summary: recoverySummary
     },
     analytics: {
       summary: {
@@ -1465,6 +1568,8 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
   const execution = getExecutionIntelligenceSnapshot(req.params.id);
   const operations = listActionOperations(req.params.id, 16);
   const operationSummary = getActionOperationSummary(req.params.id);
+  const recoveryCases = listRecoveryCases(req.params.id, { limit: 16 });
+  const recoverySummary = getRecoverySummary(req.params.id);
 
   res.json({
     business: hydratedBusiness,
@@ -1482,6 +1587,8 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
     skills: execution.skill_library,
     operations,
     operationSummary,
+    recoveryCases,
+    recoverySummary,
     usage,
     economics,
     plan: serializePlan(user.plan)
@@ -1681,6 +1788,169 @@ router.get('/businesses/:id/operating-system', requireAuth, asyncHandler(async (
 
   const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(req.user.sub);
   res.json(getOperatingSystemSnapshot(db, business, user.plan));
+}));
+
+// GET /api/businesses/:id/recovery — founder-facing reliability queue
+router.get('/businesses/:id/recovery', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const status = req.query.status ? String(req.query.status) : 'open';
+  const limit = parseInt(req.query.limit || '25', 10);
+  res.json({
+    cases: listRecoveryCases(req.params.id, { status: status === 'all' ? null : status, limit }),
+    summary: getRecoverySummary(req.params.id)
+  });
+}));
+
+// POST /api/businesses/:id/recovery/:caseId/retry — safely retry a recovery case
+router.post('/businesses/:id/recovery/:caseId/retry', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const recoveryCase = getRecoveryCaseById(req.params.caseId);
+  if (!recoveryCase || recoveryCase.business_id !== req.params.id) {
+    return res.status(404).json({ error: 'Recovery case not found' });
+  }
+  if (recoveryCase.status !== 'open') {
+    return res.status(409).json({ error: 'Recovery case is no longer open' });
+  }
+  if (!recoveryCase.retryable || !recoveryCase.retry_action?.type) {
+    return res.status(400).json({ error: 'This recovery case cannot be retried automatically yet.' });
+  }
+
+  const retryAction = recoveryCase.retry_action;
+
+  if (retryAction.type === 'task') {
+    const task = db.prepare(`
+      SELECT *
+      FROM tasks
+      WHERE id = ? AND business_id = ?
+    `).get(retryAction.taskId, req.params.id);
+    if (!task) return res.status(404).json({ error: 'Task not found for this recovery case' });
+
+    db.prepare(`
+      UPDATE tasks
+      SET status = 'queued',
+          error = NULL,
+          result = NULL,
+          started_at = NULL,
+          completed_at = NULL,
+          cycle_id = NULL
+      WHERE id = ?
+    `).run(task.id);
+
+    await logActivity(req.params.id, {
+      type: 'system',
+      department: task.department,
+      title: `Founder retried failed task: ${task.title}`,
+      detail: { recoveryCaseId: recoveryCase.id, taskId: task.id }
+    });
+
+    return res.json({
+      retried: true,
+      kind: 'task',
+      taskId: task.id,
+      status: 'queued'
+    });
+  }
+
+  if (retryAction.type === 'operation') {
+    const operation = getActionOperationById(retryAction.operationId);
+    if (!operation || operation.business_id !== req.params.id) {
+      return res.status(404).json({ error: 'Action journal entry not found for this recovery case' });
+    }
+
+    const execution = await replayActionOperation(operation, business);
+    await logActivity(req.params.id, {
+      type: 'system',
+      department: operation.action_type === 'deploy_website'
+        ? 'engineering'
+        : operation.action_type === 'post_social'
+          ? 'marketing'
+          : 'operations',
+      title: `Founder retried action: ${operation.summary || operation.action_type}`,
+      detail: {
+        recoveryCaseId: recoveryCase.id,
+        operationId: operation.id,
+        replayed: !!execution.replayed
+      }
+    });
+
+    return res.json({
+      retried: true,
+      kind: 'operation',
+      replayed: !!execution.replayed,
+      operation: execution.operation,
+      result: execution.result
+    });
+  }
+
+  if (retryAction.type === 'cycle') {
+    if (business.status !== 'active') {
+      return res.status(400).json({ error: 'Business must be active before Ventura can retry a failed cycle.' });
+    }
+
+    const running = db.prepare(`
+      SELECT id
+      FROM agent_cycles
+      WHERE business_id = ?
+        AND status = 'running'
+    `).get(req.params.id);
+    if (running) {
+      return res.status(409).json({ error: 'A cycle is already running', cycleId: running.id });
+    }
+
+    runBusinessCycle(business, 'recovery')
+      .catch(err => console.error(`Recovery cycle failed: ${err.message}`));
+
+    await logActivity(req.params.id, {
+      type: 'system',
+      department: 'operations',
+      title: 'Founder started a recovery cycle',
+      detail: { recoveryCaseId: recoveryCase.id }
+    });
+
+    return res.status(202).json({
+      retried: true,
+      kind: 'cycle',
+      status: 'started'
+    });
+  }
+
+  return res.status(400).json({ error: 'Unsupported recovery retry type' });
+}));
+
+// POST /api/businesses/:id/recovery/:caseId/resolve — founder manually closes a recovery case
+router.post('/businesses/:id/recovery/:caseId/resolve', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const recoveryCase = getRecoveryCaseById(req.params.caseId);
+  if (!recoveryCase || recoveryCase.business_id !== req.params.id) {
+    return res.status(404).json({ error: 'Recovery case not found' });
+  }
+
+  const schema = z.object({
+    note: z.string().max(500).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const resolved = resolveRecoveryCase(
+    recoveryCase.id,
+    body.note || 'Founder marked this recovery case resolved.'
+  );
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'operations',
+    title: `Founder resolved recovery case: ${recoveryCase.title}`,
+    detail: { recoveryCaseId: recoveryCase.id }
+  });
+
+  res.json({ case: resolved });
 }));
 
 // PATCH /api/businesses/:id/memory — founder edits the agent memory thread

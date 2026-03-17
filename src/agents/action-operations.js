@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db/migrate.js';
+import { openRecoveryCase, resolveRecoveryCasesForSource } from './recovery.js';
 
 function stableStringify(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -44,6 +45,15 @@ export function getOperationByKey(key) {
     FROM action_operations
     WHERE idempotency_key = ?
   `).get(key));
+}
+
+export function getActionOperationById(operationId) {
+  const db = getDb();
+  return hydrateOperation(db.prepare(`
+    SELECT *
+    FROM action_operations
+    WHERE id = ?
+  `).get(operationId));
 }
 
 export function listActionOperations(businessId, limit = 20) {
@@ -169,8 +179,18 @@ export async function runGuardedOperation({
       WHERE idempotency_key = ?
     `).run(JSON.stringify(result || {}), idempotencyKey);
 
+    const completed = getOperationByKey(idempotencyKey);
+    if (completed?.id) {
+      resolveRecoveryCasesForSource(
+        businessId,
+        'operation',
+        completed.id,
+        'Action completed successfully after recovery.'
+      );
+    }
+
     return {
-      operation: getOperationByKey(idempotencyKey),
+      operation: completed,
       result,
       replayed: false
     };
@@ -182,6 +202,28 @@ export async function runGuardedOperation({
           updated_at = datetime('now')
       WHERE idempotency_key = ?
     `).run(err.message, idempotencyKey);
-    throw Object.assign(err, { operation: getOperationByKey(idempotencyKey) || running });
+    const failed = getOperationByKey(idempotencyKey) || running;
+    if (failed?.id) {
+      openRecoveryCase({
+        businessId,
+        sourceType: 'operation',
+        sourceId: failed.id,
+        severity: actionType === 'deploy_website' ? 'critical' : 'attention',
+        title: `Action failed: ${summary || actionType}`,
+        summary: err.message,
+        detail: {
+          action_type: actionType,
+          operation_id: failed.id,
+          task_id: taskId,
+          approval_id: approvalId,
+          error: err.message
+        },
+        retryAction: {
+          type: 'operation',
+          operationId: failed.id
+        }
+      });
+    }
+    throw Object.assign(err, { operation: failed });
   }
 }

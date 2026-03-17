@@ -11,6 +11,7 @@ import { getDb } from '../db/migrate.js';
 import { runTask } from './brain.js';
 import { getQueuedTasks, startTask, completeTask, failTask, queueTask } from './tasks.js';
 import { logActivity } from './activity.js';
+import { openRecoveryCase, resolveRecoveryCasesForSource } from './recovery.js';
 import { emitToBusiness, emitToUser } from '../ws/websocket.js';
 import { AGENT_CRON_SCHEDULE } from '../config.js';
 
@@ -113,6 +114,12 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
 
         const result = await runTask(task, currentBusiness, cycleId);
         completeTask(task.id, result);
+        resolveRecoveryCasesForSource(
+          business.id,
+          'task',
+          task.id,
+          'Task completed successfully after retry.'
+        );
         tasksRun++;
 
         console.log(`  ✓ Done: ${task.title}`);
@@ -143,6 +150,24 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
           department: task.department,
           title: `Task failed: ${task.title}`,
           detail: { error: err.message }
+        });
+        openRecoveryCase({
+          businessId: business.id,
+          sourceType: 'task',
+          sourceId: task.id,
+          severity: 'attention',
+          title: `Task failed: ${task.title}`,
+          summary: err.message,
+          detail: {
+            cycleId,
+            department: task.department,
+            taskId: task.id,
+            error: err.message
+          },
+          retryAction: {
+            type: 'task',
+            taskId: task.id
+          }
         });
       }
     }
@@ -201,6 +226,24 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
     `).run(err.message, cycleId);
 
     emitToBusiness(business.id, { event: 'cycle:failed', cycleId, error: err.message });
+    openRecoveryCase({
+      businessId: business.id,
+      sourceType: 'cycle',
+      sourceId: cycleId,
+      severity: 'critical',
+      title: `Cycle failed: ${business.name}`,
+      summary: err.message,
+      detail: {
+        cycleId,
+        triggeredBy,
+        error: err.message
+      },
+      retryAction: business.status === 'active'
+        ? {
+            type: 'cycle'
+          }
+        : null
+    });
     throw err;
   }
 }

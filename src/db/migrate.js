@@ -372,6 +372,35 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_action_operations_task ON action_operations(task_id);
 
     -- ─────────────────────────────────────────
+    -- RECOVERY CASES (explicit failure + retry queue)
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS recovery_cases (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      source_type   TEXT NOT NULL,
+      source_id     TEXT,
+      fingerprint   TEXT NOT NULL UNIQUE,
+      severity      TEXT NOT NULL DEFAULT 'attention', -- attention | critical
+      status        TEXT NOT NULL DEFAULT 'open', -- open | resolved
+      title         TEXT NOT NULL,
+      summary       TEXT,
+      detail        TEXT DEFAULT '{}',
+      retry_action  TEXT,
+      retryable     INTEGER NOT NULL DEFAULT 0,
+      occurrences   INTEGER NOT NULL DEFAULT 1,
+      resolution_note TEXT,
+      first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_seen_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      resolved_at   TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_recovery_cases_business ON recovery_cases(business_id);
+    CREATE INDEX IF NOT EXISTS idx_recovery_cases_status ON recovery_cases(status);
+    CREATE INDEX IF NOT EXISTS idx_recovery_cases_source ON recovery_cases(source_type, source_id);
+
+    -- ─────────────────────────────────────────
     -- INTEGRATIONS / INFRA REGISTRY
     -- ─────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS integrations (

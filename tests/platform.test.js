@@ -465,6 +465,8 @@ describe('Control center', () => {
     assert.equal(status, 200);
     assert.ok(Array.isArray(body.integrations));
     assert.ok(Array.isArray(body.specialists));
+    assert.ok(Array.isArray(body.recoveryCases));
+    assert.ok(body.recoverySummary);
     assert.ok(body.plan);
     assert.ok(body.usage);
     assert.ok(body.economics);
@@ -756,6 +758,8 @@ describe('Control center', () => {
     assert.ok(body.infrastructure);
     assert.ok(body.operations.action_summary);
     assert.ok(Array.isArray(body.operations.actions));
+    assert.ok(body.operations.recovery_summary);
+    assert.ok(Array.isArray(body.operations.recovery_cases));
     assert.ok(Array.isArray(body.infrastructure.assets));
     assert.ok(body.infrastructure.readiness);
     assert.ok(Array.isArray(body.analytics.trend));
@@ -931,6 +935,101 @@ describe('Control center', () => {
     assert.ok(Array.isArray(control.body.operations));
     assert.ok(control.body.operationSummary);
     assert.ok(control.body.operations.some(item => item.summary === 'Idempotent founder follow-up'));
+  });
+
+  it('records task recovery cases and lets the founder requeue them', async () => {
+    const { getDb } = await import('../src/db/migrate.js');
+    const { openRecoveryCase } = await import('../src/agents/recovery.js');
+
+    const db = getDb();
+    const failedTaskId = 'failed-task-retry-1';
+    db.prepare(`
+      INSERT INTO tasks (
+        id, business_id, title, description, department, status, triggered_by, priority, error
+      ) VALUES (?, ?, ?, ?, ?, 'failed', 'agent', 5, ?)
+    `).run(
+      failedTaskId,
+      bizId,
+      'Retry founder inbox follow-up',
+      'Recover from a transient provider issue',
+      'operations',
+      'SMTP timeout'
+    );
+
+    const recoveryCase = openRecoveryCase({
+      businessId: bizId,
+      sourceType: 'task',
+      sourceId: failedTaskId,
+      severity: 'attention',
+      title: 'Task failed: Retry founder inbox follow-up',
+      summary: 'SMTP timeout',
+      detail: { taskId: failedTaskId, error: 'SMTP timeout' },
+      retryAction: {
+        type: 'task',
+        taskId: failedTaskId
+      }
+    });
+
+    const recovery = await GET(`/api/businesses/${bizId}/recovery?status=all`, tokens.access);
+    assert.equal(recovery.status, 200);
+    assert.ok(recovery.body.summary);
+    assert.ok(recovery.body.cases.some(item => item.id === recoveryCase.id));
+
+    const snapshot = await GET(`/api/businesses/${bizId}/operating-system`, tokens.access);
+    assert.equal(snapshot.status, 200);
+    assert.ok(snapshot.body.operations.recovery_cases.some(item => item.id === recoveryCase.id));
+
+    const retry = await POST(`/api/businesses/${bizId}/recovery/${recoveryCase.id}/retry`, {}, tokens.access);
+    assert.equal(retry.status, 200);
+    assert.equal(retry.body.kind, 'task');
+    assert.equal(retry.body.status, 'queued');
+
+    const retriedTask = db.prepare('SELECT status, error FROM tasks WHERE id = ?').get(failedTaskId);
+    assert.equal(retriedTask.status, 'queued');
+    assert.equal(retriedTask.error, null);
+  });
+
+  it('records failed actions as recovery cases and resolves them after a retry', async () => {
+    const {
+      runGuardedOperation
+    } = await import('../src/agents/action-operations.js');
+    const {
+      getRecoveryCaseById,
+      listRecoveryCases
+    } = await import('../src/agents/recovery.js');
+
+    try {
+      await runGuardedOperation({
+        businessId: bizId,
+        actionType: 'send_email',
+        summary: 'Recovery candidate email',
+        payload: {
+          from: 'ops@testsaas.dev',
+          to: 'recover@example.com',
+          subject: 'Recovery candidate',
+          body: '<p>Testing recovery flow</p>'
+        },
+        execute: async () => {
+          throw new Error('SMTP outage');
+        }
+      });
+      assert.fail('Expected guarded operation to fail');
+    } catch (err) {
+      assert.match(err.message, /SMTP outage/);
+    }
+
+    const recoveryCase = listRecoveryCases(bizId, { limit: 20 })
+      .find(item => item.title.includes('Recovery candidate email'));
+    assert.ok(recoveryCase);
+    assert.equal(recoveryCase.retryable, true);
+
+    const retry = await POST(`/api/businesses/${bizId}/recovery/${recoveryCase.id}/retry`, {}, tokens.access);
+    assert.equal(retry.status, 200);
+    assert.equal(retry.body.kind, 'operation');
+    assert.equal(retry.body.operation.status, 'succeeded');
+
+    const resolved = getRecoveryCaseById(recoveryCase.id);
+    assert.equal(resolved.status, 'resolved');
   });
 
   it('blocks Stripe onboarding when Stripe is not configured', async () => {

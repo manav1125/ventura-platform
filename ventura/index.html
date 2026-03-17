@@ -3557,6 +3557,7 @@ function renderOperationsPage(data) {
     const alerts = data.operations?.alerts || [];
     const tasks = data.operations?.tasks || [];
     const actions = data.operations?.actions || [];
+    const recoveryCases = data.operations?.recovery_cases || [];
     healthEl.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:16px;">
         <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
@@ -3575,6 +3576,14 @@ function renderOperationsPage(data) {
           <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">SAFE REPLAYS</div>
           <div style="font-size:22px;color:#e0ddd5;">${summary.action_replays ?? 0}</div>
         </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">RECOVERY OPEN</div>
+          <div style="font-size:22px;color:#e0ddd5;">${summary.recovery_open ?? 0}</div>
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">RETRYABLE</div>
+          <div style="font-size:22px;color:#e0ddd5;">${summary.retryable_cases ?? 0}</div>
+        </div>
       </div>
       ${(alerts.length ? alerts.slice(0, 5).map(item => `
         <div class="activity-item">
@@ -3586,6 +3595,23 @@ function renderOperationsPage(data) {
           <span class="activity-status status-running">review</span>
         </div>
       `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No active operational alerts right now.</div>`)}
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);padding:18px 0 8px;">RECOVERY QUEUE</div>
+      ${(recoveryCases.length ? recoveryCases.slice(0, 5).map(item => `
+        <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+          <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;">
+            <div>
+              <div style="font-size:13px;color:#e0ddd5;margin-bottom:5px;">${esc(item.title)}</div>
+              <div style="font-size:12px;color:rgba(255,255,255,0.52);">${esc(titleCase(item.source_type || 'recovery'))} · ${timeAgo(item.last_seen_at || item.created_at)}</div>
+            </div>
+            <span style="font-size:11px;font-family:'DM Mono',monospace;color:${item.severity === 'critical' ? '#ff8f8f' : 'var(--gold)'};padding:4px 10px;background:${item.severity === 'critical' ? 'rgba(255,143,143,0.12)' : 'rgba(200,168,75,0.12)'};border-radius:999px;white-space:nowrap;">${esc((item.severity || 'attention').toUpperCase())}</span>
+          </div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.62);line-height:1.55;margin-top:8px;">${esc(item.summary || 'Ventura needs help recovering this workflow safely.')}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
+            ${item.retryable ? `<button class="icon-btn" onclick="retryRecoveryCase('${item.id}')">Retry safely</button>` : ''}
+            <button class="icon-btn" onclick="resolveRecoveryCaseAction('${item.id}')">Mark resolved</button>
+          </div>
+        </div>
+      `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No recovery cases are open right now.</div>`)}
       <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);padding:18px 0 8px;">ACTION JOURNAL</div>
       ${(actions.length ? actions.slice(0, 5).map(item => `
         <div class="activity-item">
@@ -3948,6 +3974,7 @@ function renderFounderControl(data) {
   if (!el) return;
   const biz = data.business || {};
   const pending = (data.approvals || []).filter(a => a.status === 'pending');
+  const recoveries = data.recoveryCases || [];
   const connected = (data.integrations || []).filter(i => i.status === 'connected').length;
   const totalIntegrations = (data.integrations || []).length;
   const latestSummary = data.latestCycle?.summary || 'No autonomous cycle summary yet.';
@@ -3978,9 +4005,13 @@ function renderFounderControl(data) {
           <div style="font-size:22px;color:#e0ddd5;">${pending.length}</div>
         </div>
         <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
-          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">LIVE STACK</div>
-        <div style="font-size:22px;color:#e0ddd5;">${connected}/${totalIntegrations || 0}</div>
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">RECOVERY CASES</div>
+          <div style="font-size:22px;color:#e0ddd5;">${recoveries.length}</div>
         </div>
+      </div>
+      <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">LIVE STACK</div>
+        <div style="font-size:22px;color:#e0ddd5;">${connected}/${totalIntegrations || 0}</div>
       </div>
       <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
         <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:10px;">FOUNDER OVERRIDES</div>
@@ -4653,6 +4684,33 @@ async function decideApproval(id, decision) {
     await loadDashboard();
   } catch (err) {
     showToast(`Approval failed: ${err.message}`);
+  }
+}
+
+async function retryRecoveryCase(id) {
+  if (!state.activeBiz) return;
+  try {
+    const response = await POST(`/businesses/${state.activeBiz.id}/recovery/${id}/retry`, {});
+    showToast(response.kind === 'cycle'
+      ? 'Recovery cycle started'
+      : response.kind === 'task'
+        ? 'Task requeued for the next Ventura loop'
+        : 'Recovery retry completed');
+    await loadDashboard();
+  } catch (err) {
+    showToast(`Retry failed: ${err.message}`);
+  }
+}
+
+async function resolveRecoveryCaseAction(id) {
+  if (!state.activeBiz) return;
+  const note = prompt('Optional note for resolving this recovery case:') || '';
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/recovery/${id}/resolve`, { note });
+    showToast('Recovery case resolved');
+    await loadDashboard();
+  } catch (err) {
+    showToast(`Resolve failed: ${err.message}`);
   }
 }
 
