@@ -2653,6 +2653,8 @@ let state = {
   liveDetail:   null,
   ws:           null,
   wsReady:      false,
+  wsReconnectTimer: null,
+  wsShouldReconnect: false,
 };
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -2693,11 +2695,13 @@ function storeTokens(at, rt) {
   state.accessToken = at; state.refreshToken = rt;
   localStorage.setItem('v_at', at);
   if (rt) localStorage.setItem('v_rt', rt);
+  state.wsShouldReconnect = !!at;
 }
 
 function clearAuth() {
   state.accessToken = null; state.refreshToken = null; state.user = null; state.authResetToken = null;
   localStorage.removeItem('v_at'); localStorage.removeItem('v_rt');
+  disconnectWS({ reconnect: false });
 }
 
 function setAuthView(view) {
@@ -2742,7 +2746,6 @@ async function doRegister(email, name, password) {
 function logout() {
   clearAuth();
   state.businesses = []; state.activeBiz = null; state.control = null; state.operating = null; state.portfolio = null; state.billing = null;
-  state.ws?.close();
   // Update nav to show login button
   updateNavForAuth(false);
   showLanding();
@@ -3122,18 +3125,62 @@ async function launchBusiness() {
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
+function clearWSReconnectTimer() {
+  if (!state.wsReconnectTimer) return;
+  clearTimeout(state.wsReconnectTimer);
+  state.wsReconnectTimer = null;
+}
+
+function scheduleWSReconnect() {
+  if (!state.wsShouldReconnect || !state.accessToken || state.wsReconnectTimer) return;
+  state.wsReconnectTimer = setTimeout(() => {
+    state.wsReconnectTimer = null;
+    connectWS();
+  }, 3000);
+}
+
+function disconnectWS({ reconnect = false } = {}) {
+  state.wsShouldReconnect = reconnect && !!state.accessToken;
+  clearWSReconnectTimer();
+  state.wsReady = false;
+
+  const current = state.ws;
+  state.ws = null;
+  if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) {
+    try { current.close(); } catch {}
+  }
+}
+
 function connectWS() {
-  if (state.ws?.readyState === WebSocket.OPEN) return;
+  if (!state.accessToken) return;
+  if (state.ws && (state.ws.readyState === WebSocket.OPEN || state.ws.readyState === WebSocket.CONNECTING)) return;
+  state.wsShouldReconnect = true;
+  clearWSReconnectTimer();
+
   try {
-    state.ws = new WebSocket(WS_URL);
-    state.ws.onopen = () => {
+    const socket = new WebSocket(WS_URL);
+    state.ws = socket;
+
+    socket.onopen = () => {
+      if (state.ws !== socket) return;
       state.wsReady = true;
-      if (state.accessToken) state.ws.send(JSON.stringify({ type: 'auth', token: state.accessToken }));
-      if (state.activeBiz)   state.ws.send(JSON.stringify({ type: 'subscribe', businessId: state.activeBiz.id }));
+      if (state.accessToken) socket.send(JSON.stringify({ type: 'auth', token: state.accessToken }));
+      if (state.activeBiz) socket.send(JSON.stringify({ type: 'subscribe', businessId: state.activeBiz.id }));
     };
-    state.ws.onmessage = (e) => { try { handleWSEvent(JSON.parse(e.data)); } catch {} };
-    state.ws.onclose   = () => { state.wsReady = false; setTimeout(connectWS, 3000); };
-    state.ws.onerror   = () => {};
+
+    socket.onmessage = (e) => { try { handleWSEvent(JSON.parse(e.data)); } catch {} };
+    socket.onclose = () => {
+      if (state.ws === socket) {
+        state.ws = null;
+        state.wsReady = false;
+      }
+      scheduleWSReconnect();
+    };
+    socket.onerror = () => {
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        try { socket.close(); } catch {}
+      }
+    };
   } catch {}
 }
 
@@ -4868,6 +4915,9 @@ document.getElementById('modal-overlay').addEventListener('click', function(e) {
   if (e.target === this) closeModal();
 });
 window.addEventListener('hashchange', () => { routeFromHash(); });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && state.accessToken) connectWS();
+});
 
 // ── Wire up metric card IDs and activity feed on DOM ready ────────────────────
 document.addEventListener('DOMContentLoaded', () => {
