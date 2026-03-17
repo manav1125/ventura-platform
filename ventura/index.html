@@ -1501,6 +1501,7 @@
     <ul class="nav-links">
       <li><a href="#how">How it works</a></li>
       <li><a href="#capabilities">Capabilities</a></li>
+      <li><a href="#" onclick="showLive(event)">Live companies</a></li>
       <li><a href="#pricing">Pricing</a></li>
       <li><a href="#" onclick="showDashboard(event)">Dashboard →</a></li>
       <li><a href="#" id="nav-login-btn" onclick="openAuthModal('login');event.preventDefault()">Sign in</a></li>
@@ -1524,7 +1525,7 @@
       </p>
       <div class="hero-actions fade-up fade-up-4">
         <a href="#" class="btn-primary" onclick="openModal(event)">Launch tonight →</a>
-        <a href="#" class="btn-secondary" onclick="showDashboard(event)">See live dashboard</a>
+        <a href="#" class="btn-secondary" onclick="showLive(event)">Watch live companies</a>
       </div>
     </div>
     <div class="hero-right">
@@ -1740,7 +1741,7 @@
         <div class="pricing-per">per month per business + 20% rev share</div>
         <ul class="pricing-features">
           <li>Daily autonomous agent cycles</li>
-          <li>30 on-demand tasks/mo</li>
+          <li>5 founder-requested tasks/mo</li>
           <li>All 6 agent departments active</li>
           <li>Web server + DB + email + $5 API budget</li>
           <li>Priority model access (Opus + thinking)</li>
@@ -1755,7 +1756,7 @@
         <div class="pricing-per">per month + 15% rev share across all</div>
         <ul class="pricing-features">
           <li>Up to 10 businesses</li>
-          <li>100 on-demand tasks/mo pooled</li>
+          <li>40 founder-requested tasks/mo pooled</li>
           <li>Cross-business analytics</li>
           <li>Custom agent prompts per business</li>
           <li>Dedicated Slack channel</li>
@@ -1787,7 +1788,7 @@
           <li><a href="#">Capabilities</a></li>
           <li><a href="#">Pricing</a></li>
           <li><a href="#" onclick="showDashboard(event)">Dashboard</a></li>
-          <li><a href="#">Live companies</a></li>
+          <li><a href="#" onclick="showLive(event)">Live companies</a></li>
         </ul>
       </div>
       <div class="footer-col">
@@ -1816,6 +1817,91 @@
   </footer>
 
 </div><!-- end landing view -->
+
+<!-- ───── LIVE VIEW ───── -->
+<div class="view" id="view-live">
+  <nav>
+    <a href="#" class="nav-logo" onclick="showLanding(event)">VENTURA<span>.</span></a>
+    <ul class="nav-links">
+      <li><a href="#" onclick="showLanding(event)">Home</a></li>
+      <li><a href="#" style="color:var(--accent)">Live board</a></li>
+      <li><a href="#" onclick="showDashboard(event)">Dashboard →</a></li>
+      <li><a href="#" id="live-nav-login-btn" onclick="openAuthModal('login');event.preventDefault()">Sign in</a></li>
+      <li><a href="#" id="live-nav-logout-btn" onclick="logout();event.preventDefault()" style="display:none">Sign out</a></li>
+      <li><a href="#" id="live-nav-launch-btn" class="nav-cta" onclick="openModal(event)">Launch a business</a></li>
+    </ul>
+  </nav>
+
+  <section class="section" style="padding-bottom:36px;">
+    <span class="section-tag">Public transparency</span>
+    <h2 class="section-title">Watch Ventura companies<br>operate in public</h2>
+    <p class="section-sub">Every deploy, campaign, and founder review item can surface here. This is the operating layer behind Ventura, visible in real time.</p>
+    <div class="hero-actions" style="margin-top:28px;">
+      <a href="#" class="btn-primary" onclick="showDashboard(event)">Open founder dashboard →</a>
+      <a href="#" class="btn-secondary" onclick="openModal(event)">Launch your company</a>
+    </div>
+  </section>
+
+  <div class="stats-bar" style="border-top:1px solid var(--border);">
+    <div class="stat-item">
+      <div class="stat-val" id="live-summary-businesses">0</div>
+      <div class="stat-label">Active companies</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-val" id="live-summary-mrr">$0</div>
+      <div class="stat-label">Tracked MRR</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-val" id="live-summary-revenue">$0</div>
+      <div class="stat-label">Revenue tracked</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-val" id="live-summary-approvals">0</div>
+      <div class="stat-label">Pending approvals</div>
+    </div>
+  </div>
+
+  <div class="capabilities-section" style="padding-top:52px;padding-bottom:52px;">
+    <div class="capabilities-inner">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;margin-bottom:28px;">
+        <div>
+          <span class="section-tag">Live companies</span>
+          <h2 class="section-title" style="font-size:44px;margin-bottom:10px;">Per-company infrastructure,<br>visible from the outside</h2>
+          <p class="section-sub" style="margin-bottom:0;">Ventura provisions the stack, runs the loop, and keeps a public audit trail of what the operator is doing.</p>
+        </div>
+        <button class="panel-action" onclick="loadLiveBoard()" style="align-self:center;">refresh feed</button>
+      </div>
+      <div class="capability-grid" id="live-business-grid">
+        <div class="capability-card">
+          <div class="capability-num">LOADING</div>
+          <h3>Fetching live companies</h3>
+          <p>The public operating board is loading current businesses, activity, and specialist agent summaries.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="section" style="padding-top:0;">
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Public activity feed</span>
+        </div>
+        <div class="panel-body" id="live-feed-list" style="padding:0 20px;">
+          <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;">Loading live activity...</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Specialist agents</span>
+        </div>
+        <div class="panel-body" id="live-specialists-list" style="display:flex;flex-direction:column;gap:12px;">
+          <div style="font-size:13px;color:rgba(255,255,255,0.55);">Loading specialist throughput...</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div><!-- end live view -->
 
 <!-- ───── DASHBOARD VIEW ───── -->
 <div class="view" id="view-dashboard">
@@ -2440,6 +2526,7 @@ let state = {
   businesses:   [],
   activeBiz:    null,
   control:      null,
+  live:         null,
   ws:           null,
   wsReady:      false,
 };
@@ -2621,12 +2708,18 @@ function showAuthError(el, msg) {
 
 // ── Nav auth state ─────────────────────────────────────────────────────────────
 function updateNavForAuth(loggedIn) {
-  const loginBtn  = document.getElementById('nav-login-btn');
-  const logoutBtn = document.getElementById('nav-logout-btn');
-  const launchBtn = document.getElementById('nav-launch-btn');
-  if (loginBtn)  loginBtn.style.display  = loggedIn ? 'none' : 'inline-block';
-  if (logoutBtn) logoutBtn.style.display = loggedIn ? 'inline-block' : 'none';
-  if (launchBtn) launchBtn.style.display = 'inline-block';
+  ['nav-login-btn', 'live-nav-login-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = loggedIn ? 'none' : 'inline-block';
+  });
+  ['nav-logout-btn', 'live-nav-logout-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = loggedIn ? 'inline-block' : 'none';
+  });
+  ['nav-launch-btn', 'live-nav-launch-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'inline-block';
+  });
 }
 
 // ── Wizard / launch modal ─────────────────────────────────────────────────────
@@ -2859,6 +2952,17 @@ async function loadTasks() {
   } catch {}
 }
 
+async function loadLiveBoard() {
+  try {
+    const data = await GET('/live');
+    state.live = data;
+    renderLiveBoard(data);
+  } catch (err) {
+    console.error('loadLiveBoard:', err);
+    showToast(`Live board unavailable: ${err.message}`);
+  }
+}
+
 // ── Render helpers ────────────────────────────────────────────────────────────
 function renderMetrics(data) {
   const biz = data.business || state.activeBiz;
@@ -2936,6 +3040,80 @@ function renderRevChart(daily) {
   });
 }
 
+function renderLiveBoard(data) {
+  setEl('live-summary-businesses', data.summary?.active_businesses ?? 0);
+  setEl('live-summary-mrr', formatMoney(data.summary?.total_mrr_cents || 0));
+  setEl('live-summary-revenue', formatMoney(data.summary?.total_revenue_cents || 0));
+  setEl('live-summary-approvals', data.summary?.approvals_pending ?? 0);
+
+  const businessEl = document.getElementById('live-business-grid');
+  if (businessEl) {
+    const businesses = data.businesses || [];
+    businessEl.innerHTML = businesses.length ? businesses.map(b => `
+      <div class="capability-card" style="background:rgba(255,255,255,0.03);">
+        <div class="capability-num">${esc((b.type || 'other').toUpperCase())} — DAY ${b.day_count || 0}</div>
+        <h3>${esc(b.name)}</h3>
+        <p>${esc(b.latest_headline || 'Ventura is actively operating this company.')}</p>
+        <div class="capability-tags">
+          <span class="tag">${esc((b.status || 'active').toUpperCase())}</span>
+          <span class="tag">${formatMoney(b.mrr_cents || 0)} MRR</span>
+          <span class="tag">${(b.economics?.revenue_share_pct ?? 20)}% rev share</span>
+          <span class="tag">$${((b.economics?.api_budget_cents || 0) / 100).toFixed(0)} API budget</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px;">
+          <div>
+            <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">BASE FEE</div>
+            <div style="font-size:18px;color:#e0ddd5;">${formatMoney(b.economics?.monthly_subscription_cents || 0)}/mo</div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">REVENUE TRACKED</div>
+            <div style="font-size:18px;color:#e0ddd5;">${formatMoney(b.total_revenue_cents || 0)}</div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;margin-top:18px;">
+          <span style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);">${b.latest_activity_at ? `updated ${timeAgo(b.latest_activity_at)}` : 'awaiting first event'}</span>
+          ${b.web_url ? `<a href="${esc(b.web_url)}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:none;font-size:12px;">Website ↗</a>` : ''}
+        </div>
+      </div>
+    `).join('') : `
+      <div class="capability-card">
+        <div class="capability-num">QUIET BOARD</div>
+        <h3>No live companies yet</h3>
+        <p>Launch a business to start generating public activity, infrastructure snapshots, and founder approvals.</p>
+      </div>
+    `;
+  }
+
+  const feedEl = document.getElementById('live-feed-list');
+  if (feedEl) {
+    const feed = data.feed || [];
+    feedEl.innerHTML = feed.length ? feed.map(item => `
+      <div class="activity-item">
+        <div class="activity-icon ${typeIcon(item.type)}">${typeEmoji(item.type)}</div>
+        <div class="activity-content">
+          <div class="activity-title">${esc(item.title)}</div>
+          <div class="activity-meta">${esc(item.business_name)} · ${displayDepartment(item.department)} · ${timeAgo(item.created_at)}</div>
+        </div>
+        <span class="activity-status ${statusClass(item.type)}">${statusLabel(item.type)}</span>
+      </div>
+    `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;">No public activity yet.</div>`;
+  }
+
+  const specialistsEl = document.getElementById('live-specialists-list');
+  if (specialistsEl) {
+    const specialists = data.specialists || [];
+    specialistsEl.innerHTML = specialists.length ? specialists.map(item => `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div>
+          <div style="font-size:14px;color:#e0ddd5;margin-bottom:4px;">${esc(displayDepartment(item.department))}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.55);">${item.completed || 0}/${item.total || 0} complete in the last 7 days</div>
+        </div>
+        <div style="font-size:20px;color:#e0ddd5;">${item.total || 0}</div>
+      </div>
+    `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No specialist throughput yet.</div>`;
+  }
+}
+
 function renderControlCenter(data) {
   state.control = data;
   renderFounderControl(data);
@@ -2949,6 +3127,7 @@ function renderControlCenter(data) {
 function renderFounderControl(data) {
   const el = document.getElementById('founder-control');
   if (!el) return;
+  const biz = data.business || {};
   const pending = (data.approvals || []).filter(a => a.status === 'pending');
   const connected = (data.integrations || []).filter(i => i.status === 'connected').length;
   const totalIntegrations = (data.integrations || []).length;
@@ -2981,7 +3160,21 @@ function renderFounderControl(data) {
         </div>
         <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
           <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">LIVE STACK</div>
-          <div style="font-size:22px;color:#e0ddd5;">${connected}/${totalIntegrations || 0}</div>
+        <div style="font-size:22px;color:#e0ddd5;">${connected}/${totalIntegrations || 0}</div>
+        </div>
+      </div>
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:10px;">FOUNDER OVERRIDES</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+          <button class="icon-btn" onclick="toggleBusinessStatus()">${biz.status === 'paused' ? 'Resume loop' : 'Pause loop'}</button>
+          <button class="icon-btn" onclick="syncIntegrations()">Sync stack</button>
+          <button class="icon-btn" onclick="showPage('settings',null)">Tune controls</button>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          <button class="icon-btn" onclick="dispatchSpecialist('planning')">Planning</button>
+          <button class="icon-btn" onclick="dispatchSpecialist('engineering')">Engineering</button>
+          <button class="icon-btn" onclick="dispatchSpecialist('marketing')">Marketing</button>
+          <button class="icon-btn" onclick="dispatchSpecialist('operations')">Operations</button>
         </div>
       </div>
     </div>
@@ -3070,6 +3263,7 @@ function renderSettings(data) {
   const controlsEl = document.getElementById('settings-agent-controls');
   if (controlsEl) {
     const pending = (data.approvals || []).filter(a => a.status === 'pending').length;
+    const economics = data.economics || data.plan || {};
     controlsEl.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px">
@@ -3084,13 +3278,60 @@ function renderSettings(data) {
           <span style="font-size:13px;color:rgba(255,255,255,0.7)">Control mode</span>
           <span style="font-size:11px;font-family:'DM Mono',monospace;color:${biz.involvement === 'autopilot' ? '#28ca41' : 'var(--gold)'};padding:3px 10px;background:${biz.involvement === 'autopilot' ? 'rgba(40,202,65,0.1)' : 'rgba(200,168,75,0.1)'};border-radius:2px">${esc(biz.involvement).toUpperCase()}</span>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
-          <span style="font-size:13px;color:rgba(255,255,255,0.7)">Plan economics</span>
-          <span style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;padding:3px 10px;background:rgba(40,202,65,0.1);border-radius:2px">$${((data.plan?.price_cents || 0) / 100).toFixed(0)} + ${data.plan?.revenue_share_pct || 20}% rev share</span>
-        </div>
         <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
           <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.45);margin-bottom:8px;">FOUNDER INBOX</div>
           <div style="font-size:13px;color:rgba(255,255,255,0.68);line-height:1.55;">${pending ? `${pending} approval${pending === 1 ? '' : 's'} waiting for your decision.` : 'No approvals are blocking Ventura right now.'}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;">
+          <div class="form-field" style="margin:0;">
+            <label style="color:rgba(255,255,255,0.3)">Loop status</label>
+            <select id="settings-loop-status" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              <option value="active" ${biz.status === 'active' ? 'selected' : ''}>Active</option>
+              <option value="paused" ${biz.status === 'paused' ? 'selected' : ''}>Paused</option>
+            </select>
+          </div>
+          <div class="form-field" style="margin:0;">
+            <label style="color:rgba(255,255,255,0.3)">Control mode</label>
+            <select id="settings-control-mode" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              <option value="autopilot" ${biz.involvement === 'autopilot' ? 'selected' : ''}>Autopilot</option>
+              <option value="review" ${biz.involvement === 'review' ? 'selected' : ''}>Review deploys + emails</option>
+              <option value="daily" ${biz.involvement === 'daily' ? 'selected' : ''}>Daily approval mode</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          <button class="icon-btn" onclick="saveBusinessControls()">Save controls</button>
+          <button class="icon-btn" onclick="syncIntegrations()">Sync integrations</button>
+        </div>
+        <div style="padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;margin-bottom:10px;">PER-COMPANY ECONOMICS</div>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">BASE SUBSCRIPTION</div>
+              <div style="font-size:18px;color:#e0ddd5;">${formatMoney(economics.monthly_subscription_cents || 0)}/mo</div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">REVENUE SHARE</div>
+              <div style="font-size:18px;color:#e0ddd5;">${economics.revenue_share_pct || 20}%</div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">API BUDGET</div>
+              <div style="font-size:18px;color:#e0ddd5;">${formatMoney(economics.api_budget_cents || 0)}</div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">TASKS INCLUDED</div>
+              <div style="font-size:18px;color:#e0ddd5;">${economics.tasks_included_per_month || data.usage?.tasks?.limit || 0}/mo</div>
+            </div>
+          </div>
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.45);margin-bottom:10px;">SPECIALIST OVERRIDES</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            <button class="icon-btn" onclick="dispatchSpecialist('planning')">Planning sprint</button>
+            <button class="icon-btn" onclick="dispatchSpecialist('engineering')">Engineering sprint</button>
+            <button class="icon-btn" onclick="dispatchSpecialist('marketing')">Marketing sprint</button>
+            <button class="icon-btn" onclick="dispatchSpecialist('operations')">Operations sweep</button>
+          </div>
         </div>
       </div>
     `;
@@ -3103,6 +3344,7 @@ function renderSettings(data) {
         <div>
           <div style="font-size:14px;color:#e0ddd5;margin-bottom:4px;">${esc(titleCase(i.kind))}</div>
           <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(i.provider)}${i.config?.url ? ` · ${esc(i.config.url)}` : ''}${i.config?.address ? ` · ${esc(i.config.address)}` : ''}</div>
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-top:6px;">${i.last_sync_at ? `Synced ${timeAgo(i.last_sync_at)}` : 'Awaiting first sync'}</div>
         </div>
         <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(i.status)};padding:4px 10px;background:${integrationBg(i.status)};border-radius:999px;white-space:nowrap;">${esc(i.status).toUpperCase()}</span>
       </div>
@@ -3153,6 +3395,64 @@ async function decideApproval(id, decision) {
     await loadDashboard();
   } catch (err) {
     showToast(`Approval failed: ${err.message}`);
+  }
+}
+
+async function saveBusinessControls() {
+  if (!state.activeBiz) return;
+  const involvement = document.getElementById('settings-control-mode')?.value || state.control?.business?.involvement || 'autopilot';
+  const status = document.getElementById('settings-loop-status')?.value || state.control?.business?.status || 'active';
+  try {
+    await PATCH(`/businesses/${state.activeBiz.id}`, { involvement, status });
+    showToast('Founder controls updated');
+    await loadBusinesses();
+    await loadDashboard();
+  } catch (err) {
+    showToast(`Control update failed: ${err.message}`);
+  }
+}
+
+async function toggleBusinessStatus() {
+  if (!state.activeBiz || !state.control?.business) return;
+  const status = state.control.business.status === 'paused' ? 'active' : 'paused';
+  try {
+    await PATCH(`/businesses/${state.activeBiz.id}`, { status });
+    showToast(status === 'paused' ? 'Autonomous loop paused' : 'Autonomous loop resumed');
+    await loadBusinesses();
+    await loadDashboard();
+  } catch (err) {
+    showToast(`Status change failed: ${err.message}`);
+  }
+}
+
+async function syncIntegrations() {
+  if (!state.activeBiz) return;
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/integrations/sync`, {});
+    showToast('Infrastructure registry synced');
+    await loadDashboard();
+  } catch (err) {
+    showToast(`Sync failed: ${err.message}`);
+  }
+}
+
+async function dispatchSpecialist(specialist) {
+  if (!state.activeBiz) return;
+  const prompts = {
+    planning: 'Ask Planning what to work on next',
+    engineering: 'Ship the next highest-impact product improvement',
+    marketing: 'Run a growth experiment for this week',
+    operations: 'Tighten operations and founder inbox handling'
+  };
+  const brief = prompt(`What should ${titleCase(specialist)} tackle next?`, prompts[specialist] || '');
+  if (brief === null) return;
+  try {
+    const task = await POST(`/businesses/${state.activeBiz.id}/specialists/${specialist}/run`, { brief });
+    showToast(`${task.label || titleCase(specialist)} queued`);
+    await loadDashboard();
+    showPage('tasks', null);
+  } catch (err) {
+    showToast(`Dispatch failed: ${err.message}`);
   }
 }
 
@@ -3257,6 +3557,25 @@ async function addTask() {
 }
 
 // ── View switching ────────────────────────────────────────────────────────────
+function showView(viewId) {
+  document.querySelectorAll('.view').forEach(view => view.classList.remove('active'));
+  const view = document.getElementById(`view-${viewId}`);
+  if (view) view.classList.add('active');
+}
+
+function setRoute(hash = '') {
+  const url = `${location.pathname}${location.search}${hash ? `#${hash}` : ''}`;
+  history.replaceState(null, '', url);
+}
+
+async function showLive(e) {
+  if (e) e.preventDefault();
+  showView('live');
+  setRoute('live');
+  updateNavForAuth(!!state.accessToken);
+  await loadLiveBoard();
+}
+
 async function showDashboard(e) {
   if (e) e.preventDefault();
 
@@ -3267,8 +3586,8 @@ async function showDashboard(e) {
     return;
   }
 
-  document.getElementById('view-landing').classList.remove('active');
-  document.getElementById('view-dashboard').classList.add('active');
+  showView('dashboard');
+  setRoute('dashboard');
   updateNavForAuth(true);
   connectWS();
   await loadBusinesses();
@@ -3279,9 +3598,10 @@ async function showDashboard(e) {
   }
 }
 
-function showLanding() {
-  document.getElementById('view-dashboard').classList.remove('active');
-  document.getElementById('view-landing').classList.add('active');
+function showLanding(e) {
+  if (e) e.preventDefault();
+  showView('landing');
+  setRoute('');
 }
 
 function showPage(pageId, el) {
@@ -3295,9 +3615,23 @@ function showPage(pageId, el) {
   if (pageId === 'chat') loadChat();
 }
 
+async function routeFromHash() {
+  const hash = (location.hash || '').replace(/^#/, '');
+  if (hash === 'dashboard') {
+    await showDashboard(null);
+    return;
+  }
+  if (hash === 'live') {
+    await showLive(null);
+    return;
+  }
+  showLanding();
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function setEl(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function formatMoney(cents) { return `$${(Number(cents || 0) / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })}`; }
 function updateTicker(msg) { const el = document.getElementById('live-ticker-text'); if (el) el.textContent = msg; }
 function deptColor(d) { return {engineering:'code',marketing:'mkt',operations:'ops',sales:'mkt',strategy:'code',finance:'ops'}[d]||'ops'; }
 function normalizeDepartment(d) { return ({ planning:'strategy', strategy:'strategy', engineering:'engineering', marketing:'marketing', operations:'operations', sales:'sales', finance:'finance' }[(d || '').toLowerCase()] || 'operations'); }
@@ -3341,6 +3675,7 @@ document.getElementById('auth-overlay').addEventListener('click', function(e) {
 document.getElementById('modal-overlay').addEventListener('click', function(e) {
   if (e.target === this) closeModal();
 });
+window.addEventListener('hashchange', () => { routeFromHash(); });
 
 // ── Wire up metric card IDs and activity feed on DOM ready ────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -3360,6 +3695,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const authed = await checkAuth();
     updateNavForAuth(authed);
     if (authed) connectWS();
+    await routeFromHash();
   })();
 });
 </script>

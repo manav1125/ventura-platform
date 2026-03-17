@@ -326,12 +326,40 @@ describe('Control center', () => {
     assert.ok(Array.isArray(body.specialists));
     assert.ok(body.plan);
     assert.ok(body.usage);
+    assert.ok(body.economics);
+    assert.ok(body.economics.monthly_subscription_cents >= 0);
+    assert.equal(body.business.monthly_subscription_cents, body.economics.monthly_subscription_cents);
   });
 
   it('lists deployment history', async () => {
     const { status, body } = await GET(`/api/businesses/${bizId}/deployments`, tokens.access);
     assert.equal(status, 200);
     assert.ok(Array.isArray(body.deployments));
+  });
+
+  it('lists and syncs integrations', async () => {
+    const { status, body } = await GET(`/api/businesses/${bizId}/integrations`, tokens.access);
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(body.integrations));
+    assert.ok(body.integrations.length >= 1);
+
+    const sync = await POST(`/api/businesses/${bizId}/integrations/sync`, {}, tokens.access);
+    assert.equal(sync.status, 200);
+    assert.ok(sync.body.integrations.every(i => i.last_sync_at), 'all integrations should record a sync time');
+  });
+
+  it('dispatches a specialist sprint', async () => {
+    const { status, body } = await POST(`/api/businesses/${bizId}/specialists/marketing/run`, {
+      brief: 'Launch a founder waitlist campaign this week'
+    }, tokens.access);
+    assert.equal(status, 201);
+    assert.equal(body.specialist, 'marketing');
+    assert.ok(body.taskId);
+
+    const tasks = await GET(`/api/businesses/${bizId}/tasks`, tokens.access);
+    const created = tasks.body.tasks.find(task => task.id === body.taskId);
+    assert.ok(created);
+    assert.equal(created.department, 'marketing');
   });
 
   it('can approve a pending founder action', async () => {
@@ -354,6 +382,20 @@ describe('Control center', () => {
     }, tokens.access);
     assert.equal(status, 200);
     assert.equal(body.approval.status, 'executed');
+  });
+});
+
+// ─── PUBLIC LIVE BOARD ───────────────────────────────────────────────────────
+describe('Public live board', () => {
+
+  it('returns public feed, business snapshots, and summary stats', async () => {
+    const { status, body } = await GET('/api/live');
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(body.feed));
+    assert.ok(Array.isArray(body.businesses));
+    assert.ok(Array.isArray(body.specialists));
+    assert.ok(body.summary);
+    assert.ok(body.summary.active_businesses >= 1);
   });
 });
 

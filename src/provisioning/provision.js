@@ -12,6 +12,7 @@ import { queueTask } from '../agents/tasks.js';
 import { sendEmail } from '../integrations/email.js';
 import { createVercelProject } from '../integrations/deploy.js';
 import { seedDefaultIntegrations, upsertIntegration } from '../integrations/registry.js';
+import { getPlanEconomics } from '../billing/plans.js';
 
 // ─── Slug generator ───────────────────────────────────────────────────────────
 
@@ -42,6 +43,8 @@ export async function provisionBusiness({ userId, name, type, description, targe
   const db = getDb();
   const businessId = uuid();
   const slug = await uniqueSlug(name);
+  const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(userId);
+  const economics = getPlanEconomics(user?.plan || 'trial');
 
   const webUrl       = `https://${slug}.${PLATFORM_DOMAIN}`;
   const emailAddress = `${slug}@${PLATFORM_DOMAIN}`;
@@ -52,12 +55,19 @@ export async function provisionBusiness({ userId, name, type, description, targe
     INSERT INTO businesses (
       id, user_id, name, slug, type, description,
       target_customer, goal_90d, involvement, status,
-      web_url, db_name, email_address
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'provisioning', ?, ?, ?)
+      web_url, db_name, email_address,
+      monthly_subscription_cents, api_budget_cents, revenue_share_pct,
+      tasks_included_per_month, infrastructure_included
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'provisioning', ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     businessId, userId, name, slug, type, description,
     targetCustomer, goal90d, involvement,
-    webUrl, dbName, emailAddress
+    webUrl, dbName, emailAddress,
+    economics.monthly_subscription_cents,
+    economics.api_budget_cents,
+    economics.revenue_share_pct,
+    economics.tasks_included_per_month,
+    economics.infrastructure_included ? 1 : 0
   );
 
   // ── 2. Notify user via websocket ───────────────────────────────────────────

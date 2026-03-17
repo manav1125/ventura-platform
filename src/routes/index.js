@@ -17,8 +17,9 @@ import { getDb } from '../db/migrate.js';
 import { getStats } from '../ws/websocket.js';
 import { handleStripeWebhook } from '../integrations/stripe.js';
 import { getDeployments } from '../integrations/deploy.js';
-import { listIntegrations, seedDefaultIntegrations } from '../integrations/registry.js';
-import { getPlanDefinition, serializePlan } from '../billing/plans.js';
+import { listIntegrations, syncBusinessIntegrations } from '../integrations/registry.js';
+import { getPlanDefinition, resolveBusinessEconomics, serializePlan } from '../billing/plans.js';
+import { dispatchSpecialistTask } from '../business/specialists.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { ANTHROPIC_API_KEY, AGENT_MODEL } from '../config.js';
 
@@ -161,8 +162,8 @@ router.get('/auth/me', requireAuth, asyncHandler(async (req, res) => {
 router.get('/businesses', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
   const businesses = db.prepare(`
-    SELECT id, name, slug, type, status, day_count, web_url, email_address,
-           mrr_cents, total_revenue_cents, created_at
+    SELECT id, name, slug, type, status, involvement, day_count, web_url, email_address,
+           mrr_cents, total_revenue_cents, monthly_subscription_cents, revenue_share_pct, created_at
     FROM businesses WHERE user_id = ? ORDER BY created_at DESC
   `).all(req.user.sub);
   res.json({ businesses });
@@ -218,6 +219,7 @@ router.patch('/businesses/:id', requireAuth, asyncHandler(async (req, res) => {
     name: z.string().min(2).max(100).optional(),
     type: z.enum(['saas', 'agency', 'ecommerce', 'content', 'marketplace', 'education', 'other']).optional(),
     description: z.string().optional(),
+    targetCustomer: z.string().optional(),
     goal90d: z.string().optional(),
     involvement: z.enum(['autopilot', 'review', 'daily']).optional(),
     status: z.enum(['active', 'paused']).optional()
@@ -225,9 +227,11 @@ router.patch('/businesses/:id', requireAuth, asyncHandler(async (req, res) => {
   const rawBody = validate(schema, req.body);
   const body = {
     ...rawBody,
-    goal_90d: rawBody.goal90d
+    goal_90d: rawBody.goal90d,
+    target_customer: rawBody.targetCustomer
   };
   delete body.goal90d;
+  delete body.targetCustomer;
 
   const updates = Object.entries(body)
     .filter(([_, v]) => v !== undefined)
@@ -314,6 +318,58 @@ router.post('/businesses/:id/tasks', requireAuth, asyncHandler(async (req, res) 
     triggeredBy: 'user'
   });
   res.status(201).json({ taskId });
+}));
+
+// GET /api/businesses/:id/integrations
+router.get('/businesses/:id/integrations', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  let integrations = listIntegrations(req.params.id);
+  if (!integrations.length) {
+    integrations = syncBusinessIntegrations(business);
+  }
+
+  res.json({ integrations });
+}));
+
+// POST /api/businesses/:id/integrations/sync
+router.post('/businesses/:id/integrations/sync', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const integrations = syncBusinessIntegrations(business);
+  res.json({ integrations, syncedAt: new Date().toISOString() });
+}));
+
+// POST /api/businesses/:id/specialists/:specialist/run
+router.post('/businesses/:id/specialists/:specialist/run', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+  if (business.status === 'cancelled') return res.status(400).json({ error: 'Business is cancelled' });
+
+  const schema = z.object({
+    brief: z.string().max(500).optional()
+  });
+  const body = validate(schema, req.body || {});
+
+  const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(req.user.sub);
+  const usage = getUserUsage(db, req.user.sub, user.plan);
+  if (usage.tasks.used >= usage.tasks.limit) {
+    return res.status(403).json({ error: `Monthly founder task limit reached for ${user.plan}.` });
+  }
+
+  const task = await dispatchSpecialistTask({
+    business,
+    specialist: req.params.specialist,
+    brief: body.brief || '',
+    triggeredBy: 'user'
+  });
+
+  res.status(201).json(task);
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -464,6 +520,12 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
   if (!business) return res.status(404).json({ error: 'Not found' });
 
   const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(req.user.sub);
+  const economics = resolveBusinessEconomics(business, user.plan);
+  const hydratedBusiness = {
+    ...business,
+    ...economics,
+    infrastructure_included: economics.infrastructure_included ? 1 : 0
+  };
   const recentCycles = db.prepare(`
     SELECT id, status, triggered_by, started_at, completed_at, tasks_run, summary, error, created_at
     FROM agent_cycles
@@ -477,14 +539,7 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
   let deployments = getDeployments(req.params.id, 10);
   let integrations = listIntegrations(req.params.id);
   if (!integrations.length) {
-    seedDefaultIntegrations({
-      businessId: business.id,
-      slug: business.slug,
-      emailAddress: business.email_address,
-      webUrl: business.web_url,
-      stripeAccountId: business.stripe_account_id
-    });
-    integrations = listIntegrations(req.params.id);
+    integrations = syncBusinessIntegrations(hydratedBusiness);
   }
   if (!deployments.length) {
     deployments = db.prepare(`
@@ -506,7 +561,7 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
   const usage = getUserUsage(db, req.user.sub, user.plan);
 
   res.json({
-    business,
+    business: hydratedBusiness,
     latestCycle,
     recentCycles,
     recentActivity,
@@ -515,6 +570,7 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
     integrations,
     specialists,
     usage,
+    economics,
     plan: serializePlan(user.plan)
   });
 }));
@@ -530,7 +586,74 @@ router.get('/live', asyncHandler(async (req, res) => {
     ORDER BY a.created_at DESC
     LIMIT 40
   `).all();
-  res.json({ feed });
+  const businessRows = db.prepare(`
+    SELECT b.id, b.name, b.slug, b.type, b.status, b.day_count, b.web_url,
+           b.mrr_cents, b.total_revenue_cents, b.monthly_subscription_cents,
+           b.api_budget_cents, b.revenue_share_pct, b.tasks_included_per_month,
+           b.infrastructure_included, u.plan AS user_plan,
+           (
+             SELECT a.title
+             FROM activity a
+             WHERE a.business_id = b.id
+             ORDER BY a.created_at DESC
+             LIMIT 1
+           ) AS latest_headline,
+           (
+             SELECT a.created_at
+             FROM activity a
+             WHERE a.business_id = b.id
+             ORDER BY a.created_at DESC
+             LIMIT 1
+           ) AS latest_activity_at
+    FROM businesses b
+    LEFT JOIN users u ON u.id = b.user_id
+    WHERE b.status IN ('active', 'paused', 'provisioning')
+    ORDER BY b.mrr_cents DESC, b.total_revenue_cents DESC, b.created_at DESC
+    LIMIT 12
+  `).all();
+  const summary = db.prepare(`
+    SELECT COUNT(*) AS active_businesses,
+           COALESCE(SUM(mrr_cents), 0) AS total_mrr_cents,
+           COALESCE(SUM(total_revenue_cents), 0) AS total_revenue_cents
+    FROM businesses
+    WHERE status IN ('active', 'paused', 'provisioning')
+  `).get();
+  const approvalsPending = db.prepare(`SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending'`).get().n;
+  const specialistRows = db.prepare(`
+    SELECT department,
+           COUNT(*) AS total,
+           SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) AS completed
+    FROM tasks
+    WHERE datetime(created_at) >= datetime('now', '-7 days')
+    GROUP BY department
+    ORDER BY total DESC, department ASC
+  `).all();
+
+  const businesses = businessRows.map(row => ({
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    type: row.type,
+    status: row.status,
+    day_count: row.day_count,
+    web_url: row.web_url,
+    mrr_cents: row.mrr_cents,
+    total_revenue_cents: row.total_revenue_cents,
+    latest_headline: row.latest_headline,
+    latest_activity_at: row.latest_activity_at,
+    economics: resolveBusinessEconomics(row, row.user_plan || 'trial')
+  }));
+
+  res.json({
+    feed,
+    businesses,
+    specialists: specialistRows,
+    summary: {
+      ...summary,
+      approvals_pending: approvalsPending,
+      feed_events: feed.length
+    }
+  });
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -3,8 +3,53 @@
 
 import Database from 'better-sqlite3';
 import { DB_PATH } from '../config.js';
+import { getPlanEconomics } from '../billing/plans.js';
 
 let db;
+
+function ensureColumn(db, table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name);
+  if (!columns.includes(column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+function backfillBusinessEconomics(db) {
+  const businesses = db.prepare(`
+    SELECT b.id, u.plan
+    FROM businesses b
+    LEFT JOIN users u ON u.id = b.user_id
+  `).all();
+
+  const update = db.prepare(`
+    UPDATE businesses
+    SET monthly_subscription_cents = ?,
+        api_budget_cents = ?,
+        revenue_share_pct = ?,
+        tasks_included_per_month = ?,
+        infrastructure_included = ?
+    WHERE id = ?
+      AND (
+        monthly_subscription_cents < 0 OR
+        api_budget_cents < 0 OR
+        revenue_share_pct < 0 OR
+        tasks_included_per_month < 0 OR
+        infrastructure_included < 0
+      )
+  `);
+
+  for (const business of businesses) {
+    const economics = getPlanEconomics(business.plan || 'trial');
+    update.run(
+      economics.monthly_subscription_cents,
+      economics.api_budget_cents,
+      economics.revenue_share_pct,
+      economics.tasks_included_per_month,
+      economics.infrastructure_included ? 1 : 0,
+      business.id
+    );
+  }
+}
 
 export function getDb() {
   if (db) return db;
@@ -61,6 +106,11 @@ export function runMigrations() {
       mrr_cents     INTEGER NOT NULL DEFAULT 0,
       arr_cents     INTEGER NOT NULL DEFAULT 0,
       total_revenue_cents INTEGER NOT NULL DEFAULT 0,
+      monthly_subscription_cents INTEGER NOT NULL DEFAULT 4900,
+      api_budget_cents INTEGER NOT NULL DEFAULT 500,
+      revenue_share_pct INTEGER NOT NULL DEFAULT 20,
+      tasks_included_per_month INTEGER NOT NULL DEFAULT 5,
+      infrastructure_included INTEGER NOT NULL DEFAULT 1,
 
       -- Agent memory
       agent_memory  TEXT DEFAULT '{}',     -- JSON blob: persistent context
@@ -251,6 +301,15 @@ export function runMigrations() {
 
     CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
   `);
+
+  // Existing SQLite tables do not gain new columns from CREATE TABLE IF NOT EXISTS,
+  // so we add and backfill the business economics columns separately.
+  ensureColumn(db, 'businesses', 'monthly_subscription_cents', 'INTEGER NOT NULL DEFAULT -1');
+  ensureColumn(db, 'businesses', 'api_budget_cents', 'INTEGER NOT NULL DEFAULT -1');
+  ensureColumn(db, 'businesses', 'revenue_share_pct', 'INTEGER NOT NULL DEFAULT -1');
+  ensureColumn(db, 'businesses', 'tasks_included_per_month', 'INTEGER NOT NULL DEFAULT -1');
+  ensureColumn(db, 'businesses', 'infrastructure_included', 'INTEGER NOT NULL DEFAULT -1');
+  backfillBusinessEconomics(db);
 
   console.log('✅ Database migrations complete');
   return db;

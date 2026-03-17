@@ -67,7 +67,11 @@ export async function handleStripeWebhook(req, res) {
       const businessId = pi.metadata?.ventura_business_id;
       if (!businessId) break;
 
-      const amountCents = pi.amount - Math.floor(pi.amount * STRIPE_PLATFORM_FEE_PCT / 100);
+      const business = db.prepare('SELECT revenue_share_pct FROM businesses WHERE id = ?').get(businessId);
+      const feePct = Number.isFinite(Number(business?.revenue_share_pct)) && Number(business?.revenue_share_pct) >= 0
+        ? Number(business.revenue_share_pct)
+        : STRIPE_PLATFORM_FEE_PCT;
+      const amountCents = pi.amount - Math.floor(pi.amount * feePct / 100);
 
       db.prepare(`
         UPDATE businesses

@@ -31,6 +31,62 @@ function parseConfig(config) {
   }
 }
 
+function buildIntegrationSpecs({ slug, emailAddress, webUrl, stripeAccountId = null }) {
+  return [
+    {
+      kind: 'database',
+      provider: 'sqlite',
+      status: 'connected',
+      config: { path: DB_PATH, namespace: `biz_${slug.replace(/-/g, '_')}` }
+    },
+    {
+      kind: 'website',
+      provider: VERCEL_TOKEN ? 'vercel' : 'ventura-static',
+      status: 'connected',
+      config: { url: webUrl, domain: `${slug}.${PLATFORM_DOMAIN}` }
+    },
+    {
+      kind: 'email',
+      provider: SMTP_HOST || 'ventura-mailbox',
+      status: SMTP_HOST ? 'connected' : 'mocked',
+      config: { address: emailAddress }
+    },
+    {
+      kind: 'stripe',
+      provider: 'stripe',
+      status: STRIPE_SECRET_KEY ? (stripeAccountId ? 'connected' : 'pending') : 'mocked',
+      config: stripeAccountId ? { account_id: stripeAccountId } : {}
+    },
+    {
+      kind: 'analytics',
+      provider: 'ventura-metrics',
+      status: 'connected',
+      config: { source: 'internal_metrics_pipeline' }
+    },
+    {
+      kind: 'search',
+      provider: 'brave',
+      status: BRAVE_SEARCH_API_KEY ? 'connected' : 'pending',
+      config: { live_research: !!BRAVE_SEARCH_API_KEY }
+    },
+    {
+      kind: 'social',
+      provider: 'x-linkedin',
+      status: (TWITTER_BEARER_TOKEN || LINKEDIN_ACCESS_TOKEN) ? 'connected' : 'pending',
+      config: {
+        twitter: !!TWITTER_BEARER_TOKEN,
+        linkedin: !!LINKEDIN_ACCESS_TOKEN
+      }
+    },
+    {
+      kind: 'calendar',
+      provider: 'pending',
+      status: 'pending',
+      config: { note: 'Calendar MCP not wired yet' }
+    }
+  ];
+}
+
 export function upsertIntegration({ businessId, kind, provider, status, config = {}, lastSyncAt = null }) {
   const db = getDb();
   const existing = db.prepare('SELECT id FROM integrations WHERE business_id = ? AND kind = ?').get(businessId, kind);
@@ -65,70 +121,22 @@ export function listIntegrations(businessId) {
 }
 
 export function seedDefaultIntegrations({ businessId, slug, emailAddress, webUrl, stripeAccountId = null }) {
-  upsertIntegration({
-    businessId,
-    kind: 'database',
-    provider: 'sqlite',
-    status: 'connected',
-    config: { path: DB_PATH, namespace: `biz_${slug.replace(/-/g, '_')}` }
+  const lastSyncAt = new Date().toISOString();
+  for (const spec of buildIntegrationSpecs({ slug, emailAddress, webUrl, stripeAccountId })) {
+    upsertIntegration({ businessId, ...spec, lastSyncAt });
+  }
+}
+
+export function syncBusinessIntegrations(business) {
+  if (!business) return [];
+
+  seedDefaultIntegrations({
+    businessId: business.id,
+    slug: business.slug,
+    emailAddress: business.email_address,
+    webUrl: business.web_url,
+    stripeAccountId: business.stripe_account_id
   });
 
-  upsertIntegration({
-    businessId,
-    kind: 'website',
-    provider: VERCEL_TOKEN ? 'vercel' : 'ventura-static',
-    status: 'connected',
-    config: { url: webUrl, domain: `${slug}.${PLATFORM_DOMAIN}` }
-  });
-
-  upsertIntegration({
-    businessId,
-    kind: 'email',
-    provider: SMTP_HOST || 'ventura-mailbox',
-    status: SMTP_HOST ? 'connected' : 'mocked',
-    config: { address: emailAddress }
-  });
-
-  upsertIntegration({
-    businessId,
-    kind: 'stripe',
-    provider: 'stripe',
-    status: STRIPE_SECRET_KEY ? (stripeAccountId ? 'connected' : 'pending') : 'mocked',
-    config: stripeAccountId ? { account_id: stripeAccountId } : {}
-  });
-
-  upsertIntegration({
-    businessId,
-    kind: 'analytics',
-    provider: 'ventura-metrics',
-    status: 'connected',
-    config: { source: 'internal_metrics_pipeline' }
-  });
-
-  upsertIntegration({
-    businessId,
-    kind: 'search',
-    provider: 'brave',
-    status: BRAVE_SEARCH_API_KEY ? 'connected' : 'pending',
-    config: { live_research: !!BRAVE_SEARCH_API_KEY }
-  });
-
-  upsertIntegration({
-    businessId,
-    kind: 'social',
-    provider: 'x-linkedin',
-    status: (TWITTER_BEARER_TOKEN || LINKEDIN_ACCESS_TOKEN) ? 'connected' : 'pending',
-    config: {
-      twitter: !!TWITTER_BEARER_TOKEN,
-      linkedin: !!LINKEDIN_ACCESS_TOKEN
-    }
-  });
-
-  upsertIntegration({
-    businessId,
-    kind: 'calendar',
-    provider: 'pending',
-    status: 'pending',
-    config: { note: 'Calendar MCP not wired yet' }
-  });
+  return listIntegrations(business.id);
 }

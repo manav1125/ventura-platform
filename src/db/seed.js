@@ -7,6 +7,7 @@ import bcrypt from 'bcryptjs';
 import { v4 as uuid } from 'uuid';
 import { runMigrations, getDb } from './migrate.js';
 import { seedDefaultIntegrations } from '../integrations/registry.js';
+import { getPlanEconomics } from '../billing/plans.js';
 
 async function seed() {
   console.log('🌱 Seeding database...\n');
@@ -23,6 +24,7 @@ async function seed() {
   `).run(userId, passwordHash);
 
   const user = db.prepare("SELECT * FROM users WHERE email='demo@ventura.ai'").get();
+  const economics = getPlanEconomics(user.plan);
   console.log(`✅ User: ${user.email} / password123`);
 
   // ── Demo business ──────────────────────────────────────────────────────────
@@ -59,7 +61,8 @@ async function seed() {
       id, user_id, name, slug, type, description, target_customer,
       goal_90d, involvement, status, day_count,
       web_url, db_name, email_address, mrr_cents, total_revenue_cents,
-      agent_memory
+      monthly_subscription_cents, api_budget_cents, revenue_share_pct,
+      tasks_included_per_month, infrastructure_included, agent_memory
     ) VALUES (
       ?, ?, 'Nova Analytics', 'nova-analytics', 'saas',
       'A lightweight analytics dashboard for indie hackers and solo founders.',
@@ -67,9 +70,19 @@ async function seed() {
       'Reach $5k MRR within 90 days', 'autopilot', 'active', 23,
       'https://nova-analytics.ventura.ai', 'biz_nova_analytics',
       'nova-analytics@ventura.ai', 284000, 620000,
+      ?, ?, ?, ?, ?,
       ?
     )
-  `).run(bizId, user.id, agentMemory);
+  `).run(
+    bizId,
+    user.id,
+    economics.monthly_subscription_cents,
+    economics.api_budget_cents,
+    economics.revenue_share_pct,
+    economics.tasks_included_per_month,
+    economics.infrastructure_included ? 1 : 0,
+    agentMemory
+  );
 
   const biz = db.prepare("SELECT * FROM businesses WHERE slug='nova-analytics'").get();
   console.log(`✅ Business: ${biz.name} (${biz.id})`);
