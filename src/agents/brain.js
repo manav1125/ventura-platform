@@ -4,6 +4,13 @@ import { ANTHROPIC_API_KEY, AGENT_MODEL, AGENT_MAX_TOKENS } from '../config.js';
 import { getDb } from '../db/migrate.js';
 import { logActivity } from './activity.js';
 import { createApproval } from './approvals.js';
+import {
+  composeTaskBrief,
+  formatTaskBrief,
+  getWorkflowState,
+  normalizeWorkflowKey,
+  persistExecutionIntelligence
+} from './execution-intelligence.js';
 
 const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
@@ -65,7 +72,7 @@ const AGENT_TOOLS = [
   }
 ];
 
-function buildSystemPrompt(business, memory) {
+function buildSystemPrompt(business, memory, workflowState = null) {
   return `You are the autonomous AI operator for "${business.name}", a ${business.type} business on day ${business.day_count}.
 
 CONTEXT:
@@ -78,29 +85,50 @@ CONTEXT:
 - Involvement: ${business.involvement}
 
 MEMORY: ${JSON.stringify(memory, null, 2)}
+WORKFLOW STATE: ${JSON.stringify(workflowState || {}, null, 2)}
 
 PRINCIPLES:
 1. You are an OPERATOR. Bias for action. Execute, don't plan.
 2. Every task must produce a tangible output: code deployed, email sent, content written, leads added.
 3. Use web_search before making strategic decisions — get real data.
-4. Update memory with every significant learning.
-5. Emails must sound human and personal. Never spam.
-6. Flag for review only when stakes are genuinely high (legal, >$100 financial commitment, PR risk).
-7. Connect every action to the 90-day goal.
+4. Continue from existing workflow state instead of starting from scratch when context exists.
+5. Update memory with every significant learning.
+6. Emails must sound human and personal. Never spam.
+7. Flag for review only when stakes are genuinely high (legal, >$100 financial commitment, PR risk).
+8. Your work will be verified after completion. Do not claim success without concrete evidence.
+9. Connect every action to the 90-day goal.
 
 INVOLVEMENT: ${business.involvement === 'autopilot' ? 'Execute everything autonomously.' : business.involvement === 'review' ? 'Flag email sends and deployments for review.' : 'Flag major decisions for founder approval.'}
 
 Execute the assigned task using your tools. Call task_complete when done.`;
 }
 
-export async function runTask(task, business) {
-  const db = getDb();
+export async function runTask(task, business, cycleId = null) {
   const memory = JSON.parse(business.agent_memory || '{}');
+  const workflowKey = normalizeWorkflowKey(task.workflow_key || task.department, task.department);
+  const workflowState = getWorkflowState(business.id, workflowKey);
+  const brief = task.brief || composeTaskBrief({
+    business,
+    title: task.title,
+    description: task.description,
+    department: task.department,
+    workflowKey,
+    workflowState
+  });
   const pendingFiles = [];
 
   const messages = [{
     role: 'user',
-    content: `TASK: ${task.title}${task.description ? '\n\nDETAILS: ' + task.description : ''}\n\nExecute now.`
+    content: [
+      `TASK: ${task.title}${task.description ? `\n\nDETAILS: ${task.description}` : ''}`,
+      brief ? `TASK BRIEF:\n${formatTaskBrief(brief)}` : '',
+      workflowState ? `WORKFLOW CONTINUITY:\n${JSON.stringify({
+        summary: workflowState.summary,
+        open_loops: workflowState.open_loops,
+        evidence: workflowState.evidence
+      }, null, 2)}` : '',
+      'Execute now.'
+    ].filter(Boolean).join('\n\n')
   }];
 
   let finalSummary = '';
@@ -113,7 +141,7 @@ export async function runTask(task, business) {
     const response = await client.messages.create({
       model: AGENT_MODEL,
       max_tokens: AGENT_MAX_TOKENS,
-      system: buildSystemPrompt(business, memory),
+      system: buildSystemPrompt(business, memory, workflowState),
       tools: AGENT_TOOLS,
       messages
     });
@@ -143,8 +171,20 @@ export async function runTask(task, business) {
     }
   }
 
-  db.prepare('UPDATE businesses SET agent_memory=? WHERE id=?').run(JSON.stringify(memory), business.id);
-  return { summary: finalSummary, toolResults, nextSteps };
+  const executionResult = { summary: finalSummary, toolResults, nextSteps };
+  const intelligence = await persistExecutionIntelligence({
+    business,
+    task,
+    result: executionResult,
+    cycleId
+  });
+
+  return {
+    ...executionResult,
+    verification: intelligence.verification,
+    workflow: intelligence.workflowState,
+    skill: intelligence.skill
+  };
 }
 
 function requiresApproval(actionName, business) {

@@ -691,12 +691,62 @@ describe('Control center', () => {
     const created = tasks.body.tasks.find(task => task.id === body.taskId);
     assert.ok(created);
     assert.equal(created.department, 'marketing');
+    assert.equal(created.workflow_key, 'marketing');
+    assert.equal(created.brief.workflow_key, 'marketing');
+    assert.match(created.brief.what, /Founder dispatch: growth sprint/i);
+  });
+
+  it('persists verification, workflow continuity, and extracted skills after task execution', async () => {
+    const { getDb } = await import('../src/db/migrate.js');
+    const {
+      hydrateTask,
+      persistExecutionIntelligence
+    } = await import('../src/agents/execution-intelligence.js');
+
+    const db = getDb();
+    const business = db.prepare('SELECT * FROM businesses WHERE id = ?').get(bizId);
+    const taskRow = db.prepare(`
+      SELECT *
+      FROM tasks
+      WHERE business_id = ?
+        AND workflow_key = 'marketing'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(bizId);
+    const task = hydrateTask(taskRow);
+
+    const intelligence = await persistExecutionIntelligence({
+      business,
+      task,
+      result: {
+        summary: 'Built a waitlist experiment for solo founders, captured the core messaging, and documented the next follow-up sequence.',
+        toolResults: [
+          { tool: 'web_search', result: { count: 3 } },
+          { tool: 'create_content', result: { success: true } },
+          { tool: 'add_lead', result: { success: true } }
+        ],
+        nextSteps: ['Launch a follow-up nurture email for new waitlist leads']
+      }
+    });
+
+    assert.equal(intelligence.verification.status, 'passed');
+    assert.equal(intelligence.workflowState.workflow_key, 'marketing');
+    assert.ok(intelligence.workflowState.open_loops.includes('Launch a follow-up nurture email for new waitlist leads'));
+    assert.ok(intelligence.skill);
+
+    const snapshot = await GET(`/api/businesses/${bizId}/operating-system`, tokens.access);
+    assert.equal(snapshot.status, 200);
+    assert.ok(snapshot.body.planning);
+    assert.ok(snapshot.body.planning.recent_verifications.some(item => item.task_id === task.id));
+    assert.ok(snapshot.body.planning.workflows.some(item => item.workflow_key === 'marketing'));
+    assert.ok(snapshot.body.planning.skill_library.length >= 1);
   });
 
   it('returns an operating-system snapshot for the business', async () => {
     const { status, body } = await GET(`/api/businesses/${bizId}/operating-system`, tokens.access);
     assert.equal(status, 200);
     assert.ok(body.business);
+    assert.ok(body.planning);
     assert.ok(body.engineering);
     assert.ok(body.marketing);
     assert.ok(body.operations);
@@ -707,6 +757,8 @@ describe('Control center', () => {
     assert.ok(Array.isArray(body.infrastructure.assets));
     assert.ok(body.infrastructure.readiness);
     assert.ok(Array.isArray(body.analytics.trend));
+    assert.ok(Array.isArray(body.planning.workflows));
+    assert.ok(body.planning.verification_summary);
   });
 
   it('returns infrastructure readiness details for the business', async () => {

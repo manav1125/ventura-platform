@@ -3983,22 +3983,45 @@ function renderFounderControl(data) {
 function renderPlanning(data) {
   const cyclesEl = document.getElementById('cycle-history-list');
   if (cyclesEl) {
-    const cycles = data.recentCycles || [];
-    cyclesEl.innerHTML = cycles.length ? cycles.map(c => `
+    const cycles = data.recentCycles || data.planning?.recent_cycles || [];
+    const workflows = data.workflows || data.planning?.workflows || [];
+    const cycleRows = cycles.length ? cycles.map(c => `
       <div class="activity-item">
         <div class="activity-content">
           <div class="activity-title">${esc(c.summary || `Cycle ${c.status}`)}</div>
-          <div class="activity-meta">${c.triggered_by} · ${c.tasks_run || 0} tasks · ${timeAgo(c.created_at)}</div>
+          <div class="activity-meta">${c.triggered_by} · ${c.tasks_run || 0} tasks · ${timeAgo(c.completed_at || c.created_at)}</div>
         </div>
         <span class="activity-status ${c.status === 'complete' ? 'status-done' : c.status === 'running' ? 'status-running' : 'status-queued'}">${esc(c.status)}</span>
       </div>
     `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding:16px 0;">No cycles yet.</div>`;
+    const workflowRows = workflows.length ? workflows.map(item => `
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;margin-top:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+          <div>
+            <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(item.title || titleCase(item.workflow_key || 'workflow'))}</div>
+            <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.55;">${esc(item.summary || 'No continuity summary yet.')}</div>
+          </div>
+          <span style="font-size:11px;font-family:'DM Mono',monospace;color:${workflowTone(item.status)};padding:4px 10px;background:${workflowBg(item.status)};border-radius:999px;white-space:nowrap;">${esc((item.status || 'healthy').toUpperCase())}</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
+          ${(item.open_loops || []).slice(0, 4).map(loop => `<span class="tag">${esc(loop)}</span>`).join('') || `<span class="tag">No open loops</span>`}
+        </div>
+      </div>
+    `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding-top:12px;">Workflow continuity will appear here after Ventura completes tasks.</div>`;
+    cyclesEl.innerHTML = `
+      ${cycleRows}
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);padding:18px 0 8px;">WORKFLOW STATE</div>
+      ${workflowRows}
+    `;
   }
 
   const specialistsEl = document.getElementById('specialist-agent-list');
   if (specialistsEl) {
     const specialists = data.specialists || [];
-    specialistsEl.innerHTML = specialists.map(s => `
+    const verificationSummary = data.verificationSummary || data.planning?.verification_summary || {};
+    const recentVerifications = data.recent_verifications || data.planning?.recent_verifications || [];
+    const skills = data.skills || data.planning?.skill_library || [];
+    const specialistRows = specialists.map(s => `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;margin-bottom:12px;">
         <div>
           <div style="font-size:14px;color:#e0ddd5;margin-bottom:4px;">${esc(s.label)}</div>
@@ -4007,6 +4030,48 @@ function renderPlanning(data) {
         <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.45);">${s.last_run ? timeAgo(s.last_run) : 'idle'}</div>
       </div>
     `).join('') || `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No specialist activity yet.</div>`;
+    const verificationRows = recentVerifications.length ? recentVerifications.slice(0, 4).map(item => `
+      <div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+          <div>
+            <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(item.title)}</div>
+            <div style="font-size:12px;color:rgba(255,255,255,0.52);">${displayDepartment(item.department)} · ${timeAgo(item.updated_at || item.created_at)}</div>
+          </div>
+          <span style="font-size:11px;font-family:'DM Mono',monospace;color:${verificationTone(item.status)};padding:4px 10px;background:${verificationBg(item.status)};border-radius:999px;white-space:nowrap;">${esc((item.status || 'review').toUpperCase())}</span>
+        </div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.6);line-height:1.55;margin-top:6px;">${esc(item.summary || 'Verification details pending.')}</div>
+      </div>
+    `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Recent execution checks will appear here after Ventura completes tasks.</div>`;
+    const skillRows = skills.length ? skills.slice(0, 4).map(skill => `
+      <div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+        <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(skill.title)}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.6);line-height:1.55;">${esc(skill.summary || 'Reusable execution pattern captured.')}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
+          ${(skill.steps || []).slice(0, 4).map(step => `<span class="tag">${esc(step)}</span>`).join('')}
+        </div>
+      </div>
+    `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Ventura will start extracting reusable playbooks after successful task runs.</div>`;
+    specialistsEl.innerHTML = `
+      ${specialistRows}
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);padding:10px 0 8px;">VERIFICATION HEALTH</div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px;">
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">PASSED</div>
+          <div style="font-size:20px;color:#e0ddd5;">${verificationSummary.passed || 0}</div>
+        </div>
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">REVIEW</div>
+          <div style="font-size:20px;color:#e0ddd5;">${verificationSummary.review || 0}</div>
+        </div>
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">AVG SCORE</div>
+          <div style="font-size:20px;color:#e0ddd5;">${verificationSummary.total ? `${Math.round((verificationSummary.avg_score || 0) * 100)}%` : '0%'}</div>
+        </div>
+      </div>
+      ${verificationRows}
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);padding:18px 0 8px;">SKILL LIBRARY</div>
+      ${skillRows}
+    `;
   }
 }
 
@@ -5153,6 +5218,10 @@ function integrationColor(status) { return ({ connected:'#28ca41', configured:'#
 function integrationBg(status) { return ({ connected:'rgba(40,202,65,0.1)', configured:'rgba(40,202,65,0.1)', active:'rgba(40,202,65,0.1)', mocked:'rgba(200,168,75,0.1)', preview:'rgba(200,168,75,0.1)', verifying:'rgba(200,168,75,0.1)', pending:'rgba(200,168,75,0.1)', action_required:'rgba(255,107,107,0.12)', failed:'rgba(255,107,107,0.12)' }[status] || 'rgba(255,255,255,0.06)'); }
 function approvalTone(status) { return ({ pending:'var(--gold)', executed:'#28ca41', approved:'#28ca41', rejected:'#9aa0aa', failed:'#ff6b6b' }[status] || '#9aa0aa'); }
 function approvalBg(status) { return ({ pending:'rgba(200,168,75,0.1)', executed:'rgba(40,202,65,0.1)', approved:'rgba(40,202,65,0.1)', rejected:'rgba(255,255,255,0.06)', failed:'rgba(255,107,107,0.12)' }[status] || 'rgba(255,255,255,0.06)'); }
+function verificationTone(status) { return ({ passed:'#28ca41', review:'var(--gold)', revise:'#ff6b6b' }[status] || '#9aa0aa'); }
+function verificationBg(status) { return ({ passed:'rgba(40,202,65,0.1)', review:'rgba(200,168,75,0.1)', revise:'rgba(255,107,107,0.12)' }[status] || 'rgba(255,255,255,0.06)'); }
+function workflowTone(status) { return ({ healthy:'#28ca41', review:'var(--gold)', attention:'#ff6b6b' }[status] || '#9aa0aa'); }
+function workflowBg(status) { return ({ healthy:'rgba(40,202,65,0.1)', review:'rgba(200,168,75,0.1)', attention:'rgba(255,107,107,0.12)' }[status] || 'rgba(255,255,255,0.06)'); }
 function formatApprovalResult(result) {
   if (!result || typeof result !== 'object') return '';
   if (result.error) return result.error;

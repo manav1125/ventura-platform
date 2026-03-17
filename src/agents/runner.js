@@ -89,7 +89,17 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
     // ── Generate new tasks for this cycle ────────────────────────────────────
     const newTasks = await generateCycleTasks(business);
     for (const t of newTasks) {
-      await queueTask({ businessId: business.id, ...t, cycleId, triggeredBy: 'agent', priority: 3 });
+      await queueTask({
+        businessId: business.id,
+        business,
+        title: t.title,
+        description: t.description,
+        department: t.department,
+        workflowKey: t.workflowKey,
+        cycleId,
+        triggeredBy: 'agent',
+        priority: 3
+      });
     }
 
     // ── Run all queued tasks ──────────────────────────────────────────────────
@@ -99,8 +109,9 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
       try {
         console.log(`  → Task: ${task.title} [${task.department}]`);
         startTask(task.id, cycleId);
+        const currentBusiness = db.prepare('SELECT * FROM businesses WHERE id = ?').get(business.id);
 
-        const result = await runTask(task, business);
+        const result = await runTask(task, currentBusiness, cycleId);
         completeTask(task.id, result);
         tasksRun++;
 
@@ -111,8 +122,10 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
           for (const step of result.nextSteps.slice(0, 2)) {
             await queueTask({
               businessId: business.id,
+              business: currentBusiness,
               title: step,
               department: task.department,
+              workflowKey: task.workflow_key || task.department,
               triggeredBy: 'agent',
               priority: 5,
               cycleId

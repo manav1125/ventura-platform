@@ -240,9 +240,17 @@ async function stepSeedAgentMemory(businessId, context) {
 
 async function stepQueueInitialTasks(businessId, type) {
   // Queue a set of bootstrapping tasks based on business type
+  const db = getDb();
+  const business = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
   const initialTasks = getBootstrapTasks(type);
   for (const task of initialTasks) {
-    await queueTask({ businessId, ...task, triggeredBy: 'system', priority: 1 });
+    await queueTask({
+      businessId,
+      business,
+      ...task,
+      triggeredBy: 'system',
+      priority: 1
+    });
   }
 }
 

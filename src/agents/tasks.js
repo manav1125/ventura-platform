@@ -4,19 +4,58 @@
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db/migrate.js';
 import { emitToBusiness } from '../ws/websocket.js';
+import {
+  composeTaskBrief,
+  getWorkflowState,
+  hydrateTask,
+  normalizeWorkflowKey
+} from './execution-intelligence.js';
 
-export async function queueTask({ businessId, title, description, department, triggeredBy = 'user', priority = 5, cycleId = null }) {
+export async function queueTask({
+  businessId,
+  business = null,
+  title,
+  description,
+  department,
+  workflowKey = null,
+  triggeredBy = 'user',
+  priority = 5,
+  cycleId = null
+}) {
   const db = getDb();
   const id = uuid();
+  const normalizedWorkflowKey = normalizeWorkflowKey(workflowKey, department);
+  const workflowState = business ? getWorkflowState(businessId, normalizedWorkflowKey) : null;
+  const brief = business ? composeTaskBrief({
+    business,
+    title,
+    description,
+    department,
+    workflowKey: normalizedWorkflowKey,
+    workflowState
+  }) : null;
 
   db.prepare(`
-    INSERT INTO tasks (id, business_id, cycle_id, title, description, department, status, triggered_by, priority)
-    VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?)
-  `).run(id, businessId, cycleId, title, description || null, department, triggeredBy, priority);
+    INSERT INTO tasks (
+      id, business_id, cycle_id, title, description, department, workflow_key, brief_json, status, triggered_by, priority
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+  `).run(
+    id,
+    businessId,
+    cycleId,
+    title,
+    description || null,
+    department,
+    normalizedWorkflowKey,
+    brief ? JSON.stringify(brief) : null,
+    triggeredBy,
+    priority
+  );
 
   emitToBusiness(businessId, {
     event: 'task:queued',
-    task: { id, title, department, status: 'queued', priority }
+    task: { id, title, department, workflow_key: normalizedWorkflowKey, brief, status: 'queued', priority }
   });
 
   return id;
@@ -29,7 +68,7 @@ export function getQueuedTasks(businessId, limit = 20) {
     WHERE business_id = ? AND status = 'queued'
     ORDER BY priority ASC, created_at ASC
     LIMIT ?
-  `).all(businessId, limit);
+  `).all(businessId, limit).map(hydrateTask);
 }
 
 export function getAllTasks(businessId, limit = 50) {
@@ -39,7 +78,7 @@ export function getAllTasks(businessId, limit = 50) {
     WHERE business_id = ?
     ORDER BY created_at DESC
     LIMIT ?
-  `).all(businessId, limit);
+  `).all(businessId, limit).map(hydrateTask);
 }
 
 export function startTask(taskId, cycleId) {

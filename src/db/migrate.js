@@ -153,11 +153,15 @@ export function runMigrations() {
       title         TEXT NOT NULL,
       description   TEXT,
       department    TEXT NOT NULL,  -- engineering | marketing | operations | strategy | sales | finance
+      workflow_key  TEXT,
+      brief_json    TEXT,
       status        TEXT NOT NULL DEFAULT 'queued', -- queued | running | complete | failed | cancelled
       triggered_by  TEXT NOT NULL DEFAULT 'agent',  -- agent | user
       priority      INTEGER NOT NULL DEFAULT 5,     -- 1 (highest) - 10 (lowest)
       result        TEXT,                           -- JSON: output, files changed, etc.
       error         TEXT,
+      verification_status TEXT,
+      verification_summary TEXT,
       credits_used  INTEGER NOT NULL DEFAULT 1,
       started_at    TEXT,
       completed_at  TEXT,
@@ -167,6 +171,7 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_tasks_business ON tasks(business_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
     CREATE INDEX IF NOT EXISTS idx_tasks_department ON tasks(department);
+    CREATE INDEX IF NOT EXISTS idx_tasks_workflow_key ON tasks(workflow_key);
 
     -- ─────────────────────────────────────────
     -- ACTIVITY FEED (real-time events)
@@ -274,6 +279,74 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
 
     -- ─────────────────────────────────────────
+    -- WORKFLOW STATE (persistent continuity per operating loop)
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS workflow_states (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      workflow_key  TEXT NOT NULL,
+      department    TEXT NOT NULL,
+      title         TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'healthy',
+      summary       TEXT,
+      open_loops    TEXT DEFAULT '[]',
+      evidence      TEXT DEFAULT '[]',
+      last_task_id  TEXT REFERENCES tasks(id),
+      last_cycle_id TEXT REFERENCES agent_cycles(id),
+      last_verification_status TEXT,
+      last_run_at   TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(business_id, workflow_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_workflow_states_business ON workflow_states(business_id);
+    CREATE INDEX IF NOT EXISTS idx_workflow_states_key ON workflow_states(workflow_key);
+
+    -- ─────────────────────────────────────────
+    -- TASK VERIFICATION
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS task_verifications (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      task_id       TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      status        TEXT NOT NULL DEFAULT 'review', -- passed | review | revise
+      score         REAL NOT NULL DEFAULT 0,
+      summary       TEXT,
+      checklist     TEXT DEFAULT '[]',
+      risks         TEXT DEFAULT '[]',
+      suggested_followups TEXT DEFAULT '[]',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(task_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_task_verifications_business ON task_verifications(business_id);
+    CREATE INDEX IF NOT EXISTS idx_task_verifications_status ON task_verifications(status);
+
+    -- ─────────────────────────────────────────
+    -- SKILL LIBRARY (forced post-task extraction)
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS skill_library (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      department    TEXT NOT NULL,
+      slug          TEXT NOT NULL,
+      title         TEXT NOT NULL,
+      summary       TEXT,
+      steps         TEXT DEFAULT '[]',
+      confidence    REAL NOT NULL DEFAULT 0,
+      evidence_task_id TEXT REFERENCES tasks(id),
+      times_observed INTEGER NOT NULL DEFAULT 1,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(business_id, slug)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_skill_library_business ON skill_library(business_id);
+    CREATE INDEX IF NOT EXISTS idx_skill_library_department ON skill_library(department);
+
+    -- ─────────────────────────────────────────
     -- INTEGRATIONS / INFRA REGISTRY
     -- ─────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS integrations (
@@ -377,6 +450,10 @@ export function runMigrations() {
   ensureColumn(db, 'businesses', 'revenue_share_pct', 'INTEGER NOT NULL DEFAULT -1');
   ensureColumn(db, 'businesses', 'tasks_included_per_month', 'INTEGER NOT NULL DEFAULT -1');
   ensureColumn(db, 'businesses', 'infrastructure_included', 'INTEGER NOT NULL DEFAULT -1');
+  ensureColumn(db, 'tasks', 'workflow_key', 'TEXT');
+  ensureColumn(db, 'tasks', 'brief_json', 'TEXT');
+  ensureColumn(db, 'tasks', 'verification_status', 'TEXT');
+  ensureColumn(db, 'tasks', 'verification_summary', 'TEXT');
   ensureColumn(db, 'integrations', 'secrets', "TEXT DEFAULT '{}'");
   ensureColumn(db, 'integrations', 'updated_at', 'TEXT');
   ensureColumn(db, 'users', 'email_verified', 'INTEGER NOT NULL DEFAULT 1');

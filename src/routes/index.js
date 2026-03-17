@@ -15,6 +15,7 @@ import { runBusinessCycle } from '../agents/runner.js';
 import { queueTask, getAllTasks, getQueuedTasks } from '../agents/tasks.js';
 import { listApprovals, decideApproval } from '../agents/approvals.js';
 import { getRecentActivity, logActivity } from '../agents/activity.js';
+import { getExecutionIntelligenceSnapshot } from '../agents/execution-intelligence.js';
 import { getDb } from '../db/migrate.js';
 import { getStats } from '../ws/websocket.js';
 import {
@@ -355,6 +356,13 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   }));
   const deployments = getDeployments(business.id, 20);
   const approvals = listApprovals(business.id, { limit: 25 });
+  const recentCycles = db.prepare(`
+    SELECT id, status, triggered_by, started_at, completed_at, tasks_run, summary, error, created_at
+    FROM agent_cycles
+    WHERE business_id = ?
+    ORDER BY created_at DESC
+    LIMIT 10
+  `).all(business.id);
   const leadsByStatus = db.prepare(`
     SELECT status, COUNT(*) AS count
     FROM leads
@@ -385,6 +393,7 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   const economics = resolveBusinessEconomics(business, userPlan);
   const integrations = getBusinessIntegrations(business);
   const infrastructure = getInfrastructureSnapshot(business, integrations);
+  const execution = getExecutionIntelligenceSnapshot(business.id);
   const stripeIntegration = integrations.find(integration => integration.kind === 'stripe');
   const stripeConfig = stripeIntegration?.config || {};
   const engineeringTasks = tasks.filter(task => task.department === 'engineering');
@@ -476,6 +485,22 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       }
     },
     memory,
+    planning: {
+      summary: {
+        workflows: execution.workflows.length,
+        healthy_workflows: execution.workflows.filter(item => item.status === 'healthy').length,
+        review_workflows: execution.workflows.filter(item => item.status === 'review').length,
+        attention_workflows: execution.workflows.filter(item => item.status === 'attention').length,
+        verification_pass_rate: execution.verification_summary.total
+          ? Math.round((Number(execution.verification_summary.passed || 0) / Number(execution.verification_summary.total || 1)) * 100)
+          : 0
+      },
+      recent_cycles: recentCycles,
+      workflows: execution.workflows,
+      recent_verifications: execution.recent_verifications,
+      verification_summary: execution.verification_summary,
+      skill_library: execution.skill_library
+    },
     engineering: {
       summary: {
         deployments_30d: deployments30d,
@@ -1014,13 +1039,19 @@ router.post('/businesses/:id/tasks', requireAuth, asyncHandler(async (req, res) 
     title: z.string().min(3).max(300),
     description: z.string().optional(),
     department: z.enum(['engineering', 'marketing', 'operations', 'strategy', 'sales', 'finance']),
+    workflowKey: z.string().min(2).max(80).optional(),
     priority: z.number().int().min(1).max(10).default(3)
   });
   const body = validate(schema, req.body);
 
   const taskId = await queueTask({
     businessId: req.params.id,
-    ...body,
+    business,
+    title: body.title,
+    description: body.description,
+    department: body.department,
+    workflowKey: body.workflowKey,
+    priority: body.priority,
     triggeredBy: 'user'
   });
   res.status(201).json({ taskId });
@@ -1419,6 +1450,7 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
   const specialists = getSpecialistSummary(db, req.params.id);
   const recentActivity = getRecentActivity(req.params.id, 8);
   const usage = getUserUsage(db, req.user.sub, user.plan);
+  const execution = getExecutionIntelligenceSnapshot(req.params.id);
 
   res.json({
     business: hydratedBusiness,
@@ -1430,6 +1462,10 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
     integrations,
     infrastructure,
     specialists,
+    workflows: execution.workflows,
+    recent_verifications: execution.recent_verifications,
+    verificationSummary: execution.verification_summary,
+    skills: execution.skill_library,
     usage,
     economics,
     plan: serializePlan(user.plan)

@@ -56,9 +56,11 @@ export async function dispatchSpecialistTask({ business, specialist, brief = '',
 
   const taskId = await queueTask({
     businessId: business.id,
+    business,
     title,
     description,
     department: playbook.department,
+    workflowKey: playbook.id,
     triggeredBy,
     priority
   });
