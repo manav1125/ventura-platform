@@ -3,9 +3,12 @@ import { getDb } from '../db/migrate.js';
 import {
   DB_PATH,
   BRAVE_SEARCH_API_KEY,
+  LINKEDIN_CLIENT_ID,
+  LINKEDIN_CLIENT_SECRET,
   PLATFORM_DOMAIN,
   SMTP_HOST,
   STRIPE_SECRET_KEY,
+  TWITTER_CLIENT_ID,
   VERCEL_TOKEN
 } from '../config.js';
 
@@ -37,6 +40,18 @@ function toStringArray(value) {
   return Array.isArray(value)
     ? value.map(item => cleanString(item)).filter(Boolean)
     : [];
+}
+
+function normaliseLinkedInOrganizations(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(item => ({
+      organization: cleanString(item?.organization || item?.name),
+      organization_urn: cleanString(item?.organization_urn || item?.organizationUrn || item?.urn),
+      author_urn: cleanString(item?.author_urn || item?.authorUrn || item?.organization_urn || item?.organizationUrn || item?.urn),
+      page_url: cleanString(item?.page_url || item?.pageUrl) || null
+    }))
+    .filter(item => item.organization_urn);
 }
 
 function maskToken(token) {
@@ -88,14 +103,21 @@ function normaliseStripeConfig(config = {}, stripeAccountId = null) {
 function normaliseTwitterConfig(config = {}, secrets = {}) {
   const accessToken = cleanString(secrets.access_token || secrets.accessToken);
   const refreshToken = cleanString(secrets.refresh_token || secrets.refreshToken);
+  const scopes = toStringArray(config.scopes);
 
   return {
     config: {
       connected: !!(config.connected || accessToken || config === true),
+      publish_ready: !!accessToken,
       handle: cleanString(config.handle),
       profile_url: cleanString(config.profile_url || config.profileUrl) || null,
       account_label: cleanString(config.account_label || config.accountLabel) || null,
       account_id: cleanString(config.account_id || config.accountId) || null,
+      profile_image_url: cleanString(config.profile_image_url || config.profileImageUrl) || null,
+      username: cleanString(config.username) || null,
+      connected_via: cleanString(config.connected_via || config.connectedVia) || (accessToken ? 'manual' : null),
+      scopes,
+      oauth_available: !!TWITTER_CLIENT_ID,
       token_last4: maskToken(accessToken),
       last_validated_at: cleanString(config.last_validated_at || config.lastValidatedAt) || null
     },
@@ -110,14 +132,24 @@ function normaliseTwitterConfig(config = {}, secrets = {}) {
 function normaliseLinkedInConfig(config = {}, secrets = {}) {
   const accessToken = cleanString(secrets.access_token || secrets.accessToken);
   const refreshToken = cleanString(secrets.refresh_token || secrets.refreshToken);
+  const organizations = normaliseLinkedInOrganizations(config.organizations);
+  const organizationUrn = cleanString(config.organization_urn || config.organizationUrn) || null;
 
   return {
     config: {
       connected: !!(config.connected || accessToken || config === true),
+      publish_ready: !!(accessToken && organizationUrn),
       organization: cleanString(config.organization || config.companyName) || null,
-      organization_urn: cleanString(config.organization_urn || config.organizationUrn) || null,
+      organization_urn: organizationUrn,
       author_urn: cleanString(config.author_urn || config.authorUrn) || null,
       page_url: cleanString(config.page_url || config.pageUrl) || null,
+      member_name: cleanString(config.member_name || config.memberName) || null,
+      member_email: cleanString(config.member_email || config.memberEmail) || null,
+      member_urn: cleanString(config.member_urn || config.memberUrn) || null,
+      connected_via: cleanString(config.connected_via || config.connectedVia) || (accessToken ? 'manual' : null),
+      scopes: toStringArray(config.scopes),
+      organizations,
+      oauth_available: !!(LINKEDIN_CLIENT_ID && LINKEDIN_CLIENT_SECRET),
       token_last4: maskToken(accessToken),
       last_validated_at: cleanString(config.last_validated_at || config.lastValidatedAt) || null
     },
@@ -412,6 +444,11 @@ export function saveSocialProviderConnection({ businessId, provider, updates = {
       profile_url: cleanString(updates.profileUrl || updates.profile_url) || social.config.twitter.profile_url || null,
       account_label: cleanString(updates.accountLabel || updates.account_label) || social.config.twitter.account_label || null,
       account_id: cleanString(updates.accountId || updates.account_id) || social.config.twitter.account_id || null,
+      profile_image_url: cleanString(updates.profileImageUrl || updates.profile_image_url) || social.config.twitter.profile_image_url || null,
+      username: cleanString(updates.username) || social.config.twitter.username || null,
+      connected_via: cleanString(updates.connectedVia || updates.connected_via) || social.config.twitter.connected_via || null,
+      scopes: toStringArray(updates.scopes).length ? toStringArray(updates.scopes) : social.config.twitter.scopes,
+      oauth_available: !!TWITTER_CLIENT_ID,
       last_validated_at: new Date().toISOString()
     };
     social.secrets.twitter = {
@@ -422,13 +459,22 @@ export function saveSocialProviderConnection({ businessId, provider, updates = {
     };
     social.config.twitter.token_last4 = maskToken(social.secrets.twitter.access_token);
     social.config.twitter.connected = !!social.secrets.twitter.access_token;
+    social.config.twitter.publish_ready = !!social.secrets.twitter.access_token;
   } else if (provider === 'linkedin') {
+    const organizations = normaliseLinkedInOrganizations(updates.organizations);
     social.config.linkedin = {
       ...social.config.linkedin,
       organization: cleanString(updates.organization) || social.config.linkedin.organization || null,
       organization_urn: cleanString(updates.organizationUrn || updates.organization_urn) || social.config.linkedin.organization_urn || null,
       author_urn: cleanString(updates.authorUrn || updates.author_urn) || social.config.linkedin.author_urn || null,
       page_url: cleanString(updates.pageUrl || updates.page_url) || social.config.linkedin.page_url || null,
+      member_name: cleanString(updates.memberName || updates.member_name) || social.config.linkedin.member_name || null,
+      member_email: cleanString(updates.memberEmail || updates.member_email) || social.config.linkedin.member_email || null,
+      member_urn: cleanString(updates.memberUrn || updates.member_urn) || social.config.linkedin.member_urn || null,
+      connected_via: cleanString(updates.connectedVia || updates.connected_via) || social.config.linkedin.connected_via || null,
+      scopes: toStringArray(updates.scopes).length ? toStringArray(updates.scopes) : social.config.linkedin.scopes,
+      organizations: organizations.length ? organizations : social.config.linkedin.organizations,
+      oauth_available: !!(LINKEDIN_CLIENT_ID && LINKEDIN_CLIENT_SECRET),
       last_validated_at: new Date().toISOString()
     };
     social.secrets.linkedin = {
@@ -439,6 +485,7 @@ export function saveSocialProviderConnection({ businessId, provider, updates = {
     };
     social.config.linkedin.token_last4 = maskToken(social.secrets.linkedin.access_token);
     social.config.linkedin.connected = !!social.secrets.linkedin.access_token;
+    social.config.linkedin.publish_ready = !!(social.secrets.linkedin.access_token && social.config.linkedin.organization_urn);
   }
 
   social.config.connected_providers = ['twitter', 'linkedin'].filter(key => social.config[key].connected);
@@ -464,10 +511,16 @@ export function disconnectSocialProviderConnection({ businessId, provider }) {
   if (provider === 'twitter') {
     social.config.twitter = {
       connected: false,
+      publish_ready: false,
       handle: null,
       profile_url: null,
       account_label: null,
       account_id: null,
+      profile_image_url: null,
+      username: null,
+      connected_via: null,
+      scopes: [],
+      oauth_available: !!TWITTER_CLIENT_ID,
       token_last4: null,
       last_validated_at: new Date().toISOString()
     };
@@ -479,10 +532,18 @@ export function disconnectSocialProviderConnection({ businessId, provider }) {
   } else if (provider === 'linkedin') {
     social.config.linkedin = {
       connected: false,
+      publish_ready: false,
       organization: null,
       organization_urn: null,
       author_urn: null,
       page_url: null,
+      member_name: null,
+      member_email: null,
+      member_urn: null,
+      connected_via: null,
+      scopes: [],
+      organizations: [],
+      oauth_available: !!(LINKEDIN_CLIENT_ID && LINKEDIN_CLIENT_SECRET),
       token_last4: null,
       last_validated_at: new Date().toISOString()
     };

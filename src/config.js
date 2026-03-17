@@ -27,6 +27,8 @@ export const AGENT_MAX_TOKENS  = parseInt(process.env.AGENT_MAX_TOKENS || '8192'
 export const STRIPE_SECRET_KEY        = process.env.STRIPE_SECRET_KEY || '';
 export const STRIPE_WEBHOOK_SECRET    = process.env.STRIPE_WEBHOOK_SECRET || '';
 export const STRIPE_PLATFORM_FEE_PCT  = parseInt(process.env.STRIPE_PLATFORM_FEE_PERCENT || '20');
+export const STRIPE_PRICE_BUILDER_MONTHLY = process.env.STRIPE_PRICE_BUILDER_MONTHLY || '';
+export const STRIPE_PRICE_FLEET_MONTHLY   = process.env.STRIPE_PRICE_FLEET_MONTHLY || '';
 
 export const SMTP_HOST  = process.env.SMTP_HOST || '';
 export const SMTP_PORT  = parseInt(process.env.SMTP_PORT || '587');
@@ -50,4 +52,10 @@ export const BRAVE_SEARCH_API_KEY    = process.env.BRAVE_SEARCH_API_KEY || '';
 
 // Social
 export const TWITTER_BEARER_TOKEN    = process.env.TWITTER_BEARER_TOKEN || '';
+export const TWITTER_CLIENT_ID       = process.env.TWITTER_CLIENT_ID || process.env.X_CLIENT_ID || '';
+export const TWITTER_CLIENT_SECRET   = process.env.TWITTER_CLIENT_SECRET || process.env.X_CLIENT_SECRET || '';
+export const TWITTER_REDIRECT_URI    = process.env.TWITTER_REDIRECT_URI || process.env.X_REDIRECT_URI || `${BASE_URL}/api/oauth/twitter/callback`;
 export const LINKEDIN_ACCESS_TOKEN   = process.env.LINKEDIN_ACCESS_TOKEN || '';
+export const LINKEDIN_CLIENT_ID      = process.env.LINKEDIN_CLIENT_ID || '';
+export const LINKEDIN_CLIENT_SECRET  = process.env.LINKEDIN_CLIENT_SECRET || '';
+export const LINKEDIN_REDIRECT_URI   = process.env.LINKEDIN_REDIRECT_URI || `${BASE_URL}/api/oauth/linkedin/callback`;

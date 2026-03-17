@@ -330,6 +330,25 @@ export function runMigrations() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user ON email_verification_tokens(user_id);
+
+    -- ─────────────────────────────────────────
+    -- SOCIAL OAUTH STATES
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      id            TEXT PRIMARY KEY,
+      provider      TEXT NOT NULL,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      state_hash    TEXT UNIQUE NOT NULL,
+      code_verifier TEXT,
+      metadata      TEXT DEFAULT '{}',
+      expires_at    TEXT NOT NULL,
+      consumed_at   TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_oauth_states_provider ON oauth_states(provider);
+    CREATE INDEX IF NOT EXISTS idx_oauth_states_business ON oauth_states(business_id);
   `);
 
   // Existing SQLite tables do not gain new columns from CREATE TABLE IF NOT EXISTS,
@@ -353,6 +372,10 @@ export function runMigrations() {
     UPDATE users
     SET email_verified_at = COALESCE(email_verified_at, created_at)
     WHERE email_verified = 1
+  `).run();
+  db.prepare(`
+    DELETE FROM oauth_states
+    WHERE consumed_at IS NOT NULL OR datetime(expires_at) <= datetime('now')
   `).run();
   backfillBusinessEconomics(db);
 

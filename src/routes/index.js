@@ -34,6 +34,12 @@ import {
   saveStripeIntegrationState,
   syncBusinessIntegrations
 } from '../integrations/registry.js';
+import {
+  completeSocialOauthCallback,
+  createSocialOauthSession,
+  getSocialOauthMetadata,
+  resolveSocialOauthFailure
+} from '../integrations/social-oauth.js';
 import { getPlanDefinition, resolveBusinessEconomics, serializePlan } from '../billing/plans.js';
 import { dispatchSpecialistTask } from '../business/specialists.js';
 import Anthropic from '@anthropic-ai/sdk';
@@ -55,6 +61,10 @@ function validate(schema, data) {
 
 function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+}
+
+function cleanString(value) {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 function serializeUser(user) {
@@ -144,7 +154,23 @@ function getBusinessIntegrations(business) {
   if (!integrations.length) {
     integrations = syncBusinessIntegrations(business);
   }
-  return integrations;
+  return integrations.map(integration => {
+    if (integration.kind !== 'social') return integration;
+    return {
+      ...integration,
+      config: {
+        ...integration.config,
+        twitter: {
+          ...(integration.config?.twitter || {}),
+          oauth: getSocialOauthMetadata('twitter', business.id)
+        },
+        linkedin: {
+          ...(integration.config?.linkedin || {}),
+          oauth: getSocialOauthMetadata('linkedin', business.id)
+        }
+      }
+    };
+  });
 }
 
 function parseJsonField(value, fallback = {}) {
@@ -977,6 +1003,33 @@ router.post('/businesses/:id/integrations/sync', requireAuth, asyncHandler(async
   res.json({ integrations, syncedAt: new Date().toISOString() });
 }));
 
+// POST /api/businesses/:id/integrations/social/:provider/oauth/start
+router.post('/businesses/:id/integrations/social/:provider/oauth/start', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const provider = req.params.provider;
+  if (!['twitter', 'linkedin'].includes(provider)) {
+    return res.status(400).json({ error: 'Unsupported social provider' });
+  }
+
+  const session = await createSocialOauthSession({
+    provider,
+    businessId: business.id,
+    userId: req.user.sub
+  });
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'marketing',
+    title: `Founder started ${provider === 'twitter' ? 'X' : 'LinkedIn'} OAuth`,
+    detail: { provider }
+  });
+
+  res.json(session);
+}));
+
 // PATCH /api/businesses/:id/integrations/social/:provider
 router.patch('/businesses/:id/integrations/social/:provider', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
@@ -1052,6 +1105,49 @@ router.delete('/businesses/:id/integrations/social/:provider', requireAuth, asyn
   });
 
   res.json({ integration });
+}));
+
+// GET /api/oauth/:provider/callback
+router.get('/oauth/:provider/callback', asyncHandler(async (req, res) => {
+  const provider = req.params.provider;
+  if (!['twitter', 'linkedin'].includes(provider)) {
+    return res.status(400).json({ error: 'Unsupported social provider' });
+  }
+
+  if (req.query.error) {
+    const redirectUrl = resolveSocialOauthFailure({
+      provider,
+      state: req.query.state || '',
+      error: cleanString(req.query.error_description || req.query.error)
+    });
+    return res.redirect(302, redirectUrl);
+  }
+
+  if (!req.query.code || !req.query.state) {
+    const redirectUrl = resolveSocialOauthFailure({
+      provider,
+      state: req.query.state || '',
+      fallbackMessage: 'This social connection callback is missing required data'
+    });
+    return res.redirect(302, redirectUrl);
+  }
+
+  try {
+    const redirectUrl = await completeSocialOauthCallback({
+      provider,
+      code: String(req.query.code || ''),
+      state: String(req.query.state || '')
+    });
+    return res.redirect(302, redirectUrl);
+  } catch (err) {
+    const redirectUrl = resolveSocialOauthFailure({
+      provider,
+      state: req.query.state || '',
+      businessId: err.businessId || '',
+      fallbackMessage: err.message || `${provider} connection failed`
+    });
+    return res.redirect(302, redirectUrl);
+  }
 }));
 
 // POST /api/businesses/:id/specialists/:specialist/run

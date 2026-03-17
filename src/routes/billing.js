@@ -6,7 +6,13 @@ import express from 'express';
 import Stripe from 'stripe';
 import { requireAuth } from '../auth/auth.js';
 import { getDb } from '../db/migrate.js';
-import { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, FRONTEND_URL } from '../config.js';
+import {
+  FRONTEND_URL,
+  STRIPE_PRICE_BUILDER_MONTHLY,
+  STRIPE_PRICE_FLEET_MONTHLY,
+  STRIPE_SECRET_KEY,
+  STRIPE_WEBHOOK_SECRET
+} from '../config.js';
 import { getPlanDefinition, serializePlan } from '../billing/plans.js';
 
 const router = express.Router();
@@ -18,8 +24,8 @@ function asyncHandler(fn) {
 
 // ── Price IDs (set these in your Stripe dashboard, then update here) ──────────
 const PRICES = {
-  builder_monthly: process.env.STRIPE_PRICE_BUILDER_MONTHLY || 'price_builder_monthly',
-  fleet_monthly:   process.env.STRIPE_PRICE_FLEET_MONTHLY   || 'price_fleet_monthly',
+  builder_monthly: STRIPE_PRICE_BUILDER_MONTHLY || null,
+  fleet_monthly:   STRIPE_PRICE_FLEET_MONTHLY || null,
 };
 
 // GET /api/billing/plans — return available plans and current plan
@@ -44,8 +50,13 @@ router.post('/checkout', requireAuth, asyncHandler(async (req, res) => {
   }
 
   const { plan } = req.body;
+  if (!['builder', 'fleet'].includes(plan)) {
+    return res.status(400).json({ error: 'Invalid plan' });
+  }
   const priceId = PRICES[`${plan}_monthly`];
-  if (!priceId) return res.status(400).json({ error: 'Invalid plan' });
+  if (!priceId) {
+    return res.status(503).json({ error: `Stripe price for the ${plan} plan is not configured yet.` });
+  }
 
   const db = getDb();
   const user = db.prepare('SELECT * FROM users WHERE id=?').get(req.user.sub);

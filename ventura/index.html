@@ -4111,6 +4111,9 @@ function renderSettings(data, operating = null, billing = null) {
     const socialIntegration = integrations.find(i => i.kind === 'social') || { status: 'pending', config: {} };
     const twitter = socialIntegration.config?.twitter || {};
     const linkedin = socialIntegration.config?.linkedin || {};
+    const twitterOauth = twitter.oauth || {};
+    const linkedinOauth = linkedin.oauth || {};
+    const linkedinOrganizations = Array.isArray(linkedin.organizations) ? linkedin.organizations : [];
     const stackRows = integrations
       .filter(i => !['stripe', 'social'].includes(i.kind))
       .map(i => `
@@ -4176,7 +4179,7 @@ function renderSettings(data, operating = null, billing = null) {
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px;">
             <div>
               <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:6px;">SOCIAL ACCOUNTS</div>
-              <div style="font-size:14px;color:#e0ddd5;line-height:1.6;">Connect business-owned X and LinkedIn accounts so Ventura can publish through the right brand, not a shared platform token.</div>
+              <div style="font-size:14px;color:#e0ddd5;line-height:1.6;">Connect business-owned X and LinkedIn accounts with OAuth so Ventura can publish through the right brand, not a shared platform token. Manual token entry stays available as a fallback.</div>
             </div>
             <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(socialIntegration.status || 'pending')};padding:4px 10px;background:${integrationBg(socialIntegration.status || 'pending')};border-radius:999px;white-space:nowrap;">${esc((socialIntegration.status || 'pending').toUpperCase())}</span>
           </div>
@@ -4185,10 +4188,16 @@ function renderSettings(data, operating = null, billing = null) {
               <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:12px;">
                 <div>
                   <div style="font-size:13px;color:#e0ddd5;">X / Twitter</div>
-                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(twitter.handle ? `Connected as ${twitter.handle}` : 'No business X account connected yet.')}</div>
+                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(twitter.handle ? `Connected as ${twitter.handle}` : 'No business X account connected yet.')}${twitter.connected_via ? ` · via ${esc(twitter.connected_via)}` : ''}</div>
                 </div>
                 <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(twitter.connected ? 'connected' : 'pending')};padding:4px 10px;background:${integrationBg(twitter.connected ? 'connected' : 'pending')};border-radius:999px;white-space:nowrap;">${twitter.connected ? 'CONNECTED' : 'PENDING'}</span>
               </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+                <button class="icon-btn" onclick="startSocialOauth('twitter')" ${twitterOauth.configured ? '' : 'disabled style="opacity:0.45;cursor:not-allowed;"'}>${twitter.connected ? 'Reconnect with X' : 'Connect with X'}</button>
+                <button class="icon-btn" onclick="saveSocialIntegration('twitter')">Save manual fallback</button>
+                ${twitter.connected ? `<button class="icon-btn" onclick="disconnectSocialIntegration('twitter')">Disconnect</button>` : ''}
+              </div>
+              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin:0 0 12px;font-family:'DM Mono',monospace;">${twitterOauth.configured ? 'OAuth is live for this workspace. Ventura will autofill the account handle and store refresh tokens securely per business.' : 'Add X OAuth client credentials on Render to enable one-click connect. Manual token entry still works below.'}</div>
               <div class="form-field" style="margin:0 0 10px;">
                 <label style="color:rgba(255,255,255,0.3)">Handle</label>
                 <input id="settings-social-twitter-handle" value="${esc(twitter.handle || '')}" placeholder="@venturaai" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
@@ -4202,24 +4211,35 @@ function renderSettings(data, operating = null, billing = null) {
                 <input id="settings-social-twitter-account-label" value="${esc(twitter.account_label || '')}" placeholder="Ventura Growth" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
               </div>
               <div class="form-field" style="margin:0;">
-                <label style="color:rgba(255,255,255,0.3)">Access token</label>
+                <label style="color:rgba(255,255,255,0.3)">Manual access token</label>
                 <input id="settings-social-twitter-access-token" type="password" placeholder="${esc(twitter.token_last4 ? `Saved token ends ${twitter.token_last4}` : 'Paste a business-scoped token')}" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
               </div>
-              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-top:8px;font-family:'DM Mono',monospace;">Leave the token blank to keep the current saved credential.</div>
-              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
-                <button class="icon-btn" onclick="saveSocialIntegration('twitter')">Save X account</button>
-                ${twitter.connected ? `<button class="icon-btn" onclick="disconnectSocialIntegration('twitter')">Disconnect</button>` : ''}
-              </div>
+              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-top:8px;font-family:'DM Mono',monospace;">${twitter.scopes?.length ? `Scopes: ${esc(twitter.scopes.join(', '))}. ` : ''}Leave the token blank to keep the current saved credential.</div>
             </div>
 
             <div style="padding:14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
               <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:12px;">
                 <div>
                   <div style="font-size:13px;color:#e0ddd5;">LinkedIn</div>
-                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(linkedin.organization ? `Connected as ${linkedin.organization}` : 'No business LinkedIn page connected yet.')}</div>
+                  <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(linkedin.organization ? `Connected as ${linkedin.organization}` : linkedin.member_name ? `Founder account connected as ${linkedin.member_name}` : 'No business LinkedIn page connected yet.')}${linkedin.connected_via ? ` · via ${esc(linkedin.connected_via)}` : ''}</div>
                 </div>
-                <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(linkedin.connected ? 'connected' : 'pending')};padding:4px 10px;background:${integrationBg(linkedin.connected ? 'connected' : 'pending')};border-radius:999px;white-space:nowrap;">${linkedin.connected ? 'CONNECTED' : 'PENDING'}</span>
+                <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(linkedin.publish_ready ? 'connected' : (linkedin.connected ? 'pending' : 'pending'))};padding:4px 10px;background:${integrationBg(linkedin.publish_ready ? 'connected' : (linkedin.connected ? 'pending' : 'pending'))};border-radius:999px;white-space:nowrap;">${linkedin.publish_ready ? 'READY' : (linkedin.connected ? 'PAGE NEEDED' : 'PENDING')}</span>
               </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+                <button class="icon-btn" onclick="startSocialOauth('linkedin')" ${linkedinOauth.configured ? '' : 'disabled style="opacity:0.45;cursor:not-allowed;"'}>${linkedin.connected ? 'Reconnect LinkedIn' : 'Connect with LinkedIn'}</button>
+                <button class="icon-btn" onclick="saveSocialIntegration('linkedin')">Save manual fallback</button>
+                ${linkedin.connected ? `<button class="icon-btn" onclick="disconnectSocialIntegration('linkedin')">Disconnect</button>` : ''}
+              </div>
+              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin:0 0 12px;font-family:'DM Mono',monospace;">${linkedinOauth.configured ? (linkedin.publish_ready ? 'OAuth is live and this page is ready to publish.' : 'OAuth is live. Connect the founder account, then choose the LinkedIn page Ventura should publish from.') : 'Add LinkedIn OAuth client credentials on Render to enable one-click connect. Manual token entry still works below.'}</div>
+              ${linkedinOrganizations.length ? `
+                <div class="form-field" style="margin:0 0 10px;">
+                  <label style="color:rgba(255,255,255,0.3)">Detected pages</label>
+                  <select id="settings-social-linkedin-organization-choice" onchange="applyLinkedInOrganizationSelection()" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                    <option value="">Choose a page</option>
+                    ${linkedinOrganizations.map(org => `<option value="${esc(org.organization_urn)}" ${org.organization_urn === linkedin.organization_urn ? 'selected' : ''}>${esc(org.organization)}</option>`).join('')}
+                  </select>
+                </div>
+              ` : ''}
               <div class="form-field" style="margin:0 0 10px;">
                 <label style="color:rgba(255,255,255,0.3)">Organization</label>
                 <input id="settings-social-linkedin-organization" value="${esc(linkedin.organization || '')}" placeholder="Ventura Labs" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
@@ -4237,14 +4257,10 @@ function renderSettings(data, operating = null, billing = null) {
                 <input id="settings-social-linkedin-page-url" value="${esc(linkedin.page_url || '')}" placeholder="https://www.linkedin.com/company/ventura" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
               </div>
               <div class="form-field" style="margin:0;">
-                <label style="color:rgba(255,255,255,0.3)">Access token</label>
+                <label style="color:rgba(255,255,255,0.3)">Manual access token</label>
                 <input id="settings-social-linkedin-access-token" type="password" placeholder="${esc(linkedin.token_last4 ? `Saved token ends ${linkedin.token_last4}` : 'Paste a page access token')}" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
               </div>
-              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-top:8px;font-family:'DM Mono',monospace;">Leave the token blank to keep the current saved credential.</div>
-              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
-                <button class="icon-btn" onclick="saveSocialIntegration('linkedin')">Save LinkedIn page</button>
-                ${linkedin.connected ? `<button class="icon-btn" onclick="disconnectSocialIntegration('linkedin')">Disconnect</button>` : ''}
-              </div>
+              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-top:8px;font-family:'DM Mono',monospace;">${linkedin.scopes?.length ? `Scopes: ${esc(linkedin.scopes.join(', '))}. ` : ''}${linkedin.member_email ? `Signed in as ${esc(linkedin.member_email)}. ` : ''}Leave the token blank to keep the current saved credential.</div>
             </div>
           </div>
         </div>
@@ -4339,6 +4355,45 @@ async function syncIntegrations() {
     await loadDashboard();
   } catch (err) {
     showToast(`Sync failed: ${err.message}`);
+  }
+}
+
+function getCurrentSocialIntegration() {
+  return (state.control?.integrations || []).find(integration => integration.kind === 'social') || { config: {} };
+}
+
+function applyLinkedInOrganizationSelection() {
+  const selectedUrn = document.getElementById('settings-social-linkedin-organization-choice')?.value || '';
+  if (!selectedUrn) return;
+
+  const linkedin = getCurrentSocialIntegration().config?.linkedin || {};
+  const options = Array.isArray(linkedin.organizations) ? linkedin.organizations : [];
+  const selected = options.find(option => option.organization_urn === selectedUrn);
+  if (!selected) return;
+
+  const organizationInput = document.getElementById('settings-social-linkedin-organization');
+  const organizationUrnInput = document.getElementById('settings-social-linkedin-organization-urn');
+  const authorUrnInput = document.getElementById('settings-social-linkedin-author-urn');
+  const pageUrlInput = document.getElementById('settings-social-linkedin-page-url');
+
+  if (organizationInput) organizationInput.value = selected.organization || '';
+  if (organizationUrnInput) organizationUrnInput.value = selected.organization_urn || '';
+  if (authorUrnInput) authorUrnInput.value = selected.author_urn || selected.organization_urn || '';
+  if (pageUrlInput) pageUrlInput.value = selected.page_url || '';
+}
+
+async function startSocialOauth(provider) {
+  if (!state.activeBiz) return;
+  const label = provider === 'twitter' ? 'X' : 'LinkedIn';
+  try {
+    const session = await POST(`/businesses/${state.activeBiz.id}/integrations/social/${provider}/oauth/start`, {});
+    if (session.url) {
+      window.location.href = session.url;
+      return;
+    }
+    showToast(`${label} OAuth link unavailable`);
+  } catch (err) {
+    showToast(`${label} connect failed: ${err.message}`);
   }
 }
 
@@ -4643,8 +4698,9 @@ async function showDashboard(e, opts = {}) {
   }
 
   showView('dashboard');
+  const resolvedPage = opts.oauth ? 'settings' : opts.page;
   const dashboardParams = new URLSearchParams();
-  if (opts.page) dashboardParams.set('page', opts.page);
+  if (resolvedPage) dashboardParams.set('page', resolvedPage);
   if (opts.businessId) dashboardParams.set('business', opts.businessId);
   setRoute(`dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ''}`);
   updateNavForAuth(true);
@@ -4656,8 +4712,8 @@ async function showDashboard(e, opts = {}) {
     await switchBusiness(opts.businessId);
   }
 
-  if (opts.page) {
-    activateDashboardPage(opts.page);
+  if (resolvedPage) {
+    activateDashboardPage(resolvedPage);
   }
 
   if (opts.stripe === 'complete') {
@@ -4665,7 +4721,14 @@ async function showDashboard(e, opts = {}) {
     setTimeout(() => refreshStripeStatus(false), 120);
   } else if (opts.stripe === 'refresh') {
     showToast('Stripe asked for another pass through onboarding. Review the requirements and continue.');
-    if ((opts.page || '') !== 'settings') activateDashboardPage('settings');
+    if ((resolvedPage || '') !== 'settings') activateDashboardPage('settings');
+  }
+
+  if (opts.oauth && opts.provider) {
+    const label = opts.provider === 'twitter' ? 'X' : 'LinkedIn';
+    const message = opts.message || (opts.oauth === 'connected' ? `${label} account connected` : `${label} connection needs attention`);
+    showToast(message);
+    activateDashboardPage('settings');
   }
 
   // If user has no businesses, prompt to create one
@@ -4708,7 +4771,10 @@ async function routeFromHash() {
     await showDashboard(null, {
       page: params.get('page') || null,
       businessId: params.get('business') || null,
-      stripe: params.get('stripe') || null
+      stripe: params.get('stripe') || null,
+      provider: params.get('provider') || null,
+      oauth: params.get('oauth') || null,
+      message: params.get('message') || null
     });
     return;
   }

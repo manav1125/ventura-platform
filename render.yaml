@@ -39,6 +39,10 @@ services:
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
+      - key: STRIPE_PRICE_BUILDER_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_FLEET_MONTHLY
+        sync: false
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
@@ -50,6 +54,18 @@ services:
       - key: SMTP_FROM
         value: noreply@ventura.ai
       - key: BRAVE_SEARCH_API_KEY
+        sync: false
+      - key: X_CLIENT_ID
+        sync: false
+      - key: X_CLIENT_SECRET
+        sync: false
+      - key: X_REDIRECT_URI
+        sync: false
+      - key: LINKEDIN_CLIENT_ID
+        sync: false
+      - key: LINKEDIN_CLIENT_SECRET
+        sync: false
+      - key: LINKEDIN_REDIRECT_URI
         sync: false
       - key: VERCEL_TOKEN
         sync: false

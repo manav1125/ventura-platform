@@ -9,17 +9,26 @@ import assert from 'node:assert/strict';
 import { WebSocket } from 'ws';
 
 // ─── Test server setup ────────────────────────────────────────────────────────
+const BASE = 'http://localhost:3099';
+
 process.env.NODE_ENV   = 'test';
 process.env.DB_PATH    = ':memory:';
 process.env.JWT_SECRET = 'test-secret-xyz';
 process.env.ANTHROPIC_API_KEY = 'sk-test-placeholder';
+process.env.FRONTEND_URL = BASE;
+process.env.TWITTER_CLIENT_ID = 'x-client-id-test';
+process.env.TWITTER_CLIENT_SECRET = 'x-client-secret-test';
+process.env.TWITTER_REDIRECT_URI = `${BASE}/api/oauth/twitter/callback`;
+process.env.LINKEDIN_CLIENT_ID = 'linkedin-client-id-test';
+process.env.LINKEDIN_CLIENT_SECRET = 'linkedin-client-secret-test';
+process.env.LINKEDIN_REDIRECT_URI = `${BASE}/api/oauth/linkedin/callback`;
 
-const BASE = 'http://localhost:3099';
 let server;
 let tokens = {};
 let bizId;
 let otherTokens = {};
 let otherBizId;
+const nativeFetch = global.fetch;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 async function req(method, path, body, token) {
@@ -38,6 +47,29 @@ const GET    = (p, t)    => req('GET',   p, null, t);
 const POST   = (p, b, t) => req('POST',  p, b, t);
 const PATCH  = (p, b, t) => req('PATCH', p, b, t);
 const DELETE = (p, t)    => req('DELETE', p, null, t);
+
+async function withFetchMocks(routes, fn) {
+  global.fetch = async (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input.url;
+    const handler = routes.find(route => (
+      (typeof route.match === 'string' && url === route.match) ||
+      (route.match instanceof RegExp && route.match.test(url)) ||
+      (typeof route.match === 'function' && route.match(url, init))
+    ));
+
+    if (handler) {
+      return handler.handle(url, init);
+    }
+
+    return nativeFetch(input, init);
+  };
+
+  try {
+    return await fn();
+  } finally {
+    global.fetch = nativeFetch;
+  }
+}
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 before(async () => {
@@ -491,6 +523,150 @@ describe('Control center', () => {
     assert.equal(social.config.twitter.connected, true);
   });
 
+  it('starts an X OAuth session with a secure authorization URL', async () => {
+    const { status, body } = await POST(`/api/businesses/${bizId}/integrations/social/twitter/oauth/start`, {}, tokens.access);
+    assert.equal(status, 200);
+    assert.equal(body.provider, 'twitter');
+    assert.ok(body.url);
+
+    const url = new URL(body.url);
+    assert.equal(url.origin, 'https://x.com');
+    assert.equal(url.searchParams.get('client_id'), process.env.TWITTER_CLIENT_ID);
+    assert.equal(url.searchParams.get('redirect_uri'), process.env.TWITTER_REDIRECT_URI);
+    assert.ok(url.searchParams.get('state'));
+    assert.ok(url.searchParams.get('code_challenge'));
+  });
+
+  it('completes the X OAuth callback and stores business-owned credentials', async () => {
+    const session = await POST(`/api/businesses/${bizId}/integrations/social/twitter/oauth/start`, {}, tokens.access);
+    assert.equal(session.status, 200);
+    const authUrl = new URL(session.body.url);
+    const state = authUrl.searchParams.get('state');
+    assert.ok(state);
+
+    await withFetchMocks([
+      {
+        match: 'https://api.x.com/2/oauth2/token',
+        handle: async () => new Response(JSON.stringify({
+          token_type: 'bearer',
+          access_token: 'x-access-token-4321',
+          refresh_token: 'x-refresh-token-1234',
+          expires_in: 7200,
+          scope: 'tweet.read tweet.write users.read offline.access'
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      },
+      {
+        match: url => url.startsWith('https://api.x.com/2/users/me'),
+        handle: async () => new Response(JSON.stringify({
+          data: {
+            id: 'x-user-1',
+            name: 'Ventura Growth',
+            username: 'venturagrowth'
+          }
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      }
+    ], async () => {
+      const res = await nativeFetch(`${BASE}/api/oauth/twitter/callback?code=test-twitter-code&state=${encodeURIComponent(state)}`, {
+        redirect: 'manual'
+      });
+      assert.equal(res.status, 302);
+      assert.match(res.headers.get('location') || '', /provider=twitter/);
+      assert.match(res.headers.get('location') || '', /oauth=connected/);
+    });
+
+    const list = await GET(`/api/businesses/${bizId}/integrations`, tokens.access);
+    const social = list.body.integrations.find(i => i.kind === 'social');
+    assert.ok(social);
+    assert.equal(social.config.twitter.handle, '@venturagrowth');
+    assert.equal(social.config.twitter.account_id, 'x-user-1');
+    assert.equal(social.config.twitter.connected_via, 'oauth');
+    assert.equal(social.config.twitter.token_last4, '4321');
+    assert.ok(social.config.twitter.scopes.includes('tweet.write'));
+  });
+
+  it('completes the LinkedIn OAuth callback and stores detected pages', async () => {
+    const session = await POST(`/api/businesses/${bizId}/integrations/social/linkedin/oauth/start`, {}, tokens.access);
+    assert.equal(session.status, 200);
+    const authUrl = new URL(session.body.url);
+    const state = authUrl.searchParams.get('state');
+    assert.ok(state);
+
+    await withFetchMocks([
+      {
+        match: 'https://www.linkedin.com/oauth/v2/accessToken',
+        handle: async () => new Response(JSON.stringify({
+          access_token: 'linkedin-access-token-6789',
+          refresh_token: 'linkedin-refresh-token-2468',
+          expires_in: 3600,
+          scope: 'openid profile email r_organization_admin w_organization_social'
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      },
+      {
+        match: 'https://api.linkedin.com/v2/userinfo',
+        handle: async () => new Response(JSON.stringify({
+          sub: 'founder-123',
+          name: 'Test Founder',
+          email: 'founder@ventura.test'
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      },
+      {
+        match: url => url.startsWith('https://api.linkedin.com/v2/organizationalEntityAcls'),
+        handle: async () => new Response(JSON.stringify({
+          elements: [
+            {
+              organizationalTarget: 'urn:li:organization:111',
+              'organizationalTarget~': {
+                id: 111,
+                localizedName: 'Ventura Labs',
+                vanityName: 'ventura-labs'
+              }
+            },
+            {
+              organizationalTarget: 'urn:li:organization:222',
+              'organizationalTarget~': {
+                id: 222,
+                localizedName: 'Nova Analytics',
+                vanityName: 'nova-analytics'
+              }
+            }
+          ]
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      }
+    ], async () => {
+      const res = await nativeFetch(`${BASE}/api/oauth/linkedin/callback?code=test-linkedin-code&state=${encodeURIComponent(state)}`, {
+        redirect: 'manual'
+      });
+      assert.equal(res.status, 302);
+      assert.match(res.headers.get('location') || '', /provider=linkedin/);
+      assert.match(res.headers.get('location') || '', /oauth=connected/);
+    });
+
+    const list = await GET(`/api/businesses/${bizId}/integrations`, tokens.access);
+    const social = list.body.integrations.find(i => i.kind === 'social');
+    assert.ok(social);
+    assert.equal(social.config.linkedin.connected_via, 'oauth');
+    assert.equal(social.config.linkedin.token_last4, '6789');
+    assert.equal(social.config.linkedin.organization, 'Ventura Labs');
+    assert.equal(social.config.linkedin.organization_urn, 'urn:li:organization:111');
+    assert.equal(social.config.linkedin.publish_ready, true);
+    assert.equal(social.config.linkedin.organizations.length, 2);
+  });
+
   it('disconnects a social provider without removing the registry row', async () => {
     const { status, body } = await DELETE(`/api/businesses/${bizId}/integrations/social/twitter`, tokens.access);
     assert.equal(status, 200);
@@ -655,6 +831,8 @@ describe('Billing', () => {
     assert.ok(Array.isArray(body.plans));
     assert.equal(body.plans.length, 3);
     assert.equal(body.current, 'trial');
+    const builder = body.plans.find(plan => plan.id === 'builder');
+    assert.equal(builder.stripe_price_id, null);
   });
 
   it('returns usage stats', async () => {
