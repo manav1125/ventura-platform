@@ -6,7 +6,6 @@
 
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import http from 'node:http';
 import { WebSocket } from 'ws';
 
 // ─── Test server setup ────────────────────────────────────────────────────────
@@ -39,13 +38,17 @@ const PATCH  = (p, b, t) => req('PATCH', p, b, t);
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 before(async () => {
-  // Dynamically import and start the server on a test port
   process.env.PORT = '3099';
   process.env.BASE_URL = BASE;
 
-  const { default: app } = await import('../src/server.js');
-  // server is started inside server.js; give it a moment
-  await new Promise(r => setTimeout(r, 800));
+  const mod = await import('../src/server.js');
+  server = mod.httpServer;
+  await mod.serverReady;
+});
+
+after(async () => {
+  const mod = await import('../src/server.js');
+  await mod.shutdown();
 });
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
@@ -217,7 +220,7 @@ describe('Tasks', () => {
       department: 'invalid_dept',
       priority: 3
     }, tokens.access);
-    assert.equal(status, 500); // validation error
+    assert.equal(status, 400);
   });
 
   it('validates required title', async () => {
@@ -312,6 +315,48 @@ describe('Leads', () => {
   });
 });
 
+// ─── CONTROL LAYER ───────────────────────────────────────────────────────────
+describe('Control center', () => {
+  let approvalId;
+
+  it('returns control center data', async () => {
+    const { status, body } = await GET(`/api/businesses/${bizId}/control-center`, tokens.access);
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(body.integrations));
+    assert.ok(Array.isArray(body.specialists));
+    assert.ok(body.plan);
+    assert.ok(body.usage);
+  });
+
+  it('lists deployment history', async () => {
+    const { status, body } = await GET(`/api/businesses/${bizId}/deployments`, tokens.access);
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(body.deployments));
+  });
+
+  it('can approve a pending founder action', async () => {
+    const { createApproval } = await import('../src/agents/approvals.js');
+    const approval = await createApproval({
+      businessId: bizId,
+      actionType: 'send_email',
+      title: 'Email a lead',
+      summary: 'Approve a follow-up email',
+      payload: {
+        to: 'alice@example.com',
+        subject: 'Checking in',
+        body: '<p>Hello from Ventura</p>'
+      }
+    });
+    approvalId = approval.id;
+
+    const { status, body } = await POST(`/api/businesses/${bizId}/approvals/${approvalId}/decision`, {
+      decision: 'approve'
+    }, tokens.access);
+    assert.equal(status, 200);
+    assert.equal(body.approval.status, 'executed');
+  });
+});
+
 // ─── CHAT ─────────────────────────────────────────────────────────────────────
 describe('Chat', () => {
 
@@ -368,78 +413,115 @@ describe('Health', () => {
 // ─── WEBSOCKET ────────────────────────────────────────────────────────────────
 describe('WebSocket', () => {
 
-  it('connects and sends hello', (t, done) => {
-    const ws = new WebSocket('ws://localhost:3099/ws');
-    ws.on('message', (data) => {
-      const msg = JSON.parse(data.toString());
-      if (msg.event === 'hello') {
+  it('connects and sends hello', async () => {
+    await new Promise((resolve, reject) => {
+      const ws = new WebSocket('ws://localhost:3099/ws');
+      const timer = setTimeout(() => {
         ws.close();
-        done();
-      }
+        reject(new Error('WS hello timeout'));
+      }, 3000);
+
+      ws.on('message', (data) => {
+        const msg = JSON.parse(data.toString());
+        if (msg.event === 'hello') {
+          clearTimeout(timer);
+          ws.close();
+          resolve();
+        }
+      });
+      ws.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
     });
-    ws.on('error', done);
-    setTimeout(() => { ws.close(); done(new Error('WS hello timeout')); }, 3000);
   });
 
-  it('authenticates with JWT', (t, done) => {
-    const ws = new WebSocket('ws://localhost:3099/ws');
-    let step = 0;
-    ws.on('message', (data) => {
-      const msg = JSON.parse(data.toString());
-      if (msg.event === 'hello') {
-        ws.send(JSON.stringify({ type: 'auth', token: tokens.access }));
-      }
-      if (msg.event === 'auth:ok') {
-        assert.ok(msg.userId);
+  it('authenticates with JWT', async () => {
+    await new Promise((resolve, reject) => {
+      const ws = new WebSocket('ws://localhost:3099/ws');
+      const timer = setTimeout(() => {
         ws.close();
-        done();
-        step++;
-      }
-      if (msg.event === 'auth:fail') {
-        ws.close();
-        done(new Error('WS auth failed'));
-      }
+        reject(new Error('Auth timeout'));
+      }, 3000);
+
+      ws.on('message', (data) => {
+        const msg = JSON.parse(data.toString());
+        if (msg.event === 'hello') {
+          ws.send(JSON.stringify({ type: 'auth', token: tokens.access }));
+        }
+        if (msg.event === 'auth:ok') {
+          assert.ok(msg.userId);
+          clearTimeout(timer);
+          ws.close();
+          resolve();
+        }
+        if (msg.event === 'auth:fail') {
+          clearTimeout(timer);
+          ws.close();
+          reject(new Error('WS auth failed'));
+        }
+      });
+      ws.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
     });
-    ws.on('error', done);
-    setTimeout(() => { if (!step) { ws.close(); done(new Error('Auth timeout')); } }, 3000);
   });
 
-  it('subscribes to a business channel', (t, done) => {
-    const ws = new WebSocket('ws://localhost:3099/ws');
-    let authed = false;
-    ws.on('message', (data) => {
-      const msg = JSON.parse(data.toString());
-      if (msg.event === 'hello') {
-        ws.send(JSON.stringify({ type: 'auth', token: tokens.access }));
-      }
-      if (msg.event === 'auth:ok') {
-        authed = true;
-        ws.send(JSON.stringify({ type: 'subscribe', businessId: bizId }));
-      }
-      if (msg.event === 'subscribed') {
-        assert.equal(msg.businessId, bizId);
+  it('subscribes to a business channel', async () => {
+    await new Promise((resolve, reject) => {
+      const ws = new WebSocket('ws://localhost:3099/ws');
+      const timer = setTimeout(() => {
         ws.close();
-        done();
-      }
+        reject(new Error('Subscribe timeout'));
+      }, 3000);
+
+      ws.on('message', (data) => {
+        const msg = JSON.parse(data.toString());
+        if (msg.event === 'hello') {
+          ws.send(JSON.stringify({ type: 'auth', token: tokens.access }));
+        }
+        if (msg.event === 'auth:ok') {
+          ws.send(JSON.stringify({ type: 'subscribe', businessId: bizId }));
+        }
+        if (msg.event === 'subscribed') {
+          assert.equal(msg.businessId, bizId);
+          clearTimeout(timer);
+          ws.close();
+          resolve();
+        }
+      });
+      ws.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
     });
-    ws.on('error', done);
-    setTimeout(() => { ws.close(); done(new Error('Subscribe timeout')); }, 3000);
   });
 
-  it('rejects invalid JWT', (t, done) => {
-    const ws = new WebSocket('ws://localhost:3099/ws');
-    ws.on('message', (data) => {
-      const msg = JSON.parse(data.toString());
-      if (msg.event === 'hello') {
-        ws.send(JSON.stringify({ type: 'auth', token: 'bad.jwt.token' }));
-      }
-      if (msg.event === 'auth:fail') {
+  it('rejects invalid JWT', async () => {
+    await new Promise((resolve, reject) => {
+      const ws = new WebSocket('ws://localhost:3099/ws');
+      const timer = setTimeout(() => {
         ws.close();
-        done();
-      }
+        reject(new Error('Reject timeout'));
+      }, 3000);
+
+      ws.on('message', (data) => {
+        const msg = JSON.parse(data.toString());
+        if (msg.event === 'hello') {
+          ws.send(JSON.stringify({ type: 'auth', token: 'bad.jwt.token' }));
+        }
+        if (msg.event === 'auth:fail') {
+          clearTimeout(timer);
+          ws.close();
+          resolve();
+        }
+      });
+      ws.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
     });
-    ws.on('error', done);
-    setTimeout(() => { ws.close(); done(new Error('Reject timeout')); }, 3000);
   });
 });
 

@@ -131,6 +131,12 @@ async function localDeploy(businessId, slug, files, versionNote) {
   `).run(`dep_${Date.now()}`, businessId, version, versionNote, files.length);
 
   console.log(`[Deploy] Local deploy for ${slug}: ${files.length} files → ./sites/${slug}/`);
+  await logActivity(businessId, {
+    type: 'deploy',
+    department: 'engineering',
+    title: `Deployed ${version}: ${versionNote}`,
+    detail: { version, files: files.map(f => f.path), local: true }
+  });
   return { version, url: `http://localhost:8080/${slug}`, local: true };
 }
 

@@ -10,14 +10,14 @@ let transporter;
 function getTransporter() {
   if (transporter) return transporter;
 
-  if (NODE_ENV === 'test' || NODE_ENV === 'development' && !SMTP_HOST) {
-    // In dev without SMTP: use ethereal.email (catches emails for inspection)
-    transporter = nodemailer.createTransport({
-      host: 'smtp.ethereal.email',
-      port: 587,
-      auth: { user: 'dev@ethereal.email', pass: 'devpassword' }
-    });
-    console.log('📧 Email: using ethereal.email (dev mode — emails not delivered)');
+  if (NODE_ENV === 'test') {
+    transporter = nodemailer.createTransport({ jsonTransport: true });
+    return transporter;
+  }
+
+  if (NODE_ENV === 'development' && !SMTP_HOST) {
+    transporter = nodemailer.createTransport({ jsonTransport: true });
+    console.log('📧 Email: using JSON transport (dev mode — emails not delivered)');
     return transporter;
   }
 

@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { ANTHROPIC_API_KEY, AGENT_MODEL, AGENT_MAX_TOKENS } from '../config.js';
 import { getDb } from '../db/migrate.js';
 import { logActivity } from './activity.js';
+import { createApproval } from './approvals.js';
 
 const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
@@ -146,6 +147,12 @@ export async function runTask(task, business) {
   return { summary: finalSummary, toolResults, nextSteps };
 }
 
+function requiresApproval(actionName, business) {
+  if (business.involvement === 'daily') return ['deploy_website', 'send_email', 'post_social'].includes(actionName);
+  if (business.involvement === 'review') return ['deploy_website', 'send_email'].includes(actionName);
+  return false;
+}
+
 async function executeTool(name, input, task, business, memory, pendingFiles) {
   const db = getDb();
   const bump = (col) => db.prepare(`INSERT INTO metrics (id,business_id,date,${col}) VALUES (?,?,date('now'),1) ON CONFLICT(business_id,date) DO UPDATE SET ${col}=${col}+1`).run(`m${Date.now()}`, business.id);
@@ -166,17 +173,42 @@ async function executeTool(name, input, task, business, memory, pendingFiles) {
     }
 
     case 'deploy_website': {
-      const { deployFiles } = await import('../integrations/deploy.js');
       const files = input.files?.length ? input.files : pendingFiles.splice(0);
       if (!files.length) return { error: 'No files to deploy' };
+      if (requiresApproval('deploy_website', business)) {
+        const approval = await createApproval({
+          businessId: business.id,
+          taskId: task.id,
+          actionType: 'deploy_website',
+          title: `Deploy website changes`,
+          summary: input.version_note,
+          payload: { files, versionNote: input.version_note }
+        });
+        return { queuedForReview: true, approvalId: approval.id, files: files.length };
+      }
+      const { deployFiles } = await import('../integrations/deploy.js');
       const result = await deployFiles(business.id, files, input.version_note);
       bump('deployments');
       return result;
     }
 
     case 'send_email': {
-      if (business.involvement !== 'autopilot') {
-        return executeTool('flag_for_review', { title: `Email to ${input.to}: ${input.subject}`, detail: input.body?.slice(0,300), urgency: 'medium' }, task, business, memory, pendingFiles);
+      if (requiresApproval('send_email', business)) {
+        const approval = await createApproval({
+          businessId: business.id,
+          taskId: task.id,
+          actionType: 'send_email',
+          title: `Email to ${input.to}: ${input.subject}`,
+          summary: `Founder review required before Ventura sends this email.`,
+          payload: {
+            from: business.email_address,
+            to: input.to,
+            subject: input.subject,
+            body: input.body,
+            type: input.type
+          }
+        });
+        return { queuedForReview: true, approvalId: approval.id };
       }
       const { sendEmail } = await import('../integrations/email.js');
       await sendEmail({ from: business.email_address, to: input.to, subject: input.subject, html: input.body });
@@ -186,6 +218,21 @@ async function executeTool(name, input, task, business, memory, pendingFiles) {
     }
 
     case 'post_social': {
+      if (requiresApproval('post_social', business)) {
+        const approval = await createApproval({
+          businessId: business.id,
+          taskId: task.id,
+          actionType: 'post_social',
+          title: `Social post for ${business.name}`,
+          summary: `Founder review required before publishing to ${input.platform}.`,
+          payload: {
+            platform: input.platform,
+            content: input.thread ? splitThread(input.content) : input.content,
+            thread: !!input.thread
+          }
+        });
+        return { queuedForReview: true, approvalId: approval.id };
+      }
       const { postTweet, postLinkedIn, postThread } = await import('../integrations/social.js');
       const r = {};
       if (['twitter','both'].includes(input.platform)) {

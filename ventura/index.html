@@ -1825,7 +1825,7 @@
     <div class="dash-topbar">
       <span class="dash-logo" style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:0.05em;color:#e0ddd5;">VENTURA<span style="color:var(--accent)">.</span></span>
       <span class="dash-co-name">Nova Analytics</span>
-      <span class="dash-co-badge">Agent running</span>
+      <span class="dash-co-badge" id="dash-status-badge">Agent running</span>
       <div class="dash-topbar-actions">
         <button class="icon-btn" onclick="showPage('tasks')">+ Task</button>
         <button class="icon-btn" onclick="showLanding()">← Exit</button>
@@ -1848,6 +1848,9 @@
       </a>
 
       <span class="sidebar-section-label">Departments</span>
+      <a class="nav-item" onclick="showPage('planning',this)">
+        <span class="nav-item-icon">✧</span> Planning
+      </a>
       <a class="nav-item" onclick="showPage('engineering',this)">
         <span class="nav-item-icon">⌥</span> Engineering
       </a>
@@ -2001,18 +2004,11 @@
           </div>
           <div class="panel">
             <div class="panel-header">
-              <span class="panel-title">Agent insights</span>
+              <span class="panel-title">Founder control</span>
             </div>
-            <div class="panel-body">
-              <div style="display:flex;flex-direction:column;gap:14px;">
-                <div style="padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px;">
-                  <div style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;margin-bottom:6px;">💡 OPPORTUNITY</div>
-                  <div style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.5;">3 inbound leads haven't been followed up in 48h. Suggest running a follow-up sequence today.</div>
-                </div>
-                <div style="padding:14px;background:rgba(200,168,75,0.05);border:1px solid rgba(200,168,75,0.1);border-radius:3px;">
-                  <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--gold);margin-bottom:6px;">⚡ SUGGESTION</div>
-                  <div style="font-size:13px;color:rgba(255,255,255,0.7);line-height:1.5;">Pricing page bounce rate is 74%. A/B test a simplified version with one CTA.</div>
-                </div>
+            <div class="panel-body" id="founder-control">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">
+                Loading founder inbox, approvals, and infrastructure health...
               </div>
             </div>
           </div>
@@ -2060,6 +2056,33 @@
               <div class="task-check"></div>
               <div><div class="task-title">Reply to 3 pending lead emails in inbox</div><div class="task-meta">Queued — Operations</div></div>
               <span class="task-type type-ops">ops</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PLANNING PAGE -->
+      <div class="dash-page" id="page-planning">
+        <div class="dash-header">
+          <div>
+            <div class="dash-title">Planning</div>
+            <div class="dash-subtitle">Autonomous loop strategy, priorities, and cycle memory</div>
+          </div>
+          <button class="btn-run" onclick="runAgentNow()">▶ Run planning loop</button>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Recent cycles</span></div>
+            <div class="panel-body" id="cycle-history-list" style="padding:0 20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:16px 0;">Cycle summaries will appear here.</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Specialist agents</span></div>
+            <div class="panel-body" id="specialist-agent-list">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">
+                Planning, engineering, marketing, and operations specialists are syncing...
+              </div>
             </div>
           </div>
         </div>
@@ -2120,7 +2143,7 @@
           <div class="metric-card"><div class="metric-card-label">Uptime</div><div class="metric-card-value">99.9%</div><div class="metric-card-delta">↑ stable</div></div>
           <div class="metric-card"><div class="metric-card-label">Open bugs</div><div class="metric-card-value">2</div><div class="metric-card-delta down">↓ from 7</div></div>
         </div>
-        <div class="panel"><div class="panel-header"><span class="panel-title">Deployment log</span></div><div class="panel-body" style="padding:0 20px;font-family:'DM Mono',monospace;font-size:12px;">
+        <div class="panel"><div class="panel-header"><span class="panel-title">Deployment log</span></div><div class="panel-body" id="deployments-list" style="padding:0 20px;font-family:'DM Mono',monospace;font-size:12px;">
           <div class="activity-item"><div class="activity-content"><div class="activity-title" style="font-family:'DM Mono',monospace;font-size:12px;">v0.9.4 — mobile nav, pricing page, hero redesign</div><div class="activity-meta">Today 03:05 AM · 3 files changed</div></div><span class="activity-status status-done">live</span></div>
           <div class="activity-item"><div class="activity-content"><div class="activity-title" style="font-family:'DM Mono',monospace;font-size:12px;">v0.9.3 — fix Safari checkout bug, improve load time</div><div class="activity-meta">Yesterday 09:30 PM · 1 file changed</div></div><span class="activity-status status-done">live</span></div>
           <div class="activity-item"><div class="activity-content"><div class="activity-title" style="font-family:'DM Mono',monospace;font-size:12px;">v0.9.2 — add annual pricing toggle, new onboarding flow</div><div class="activity-meta">2 days ago · 5 files changed</div></div><span class="activity-status status-done">live</span></div>
@@ -2156,7 +2179,7 @@
           <div class="metric-card"><div class="metric-card-label">Avg response time</div><div class="metric-card-value">4m</div><div class="metric-card-delta">↑ faster than human</div></div>
           <div class="metric-card"><div class="metric-card-label">Pending review</div><div class="metric-card-value">2</div><div class="metric-card-delta">Needs your eyes</div></div>
         </div>
-        <div class="panel"><div class="panel-header"><span class="panel-title">Inbox — recent</span></div><div class="panel-body" style="padding:0 20px;">
+        <div class="panel"><div class="panel-header"><span class="panel-title">Inbox — founder review</span></div><div class="panel-body" id="operations-review-list" style="padding:0 20px;">
           <div class="activity-item"><div class="activity-icon mail">✉</div><div class="activity-content"><div class="activity-title">RE: Partnership inquiry — Acme Corp</div><div class="activity-meta">Replied by agent · Today 01:22 AM</div></div><span class="activity-status status-done">handled</span></div>
           <div class="activity-item"><div class="activity-icon mail">✉</div><div class="activity-content"><div class="activity-title">Support: Can't connect my data source</div><div class="activity-meta">Replied by agent · Yesterday 11:40 PM</div></div><span class="activity-status status-done">handled</span></div>
           <div class="activity-item"><div class="activity-icon plan">⚑</div><div class="activity-content"><div class="activity-title">VC follow-up: term sheet attached</div><div class="activity-meta">Flagged for you · Yesterday 3:20 PM</div></div><span class="activity-status status-running">review</span></div>
@@ -2202,33 +2225,26 @@
           <div class="panel">
             <div class="panel-header"><span class="panel-title">Business profile</span></div>
             <div class="panel-body">
-              <div class="form-field" style="margin-bottom:16px;"><label style="color:rgba(255,255,255,0.3)">Business name</label><input value="Nova Analytics" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
-              <div class="form-field" style="margin-bottom:16px;"><label style="color:rgba(255,255,255,0.3)">Business type</label><select style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option>SaaS / Software</option><option>Agency / Services</option><option>eCommerce</option><option>Content / Media</option></select></div>
-              <div class="form-field"><label style="color:rgba(255,255,255,0.3)">Business goal</label><textarea style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;min-height:80px">Reach $10k MRR within 60 days by targeting indie hackers and bootstrapped founders.</textarea></div>
-              <button class="btn-run" style="margin-top:16px">Save changes</button>
+              <div class="form-field" style="margin-bottom:16px;"><label style="color:rgba(255,255,255,0.3)">Business name</label><input id="settings-business-name" value="Nova Analytics" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:16px;"><label style="color:rgba(255,255,255,0.3)">Business type</label><select id="settings-business-type" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option value="saas">SaaS / Software</option><option value="agency">Agency / Services</option><option value="ecommerce">eCommerce</option><option value="content">Content / Media</option><option value="education">Education</option><option value="other">Other</option></select></div>
+              <div class="form-field"><label style="color:rgba(255,255,255,0.3)">Business goal</label><textarea id="settings-business-goal" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;min-height:80px">Reach $10k MRR within 60 days by targeting indie hackers and bootstrapped founders.</textarea></div>
+              <button class="btn-run" style="margin-top:16px" onclick="saveBusinessProfile()">Save changes</button>
             </div>
           </div>
           <div class="panel">
-            <div class="panel-header"><span class="panel-title">Agent controls</span></div>
-            <div class="panel-body">
-              <div style="display:flex;flex-direction:column;gap:16px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px">
-                  <span style="font-size:13px;color:rgba(255,255,255,0.7)">Daily autonomous loop</span>
-                  <span style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;padding:3px 10px;background:rgba(40,202,65,0.1);border-radius:2px">ACTIVE</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
-                  <span style="font-size:13px;color:rgba(255,255,255,0.7)">Auto-send emails</span>
-                  <span style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;padding:3px 10px;background:rgba(40,202,65,0.1);border-radius:2px">ON</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
-                  <span style="font-size:13px;color:rgba(255,255,255,0.7)">Auto-deploy code</span>
-                  <span style="font-size:11px;font-family:'DM Mono',monospace;color:var(--gold);padding:3px 10px;background:rgba(200,168,75,0.1);border-radius:2px">REVIEW</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
-                  <span style="font-size:13px;color:rgba(255,255,255,0.7)">Revenue share (Stripe)</span>
-                  <span style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;padding:3px 10px;background:rgba(40,202,65,0.1);border-radius:2px">CONNECTED</span>
-                </div>
+            <div class="panel-header"><span class="panel-title">Agent controls + billing</span></div>
+            <div class="panel-body" id="settings-agent-controls">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">
+                Loading plan, usage, and founder controls...
               </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel" style="margin-top:20px;">
+          <div class="panel-header"><span class="panel-title">Infrastructure + integrations</span></div>
+          <div class="panel-body" id="settings-infrastructure">
+            <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">
+              Loading provisioned stack and live MCP connections...
             </div>
           </div>
         </div>
@@ -2423,6 +2439,7 @@ let state = {
   user:         null,
   businesses:   [],
   activeBiz:    null,
+  control:      null,
   ws:           null,
   wsReady:      false,
 };
@@ -2778,6 +2795,14 @@ function handleWSEvent(msg) {
     case 'message:new':        if (msg.role === 'assistant') appendChatMessage('ai', msg.content); break;
     case 'provisioning:step':  showToast(`Setting up: ${msg.step}...`); break;
     case 'provisioning:complete': showToast('🚀 Business is live!'); loadBusinesses(); break;
+    case 'approval:created':
+      showToast(`Founder review needed: ${msg.approval?.title || 'pending approval'}`);
+      loadDashboard();
+      break;
+    case 'approval:updated':
+      showToast(`Approval updated: ${msg.approval?.title || 'review item'}`);
+      loadDashboard();
+      break;
   }
 }
 
@@ -2799,6 +2824,8 @@ async function loadBusinesses() {
 
 function setActiveBusiness(biz) {
   state.activeBiz = biz;
+  state.control = null;
+  chatLoaded = false;
   if (state.wsReady) state.ws.send(JSON.stringify({ type: 'subscribe', businessId: biz.id }));
   document.querySelectorAll('.dash-co-name').forEach(el => el.textContent = biz.name);
   document.querySelectorAll('.dash-subtitle').forEach(el => {
@@ -2810,15 +2837,17 @@ function setActiveBusiness(biz) {
 async function loadDashboard() {
   if (!state.activeBiz) return;
   try {
-    const [mData, tData, aData] = await Promise.all([
+    const [mData, tData, aData, cData] = await Promise.all([
       GET(`/businesses/${state.activeBiz.id}/metrics`),
       GET(`/businesses/${state.activeBiz.id}/tasks`),
-      GET(`/businesses/${state.activeBiz.id}/activity?limit=8`)
+      GET(`/businesses/${state.activeBiz.id}/activity?limit=8`),
+      GET(`/businesses/${state.activeBiz.id}/control-center`)
     ]);
     renderMetrics(mData);
     renderTasks(tData.tasks);
-    renderActivityFeed(aData.activity);
+    renderActivityFeed(cData.recentActivity || aData.activity);
     renderRevChart(mData.daily);
+    renderControlCenter(cData);
   } catch (err) { console.error('loadDashboard:', err); }
 }
 
@@ -2844,14 +2873,14 @@ function renderMetrics(data) {
 function renderTasks(tasks) {
   const el = document.getElementById('tasks-list');
   if (!el) return;
-  el.innerHTML = (tasks || []).slice(0, 6).map(t => `
+  el.innerHTML = (tasks || []).slice(0, 8).map(t => `
     <div class="task-item ${t.status==='complete'?'done':''}">
       <div class="task-check">${t.status==='complete'?'✓':''}</div>
       <div>
         <div class="task-title">${esc(t.title)}</div>
-        <div class="task-meta">${t.status==='running'?'Running now':t.status==='complete'?'Completed':'Queued'} · ${t.department}</div>
+        <div class="task-meta">${t.status==='running'?'Running now':t.status==='complete'?'Completed':'Queued'} · ${displayDepartment(t.department)}</div>
       </div>
-      <span class="task-type type-${deptColor(t.department)}">${t.department.slice(0,3)}</span>
+      <span class="task-type type-${deptColor(t.department)}">${shortDepartment(t.department)}</span>
     </div>`).join('');
 }
 
@@ -2863,7 +2892,7 @@ function renderActivityFeed(items) {
       <div class="activity-icon ${typeIcon(a.type)}">${typeEmoji(a.type)}</div>
       <div class="activity-content">
         <div class="activity-title">${esc(a.title)}</div>
-        <div class="activity-meta">${a.department||'system'} · ${timeAgo(a.created_at)}</div>
+        <div class="activity-meta">${displayDepartment(a.department)||'system'} · ${timeAgo(a.created_at)}</div>
       </div>
       <span class="activity-status ${statusClass(a.type)}">${statusLabel(a.type)}</span>
     </div>`).join('');
@@ -2889,12 +2918,13 @@ function renderRevChart(daily) {
   if (!daily?.length) return;
   const vals = daily.slice().reverse().map(d => d.mrr_cents/100);
   const max = Math.max(...vals, 1);
+  const denom = Math.max(vals.length - 1, 1);
   const pts = vals.map((v,i) => {
-    const x = 10 + (i/(vals.length-1))*380;
+    const x = 10 + (i/denom)*380;
     const y = 140 - (v/max)*130;
     return `${x},${y}`;
   });
-  const areaD = `M ${pts[0]} L ${pts.slice(1).join(' L ')} L ${10+(vals.length-1)/(vals.length-1)*380},150 L 10,150 Z`;
+  const areaD = `M ${pts[0]} L ${pts.slice(1).join(' L ')} L 390,150 L 10,150 Z`;
   document.querySelectorAll('.rev-chart svg').forEach(svg => {
     svg.innerHTML = `
       <defs><linearGradient id="rg" x1="0" y1="0" x2="0" y2="1">
@@ -2904,6 +2934,195 @@ function renderRevChart(daily) {
       <path d="${areaD}" fill="url(#rg)"/>
       <path d="M ${pts.join(' L ')}" fill="none" stroke="#28ca41" stroke-width="1.5"/>`;
   });
+}
+
+function renderControlCenter(data) {
+  state.control = data;
+  renderFounderControl(data);
+  renderPlanning(data);
+  renderDeployments(data.deployments || []);
+  renderApprovals(data.approvals || []);
+  renderSettings(data);
+  updateBusinessStatus(data);
+}
+
+function renderFounderControl(data) {
+  const el = document.getElementById('founder-control');
+  if (!el) return;
+  const pending = (data.approvals || []).filter(a => a.status === 'pending');
+  const connected = (data.integrations || []).filter(i => i.status === 'connected').length;
+  const totalIntegrations = (data.integrations || []).length;
+  const latestSummary = data.latestCycle?.summary || 'No autonomous cycle summary yet.';
+
+  const approvalHtml = pending.slice(0, 2).map(a => `
+    <div style="padding:14px;background:rgba(200,168,75,0.05);border:1px solid rgba(200,168,75,0.12);border-radius:3px;">
+      <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--gold);margin-bottom:6px;">APPROVAL NEEDED</div>
+      <div style="font-size:13px;color:#e0ddd5;margin-bottom:6px;">${esc(a.title)}</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(a.summary || 'Founder review required before execution.')}</div>
+    </div>
+  `).join('');
+
+  el.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;margin-bottom:6px;">AUTONOMOUS LOOP</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.75);line-height:1.55;">${esc(latestSummary)}</div>
+      </div>
+      ${approvalHtml || `
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:#9aa0aa;margin-bottom:6px;">FOUNDER INBOX</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.65);line-height:1.55;">No pending approvals right now. Ventura can keep operating autonomously.</div>
+        </div>
+      `}
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">REVIEWS</div>
+          <div style="font-size:22px;color:#e0ddd5;">${pending.length}</div>
+        </div>
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">LIVE STACK</div>
+          <div style="font-size:22px;color:#e0ddd5;">${connected}/${totalIntegrations || 0}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPlanning(data) {
+  const cyclesEl = document.getElementById('cycle-history-list');
+  if (cyclesEl) {
+    const cycles = data.recentCycles || [];
+    cyclesEl.innerHTML = cycles.length ? cycles.map(c => `
+      <div class="activity-item">
+        <div class="activity-content">
+          <div class="activity-title">${esc(c.summary || `Cycle ${c.status}`)}</div>
+          <div class="activity-meta">${c.triggered_by} · ${c.tasks_run || 0} tasks · ${timeAgo(c.created_at)}</div>
+        </div>
+        <span class="activity-status ${c.status === 'complete' ? 'status-done' : c.status === 'running' ? 'status-running' : 'status-queued'}">${esc(c.status)}</span>
+      </div>
+    `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding:16px 0;">No cycles yet.</div>`;
+  }
+
+  const specialistsEl = document.getElementById('specialist-agent-list');
+  if (specialistsEl) {
+    const specialists = data.specialists || [];
+    specialistsEl.innerHTML = specialists.map(s => `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;margin-bottom:12px;">
+        <div>
+          <div style="font-size:14px;color:#e0ddd5;margin-bottom:4px;">${esc(s.label)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.55);">${s.completed}/${s.total} complete · ${s.running || 0} running</div>
+        </div>
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.45);">${s.last_run ? timeAgo(s.last_run) : 'idle'}</div>
+      </div>
+    `).join('') || `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No specialist activity yet.</div>`;
+  }
+}
+
+function renderDeployments(deployments) {
+  const el = document.getElementById('deployments-list');
+  if (!el) return;
+  el.innerHTML = deployments.length ? deployments.map(d => `
+    <div class="activity-item">
+      <div class="activity-content">
+        <div class="activity-title" style="font-family:'DM Mono',monospace;font-size:12px;">${esc(d.version)} — ${esc(d.description)}</div>
+        <div class="activity-meta">${timeAgo(d.created_at)} · ${d.files_changed || 0} files changed</div>
+      </div>
+      <span class="activity-status ${d.status === 'live' ? 'status-done' : 'status-running'}">${esc(d.status)}</span>
+    </div>
+  `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding:16px 0;">No deployments yet.</div>`;
+}
+
+function renderApprovals(approvals) {
+  const el = document.getElementById('operations-review-list');
+  if (!el) return;
+  const pending = approvals.filter(a => a.status === 'pending');
+  const rows = pending.length ? pending : approvals.slice(0, 4);
+  el.innerHTML = rows.length ? rows.map(a => `
+    <div class="activity-item" style="align-items:flex-start;gap:14px;">
+      <div class="activity-icon plan">⚑</div>
+      <div class="activity-content" style="flex:1;">
+        <div class="activity-title">${esc(a.title)}</div>
+        <div class="activity-meta">${esc(a.action_type)} · ${timeAgo(a.created_at)}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.6);line-height:1.5;margin-top:6px;">${esc(a.summary || 'Founder decision required before Ventura executes this action.')}</div>
+        ${a.status === 'pending' ? `
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button class="icon-btn" onclick="decideApproval('${a.id}','approve')">Approve</button>
+            <button class="icon-btn" onclick="decideApproval('${a.id}','reject')">Reject</button>
+          </div>
+        ` : ''}
+      </div>
+      <span class="activity-status ${a.status === 'executed' ? 'status-done' : a.status === 'pending' ? 'status-running' : 'status-queued'}">${esc(a.status)}</span>
+    </div>
+  `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding:16px 0;">No founder review items.</div>`;
+}
+
+function renderSettings(data) {
+  const biz = data.business;
+  if (!biz) return;
+
+  const nameEl = document.getElementById('settings-business-name');
+  const typeEl = document.getElementById('settings-business-type');
+  const goalEl = document.getElementById('settings-business-goal');
+  if (nameEl) nameEl.value = biz.name || '';
+  if (typeEl) typeEl.value = biz.type || 'other';
+  if (goalEl) goalEl.value = biz.goal_90d || '';
+
+  const controlsEl = document.getElementById('settings-agent-controls');
+  if (controlsEl) {
+    const pending = (data.approvals || []).filter(a => a.status === 'pending').length;
+    controlsEl.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px">
+          <span style="font-size:13px;color:rgba(255,255,255,0.7)">Daily autonomous loop</span>
+          <span style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;padding:3px 10px;background:rgba(40,202,65,0.1);border-radius:2px">${biz.status === 'active' ? 'ACTIVE' : esc(biz.status || 'idle').toUpperCase()}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
+          <span style="font-size:13px;color:rgba(255,255,255,0.7)">Founder-requested tasks</span>
+          <span style="font-size:11px;font-family:'DM Mono',monospace;color:#e0ddd5;padding:3px 10px;background:rgba(255,255,255,0.08);border-radius:2px">${data.usage?.tasks?.used || 0}/${data.usage?.tasks?.limit || 0}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
+          <span style="font-size:13px;color:rgba(255,255,255,0.7)">Control mode</span>
+          <span style="font-size:11px;font-family:'DM Mono',monospace;color:${biz.involvement === 'autopilot' ? '#28ca41' : 'var(--gold)'};padding:3px 10px;background:${biz.involvement === 'autopilot' ? 'rgba(40,202,65,0.1)' : 'rgba(200,168,75,0.1)'};border-radius:2px">${esc(biz.involvement).toUpperCase()}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
+          <span style="font-size:13px;color:rgba(255,255,255,0.7)">Plan economics</span>
+          <span style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;padding:3px 10px;background:rgba(40,202,65,0.1);border-radius:2px">$${((data.plan?.price_cents || 0) / 100).toFixed(0)} + ${data.plan?.revenue_share_pct || 20}% rev share</span>
+        </div>
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.45);margin-bottom:8px;">FOUNDER INBOX</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.68);line-height:1.55;">${pending ? `${pending} approval${pending === 1 ? '' : 's'} waiting for your decision.` : 'No approvals are blocking Ventura right now.'}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  const infraEl = document.getElementById('settings-infrastructure');
+  if (infraEl) {
+    infraEl.innerHTML = (data.integrations || []).map(i => `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:16px;">
+        <div>
+          <div style="font-size:14px;color:#e0ddd5;margin-bottom:4px;">${esc(titleCase(i.kind))}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.5;">${esc(i.provider)}${i.config?.url ? ` · ${esc(i.config.url)}` : ''}${i.config?.address ? ` · ${esc(i.config.address)}` : ''}</div>
+        </div>
+        <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(i.status)};padding:4px 10px;background:${integrationBg(i.status)};border-radius:999px;white-space:nowrap;">${esc(i.status).toUpperCase()}</span>
+      </div>
+    `).join('') || `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No integrations provisioned yet.</div>`;
+  }
+}
+
+function updateBusinessStatus(data) {
+  const badge = document.getElementById('dash-status-badge');
+  if (!badge) return;
+  const pending = (data.approvals || []).filter(a => a.status === 'pending').length;
+  if (pending) {
+    badge.textContent = `${pending} awaiting review`;
+    return;
+  }
+  if (data.latestCycle?.status === 'running') {
+    badge.textContent = 'Agent running';
+    return;
+  }
+  badge.textContent = data.business?.status === 'active' ? 'Autonomous loop live' : (data.business?.status || 'idle');
 }
 
 function renderSidebarBusinesses() {
@@ -2923,6 +3142,37 @@ function renderSidebarBusinesses() {
 async function switchBusiness(id) {
   const biz = state.businesses.find(b => b.id === id);
   if (biz) setActiveBusiness(biz);
+}
+
+async function decideApproval(id, decision) {
+  if (!state.activeBiz) return;
+  const note = decision === 'reject' ? (prompt('Optional note for rejecting this approval:') || '') : '';
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/approvals/${id}/decision`, { decision, note });
+    showToast(decision === 'approve' ? 'Approval executed' : 'Approval rejected');
+    await loadDashboard();
+  } catch (err) {
+    showToast(`Approval failed: ${err.message}`);
+  }
+}
+
+async function saveBusinessProfile() {
+  if (!state.activeBiz) return;
+  const name = document.getElementById('settings-business-name')?.value?.trim();
+  const type = document.getElementById('settings-business-type')?.value;
+  const goal90d = document.getElementById('settings-business-goal')?.value?.trim();
+  if (!name || !goal90d) {
+    showToast('Business name and goal are required');
+    return;
+  }
+  try {
+    await PATCH(`/businesses/${state.activeBiz.id}`, { name, type, goal90d });
+    showToast('Business profile saved');
+    await loadBusinesses();
+    await loadDashboard();
+  } catch (err) {
+    showToast(`Save failed: ${err.message}`);
+  }
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
@@ -2994,11 +3244,11 @@ async function addTask() {
   if (!state.activeBiz) return;
   const title = prompt('What task should the agent do?');
   if (!title?.trim()) return;
-  const dept = prompt('Department? (engineering / marketing / operations / strategy / sales / finance)', 'marketing');
+  const dept = prompt('Department? (planning / engineering / marketing / operations)', 'marketing');
   try {
     await POST(`/businesses/${state.activeBiz.id}/tasks`, {
       title: title.trim(),
-      department: dept?.trim() || 'operations',
+      department: normalizeDepartment(dept?.trim() || 'operations'),
       priority: 2
     });
     showToast(`Task queued: "${title.slice(0,40)}"`);
@@ -3050,10 +3300,16 @@ function setEl(id, val) { const el = document.getElementById(id); if (el) el.tex
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function updateTicker(msg) { const el = document.getElementById('live-ticker-text'); if (el) el.textContent = msg; }
 function deptColor(d) { return {engineering:'code',marketing:'mkt',operations:'ops',sales:'mkt',strategy:'code',finance:'ops'}[d]||'ops'; }
+function normalizeDepartment(d) { return ({ planning:'strategy', strategy:'strategy', engineering:'engineering', marketing:'marketing', operations:'operations', sales:'sales', finance:'finance' }[(d || '').toLowerCase()] || 'operations'); }
+function displayDepartment(d) { return ({ strategy:'Planning', engineering:'Engineering', marketing:'Marketing', operations:'Operations', sales:'Marketing', finance:'Operations' }[d] || (d ? titleCase(d) : 'System')); }
+function shortDepartment(d) { return ({ strategy:'pln', engineering:'eng', marketing:'mkt', operations:'ops', sales:'mkt', finance:'ops' }[d] || 'ops'); }
 function typeIcon(t) { return {deploy:'code',email_sent:'mail',lead:'chart',content:'chart',alert:'plan',research:'plan',code:'code'}[t]||'plan'; }
 function typeEmoji(t) { return {deploy:'⌥',email_sent:'◆',lead:'▲',content:'◆',alert:'⚑',research:'◎',code:'⌥',metrics:'▲'}[t]||'✦'; }
 function statusClass(t) { return t==='alert'?'status-running':['content','deploy','email_sent'].includes(t)?'status-done':'status-queued'; }
 function statusLabel(t) { return t==='alert'?'review':['content','deploy','email_sent'].includes(t)?'done':'info'; }
+function integrationColor(status) { return ({ connected:'#28ca41', active:'#28ca41', mocked:'var(--gold)', pending:'var(--gold)', failed:'#ff6b6b' }[status] || '#9aa0aa'); }
+function integrationBg(status) { return ({ connected:'rgba(40,202,65,0.1)', active:'rgba(40,202,65,0.1)', mocked:'rgba(200,168,75,0.1)', pending:'rgba(200,168,75,0.1)', failed:'rgba(255,107,107,0.12)' }[status] || 'rgba(255,255,255,0.06)'); }
+function titleCase(value) { return String(value || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); }
 function timeAgo(iso) {
   if (!iso) return 'unknown';
   const diff = (Date.now() - new Date(iso)) / 1000;

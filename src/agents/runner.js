@@ -15,14 +15,24 @@ import { emitToBusiness, emitToUser } from '../ws/websocket.js';
 import { AGENT_CRON_SCHEDULE } from '../config.js';
 
 // ─── Cron scheduler ───────────────────────────────────────────────────────────
+let schedulerTask;
 
 export function startAgentScheduler() {
+  if (schedulerTask) return schedulerTask;
   console.log(`🤖 Agent scheduler started — cron: "${AGENT_CRON_SCHEDULE}"`);
 
-  cron.schedule(AGENT_CRON_SCHEDULE, async () => {
+  schedulerTask = cron.schedule(AGENT_CRON_SCHEDULE, async () => {
     console.log(`\n🔁 [${new Date().toISOString()}] Starting daily agent run for all businesses`);
     await runAllBusinesses('cron');
   });
+  return schedulerTask;
+}
+
+export function stopAgentScheduler() {
+  if (!schedulerTask) return;
+  schedulerTask.stop();
+  if (typeof schedulerTask.destroy === 'function') schedulerTask.destroy();
+  schedulerTask = null;
 }
 
 // ─── Run all active businesses ────────────────────────────────────────────────

@@ -5,11 +5,13 @@
 
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db/migrate.js';
-import { PLATFORM_DOMAIN, SMTP_FROM } from '../config.js';
+import { FRONTEND_URL, PLATFORM_DOMAIN } from '../config.js';
 import { emitToUser } from '../ws/websocket.js';
 import { logActivity } from '../agents/activity.js';
 import { queueTask } from '../agents/tasks.js';
 import { sendEmail } from '../integrations/email.js';
+import { createVercelProject } from '../integrations/deploy.js';
+import { seedDefaultIntegrations, upsertIntegration } from '../integrations/registry.js';
 
 // ─── Slug generator ───────────────────────────────────────────────────────────
 
@@ -70,7 +72,8 @@ export async function provisionBusiness({ userId, name, type, description, targe
     await stepProvisionDB(businessId, dbName, userId);
     await stepProvisionEmail(businessId, emailAddress, userId);
     await stepScaffoldWebsite(businessId, slug, name, type, description, userId);
-    await stepSetupStripe(businessId, userId);
+    const stripeAccountId = await stepSetupStripe(businessId, userId);
+    seedDefaultIntegrations({ businessId, slug, emailAddress, webUrl, stripeAccountId });
     await stepActivate(businessId, userId);
     await stepSeedAgentMemory(businessId, { name, type, description, targetCustomer, goal90d, involvement, webUrl, emailAddress });
     await stepQueueInitialTasks(businessId, type);
@@ -98,6 +101,13 @@ async function stepProvisionDB(businessId, dbName, userId) {
     title: 'Database provisioned',
     detail: { dbName }
   });
+  upsertIntegration({
+    businessId,
+    kind: 'database',
+    provider: 'sqlite',
+    status: 'connected',
+    config: { namespace: dbName }
+  });
 }
 
 async function stepProvisionEmail(businessId, emailAddress, userId) {
@@ -111,23 +121,35 @@ async function stepProvisionEmail(businessId, emailAddress, userId) {
     title: `Email address provisioned: ${emailAddress}`,
     detail: { emailAddress }
   });
+  upsertIntegration({
+    businessId,
+    kind: 'email',
+    provider: 'ventura-mailbox',
+    status: 'connected',
+    config: { address: emailAddress }
+  });
 }
 
 async function stepScaffoldWebsite(businessId, slug, name, type, description, userId) {
-  // In production: deploy a Vercel/Cloudflare Pages project from a template,
-  // then the agent customises it on first cycle.
-  // Here we record the URL and mark scaffolded.
   await sleep(600);
   const db = getDb();
+  const project = await createVercelProject(businessId, slug);
   db.prepare(`UPDATE businesses SET web_url=? WHERE id=?`)
-    .run(`https://${slug}.${PLATFORM_DOMAIN}`, businessId);
+    .run(project.url, businessId);
 
   emitToUser(userId, { event: 'provisioning:step', step: 'website', status: 'complete', businessId });
   await logActivity(businessId, {
     type: 'deploy',
     department: 'engineering',
     title: `Website scaffolded at ${slug}.${PLATFORM_DOMAIN}`,
-    detail: { slug, type }
+    detail: { slug, type, provider: project.projectId }
+  });
+  upsertIntegration({
+    businessId,
+    kind: 'website',
+    provider: project.projectId.startsWith('local_') ? 'ventura-static' : 'vercel',
+    status: 'connected',
+    config: { url: project.url, projectId: project.projectId }
   });
 }
 
@@ -139,6 +161,14 @@ async function stepSetupStripe(businessId, userId) {
   const db = getDb();
   db.prepare(`UPDATE businesses SET stripe_account_id=? WHERE id=?`).run(stripeAccountId, businessId);
   emitToUser(userId, { event: 'provisioning:step', step: 'stripe', status: 'complete', businessId });
+  upsertIntegration({
+    businessId,
+    kind: 'stripe',
+    provider: 'stripe',
+    status: 'connected',
+    config: { account_id: stripeAccountId }
+  });
+  return stripeAccountId;
 }
 
 async function stepActivate(businessId, userId) {
@@ -187,9 +217,9 @@ async function stepSendWelcomeEmail(userId, businessName, webUrl, emailAddress, 
         <div style="background:#f5f2eb;border-radius:4px;padding:24px;margin-bottom:24px">
           <div style="margin-bottom:12px"><strong>Your website:</strong> <a href="${webUrl}">${webUrl}</a></div>
           <div style="margin-bottom:12px"><strong>Your email:</strong> ${emailAddress}</div>
-          <div><strong>Dashboard:</strong> <a href="https://ventura.ai/dashboard">ventura.ai/dashboard</a></div>
+          <div><strong>Dashboard:</strong> <a href="${FRONTEND_URL}">${FRONTEND_URL}</a></div>
         </div>
-        <a href="https://ventura.ai/dashboard" style="background:#e8440a;color:white;padding:14px 28px;text-decoration:none;border-radius:2px;font-weight:500;display:inline-block">
+        <a href="${FRONTEND_URL}" style="background:#e8440a;color:white;padding:14px 28px;text-decoration:none;border-radius:2px;font-weight:500;display:inline-block">
           Open Dashboard →
         </a>
         <p style="margin-top:32px;font-size:13px;color:#aaa">
@@ -251,5 +281,6 @@ function getBootstrapTasks(type) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
+  const duration = process.env.NODE_ENV === 'test' ? Math.min(ms, 10) : ms;
+  return new Promise(r => setTimeout(r, duration));
 }

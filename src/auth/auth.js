@@ -56,7 +56,8 @@ export function optionalAuth(req, res, next) {
 
 export async function registerUser({ email, name, password }) {
   const db = getDb();
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  const normalizedEmail = email.toLowerCase().trim();
+  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
   if (existing) throw new Error('EMAIL_TAKEN');
 
   const id = uuid();
@@ -65,9 +66,9 @@ export async function registerUser({ email, name, password }) {
   db.prepare(`
     INSERT INTO users (id, email, name, password_hash, plan)
     VALUES (?, ?, ?, ?, 'trial')
-  `).run(id, email.toLowerCase().trim(), name.trim(), password_hash);
+  `).run(id, normalizedEmail, name.trim(), password_hash);
 
-  return { id, email, name };
+  return { id, email: normalizedEmail, name };
 }
 
 export async function loginUser({ email, password }) {
@@ -111,7 +112,7 @@ export function rotateRefreshToken(rawToken) {
 
   // Rotate: delete old, issue new
   db.prepare('DELETE FROM refresh_tokens WHERE token_hash = ?').run(tokenHash);
-  return issueTokens({ id: stored.user_id, email: stored.email, plan: stored.plan });
+  return issueTokens({ id: stored.user_id, email: stored.email, plan: stored.plan, is_admin: stored.is_admin });
 }
 
 export function getUserById(id) {

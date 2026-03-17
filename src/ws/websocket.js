@@ -15,6 +15,7 @@ const byUser     = new Map();
 const byBusiness = new Map();
 
 let wss;
+let heartbeat;
 
 // ─── Initialise the WS server (attach to an HTTP server) ─────────────────────
 
@@ -43,7 +44,7 @@ export function initWebSocket(httpServer) {
   });
 
   // Heartbeat: ping all connections every WS_HEARTBEAT_INTERVAL ms
-  const heartbeat = setInterval(() => {
+  heartbeat = setInterval(() => {
     if (!wss) { clearInterval(heartbeat); return; }
     wss.clients.forEach(ws => {
       if (!ws.isAlive) { ws.terminate(); return; }
@@ -158,4 +159,18 @@ export function getStats() {
     userChannels: byUser.size,
     businessChannels: byBusiness.size
   };
+}
+
+export function closeWebSocket() {
+  if (heartbeat) {
+    clearInterval(heartbeat);
+    heartbeat = null;
+  }
+  if (wss) {
+    wss.clients.forEach(ws => ws.terminate());
+    wss.close();
+    wss = null;
+  }
+  byUser.clear();
+  byBusiness.clear();
 }

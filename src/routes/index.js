@@ -11,10 +11,14 @@ import {
 import { provisionBusiness } from '../provisioning/provision.js';
 import { runBusinessCycle } from '../agents/runner.js';
 import { queueTask, getAllTasks, getQueuedTasks } from '../agents/tasks.js';
+import { listApprovals, decideApproval } from '../agents/approvals.js';
 import { getRecentActivity } from '../agents/activity.js';
 import { getDb } from '../db/migrate.js';
 import { getStats } from '../ws/websocket.js';
 import { handleStripeWebhook } from '../integrations/stripe.js';
+import { getDeployments } from '../integrations/deploy.js';
+import { listIntegrations } from '../integrations/registry.js';
+import { getPlanDefinition } from '../billing/plans.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { ANTHROPIC_API_KEY, AGENT_MODEL } from '../config.js';
 
@@ -26,13 +30,82 @@ function validate(schema, data) {
   const result = schema.safeParse(data);
   if (!result.success) {
     const messages = result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`);
-    throw new Error(messages.join(', '));
+    throw Object.assign(new Error(messages.join(', ')), { statusCode: 400 });
   }
   return result.data;
 }
 
 function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+}
+
+function getUserUsage(db, userId, plan) {
+  const limits = getPlanDefinition(plan).limits;
+  const tasksUsed = db.prepare(`
+    SELECT COUNT(*) AS n
+    FROM tasks t
+    JOIN businesses b ON b.id = t.business_id
+    WHERE b.user_id = ?
+      AND t.triggered_by = 'user'
+      AND date(t.created_at) >= date('now', 'start of month')
+  `).get(userId).n;
+  const businessCount = db.prepare('SELECT COUNT(*) AS n FROM businesses WHERE user_id = ?').get(userId).n;
+
+  return {
+    tasks: {
+      used: tasksUsed,
+      limit: limits.tasks_per_month,
+      remaining: Math.max(0, limits.tasks_per_month - tasksUsed)
+    },
+    businesses: {
+      used: businessCount,
+      limit: limits.businesses,
+      remaining: Math.max(0, limits.businesses - businessCount)
+    }
+  };
+}
+
+function getSpecialistSummary(db, businessId) {
+  const rows = db.prepare(`
+    SELECT department,
+           COUNT(*) AS total,
+           SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) AS completed,
+           SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running,
+           MAX(created_at) AS last_run
+    FROM tasks
+    WHERE business_id = ?
+    GROUP BY department
+  `).all(businessId);
+
+  const mapped = {
+    planning: { id: 'planning', label: 'Planning', departments: ['strategy'], total: 0, completed: 0, running: 0, last_run: null },
+    engineering: { id: 'engineering', label: 'Engineering', departments: ['engineering'], total: 0, completed: 0, running: 0, last_run: null },
+    marketing: { id: 'marketing', label: 'Marketing', departments: ['marketing', 'sales'], total: 0, completed: 0, running: 0, last_run: null },
+    operations: { id: 'operations', label: 'Operations', departments: ['operations', 'finance'], total: 0, completed: 0, running: 0, last_run: null }
+  };
+
+  for (const row of rows) {
+    const bucket = row.department === 'strategy'
+      ? mapped.planning
+      : ['engineering'].includes(row.department)
+        ? mapped.engineering
+        : ['marketing', 'sales'].includes(row.department)
+          ? mapped.marketing
+          : mapped.operations;
+
+    bucket.total += row.total || 0;
+    bucket.completed += row.completed || 0;
+    bucket.running += row.running || 0;
+    if (!bucket.last_run || new Date(row.last_run) > new Date(bucket.last_run)) {
+      bucket.last_run = row.last_run;
+    }
+  }
+
+  return Object.values(mapped);
+}
+
+function getOwnedBusiness(db, businessId, userId) {
+  return db.prepare('SELECT * FROM businesses WHERE id = ? AND user_id = ?').get(businessId, userId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -110,10 +183,9 @@ router.post('/businesses', requireAuth, asyncHandler(async (req, res) => {
   // Plan limits
   const db = getDb();
   const user = db.prepare('SELECT * FROM users WHERE id=?').get(req.user.sub);
-  const count = db.prepare('SELECT COUNT(*) as n FROM businesses WHERE user_id=?').get(req.user.sub).n;
+  const usage = getUserUsage(db, req.user.sub, user.plan);
 
-  const limits = { trial: 1, builder: 3, fleet: 10 };
-  if (count >= (limits[user.plan] || 1)) {
+  if (usage.businesses.used >= usage.businesses.limit) {
     return res.status(403).json({ error: `Plan limit reached. Upgrade to add more businesses.` });
   }
 
@@ -128,9 +200,7 @@ router.post('/businesses', requireAuth, asyncHandler(async (req, res) => {
 // GET /api/businesses/:id — get a single business
 router.get('/businesses/:id', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
-  const business = db.prepare(`
-    SELECT * FROM businesses WHERE id = ? AND user_id = ?
-  `).get(req.params.id, req.user.sub);
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
   if (!business) return res.status(404).json({ error: 'Business not found' });
 
   // Parse JSON field
@@ -141,17 +211,23 @@ router.get('/businesses/:id', requireAuth, asyncHandler(async (req, res) => {
 // PATCH /api/businesses/:id — update business settings
 router.patch('/businesses/:id', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
-  const business = db.prepare('SELECT * FROM businesses WHERE id=? AND user_id=?').get(req.params.id, req.user.sub);
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
   if (!business) return res.status(404).json({ error: 'Not found' });
 
   const schema = z.object({
     name: z.string().min(2).max(100).optional(),
+    type: z.enum(['saas', 'agency', 'ecommerce', 'content', 'marketplace', 'education', 'other']).optional(),
     description: z.string().optional(),
     goal90d: z.string().optional(),
     involvement: z.enum(['autopilot', 'review', 'daily']).optional(),
     status: z.enum(['active', 'paused']).optional()
   });
-  const body = validate(schema, req.body);
+  const rawBody = validate(schema, req.body);
+  const body = {
+    ...rawBody,
+    goal_90d: rawBody.goal90d
+  };
+  delete body.goal90d;
 
   const updates = Object.entries(body)
     .filter(([_, v]) => v !== undefined)
@@ -172,7 +248,7 @@ router.patch('/businesses/:id', requireAuth, asyncHandler(async (req, res) => {
 // POST /api/businesses/:id/run — manually trigger agent cycle
 router.post('/businesses/:id/run', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
-  const business = db.prepare('SELECT * FROM businesses WHERE id=? AND user_id=?').get(req.params.id, req.user.sub);
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
   if (!business) return res.status(404).json({ error: 'Business not found' });
   if (business.status !== 'active') return res.status(400).json({ error: 'Business is not active' });
 
@@ -190,7 +266,7 @@ router.post('/businesses/:id/run', requireAuth, asyncHandler(async (req, res) =>
 // GET /api/businesses/:id/cycles — list agent cycles
 router.get('/businesses/:id/cycles', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
-  const business = db.prepare('SELECT id FROM businesses WHERE id=? AND user_id=?').get(req.params.id, req.user.sub);
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
   if (!business) return res.status(404).json({ error: 'Not found' });
 
   const cycles = db.prepare(`
@@ -206,7 +282,7 @@ router.get('/businesses/:id/cycles', requireAuth, asyncHandler(async (req, res) 
 // GET /api/businesses/:id/tasks
 router.get('/businesses/:id/tasks', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
-  const business = db.prepare('SELECT id FROM businesses WHERE id=? AND user_id=?').get(req.params.id, req.user.sub);
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
   if (!business) return res.status(404).json({ error: 'Not found' });
   const tasks = getAllTasks(req.params.id, 100);
   res.json({ tasks });
@@ -215,8 +291,14 @@ router.get('/businesses/:id/tasks', requireAuth, asyncHandler(async (req, res) =
 // POST /api/businesses/:id/tasks — queue a task manually
 router.post('/businesses/:id/tasks', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
-  const business = db.prepare('SELECT id FROM businesses WHERE id=? AND user_id=?').get(req.params.id, req.user.sub);
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
   if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const user = db.prepare('SELECT plan FROM users WHERE id=?').get(req.user.sub);
+  const usage = getUserUsage(db, req.user.sub, user.plan);
+  if (usage.tasks.used >= usage.tasks.limit) {
+    return res.status(403).json({ error: `Monthly founder task limit reached for ${user.plan}.` });
+  }
 
   const schema = z.object({
     title: z.string().min(3).max(300),
@@ -241,7 +323,7 @@ router.post('/businesses/:id/tasks', requireAuth, asyncHandler(async (req, res) 
 // GET /api/businesses/:id/activity
 router.get('/businesses/:id/activity', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
-  const business = db.prepare('SELECT id FROM businesses WHERE id=? AND user_id=?').get(req.params.id, req.user.sub);
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
   if (!business) return res.status(404).json({ error: 'Not found' });
   const limit = parseInt(req.query.limit) || 50;
   const activity = getRecentActivity(req.params.id, limit);
@@ -277,7 +359,7 @@ router.get('/businesses/:id/metrics', requireAuth, asyncHandler(async (req, res)
 // GET /api/businesses/:id/messages
 router.get('/businesses/:id/messages', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
-  const business = db.prepare('SELECT id FROM businesses WHERE id=? AND user_id=?').get(req.params.id, req.user.sub);
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
   if (!business) return res.status(404).json({ error: 'Not found' });
 
   const messages = db.prepare(`
@@ -289,7 +371,7 @@ router.get('/businesses/:id/messages', requireAuth, asyncHandler(async (req, res
 // POST /api/businesses/:id/messages — send a message to the agent
 router.post('/businesses/:id/messages', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
-  const business = db.prepare('SELECT * FROM businesses WHERE id=? AND user_id=?').get(req.params.id, req.user.sub);
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
   if (!business) return res.status(404).json({ error: 'Not found' });
 
   const schema = z.object({ content: z.string().min(1).max(4000) });
@@ -338,6 +420,94 @@ You are talking directly with the founder. Be direct, specific, and helpful. Ref
   res.json({ message: { id: aiMsgId, role: 'assistant', content: aiContent } });
 }));
 
+// GET /api/businesses/:id/deployments
+router.get('/businesses/:id/deployments', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+  res.json({ deployments: getDeployments(req.params.id, 30) });
+}));
+
+// GET /api/businesses/:id/approvals
+router.get('/businesses/:id/approvals', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+  res.json({ approvals: listApprovals(req.params.id, { status: req.query.status || null, limit: parseInt(req.query.limit || '25', 10) }) });
+}));
+
+// POST /api/businesses/:id/approvals/:approvalId/decision
+router.post('/businesses/:id/approvals/:approvalId/decision', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const schema = z.object({
+    decision: z.enum(['approve', 'reject']),
+    note: z.string().max(500).optional()
+  });
+  const body = validate(schema, req.body);
+  const approval = await decideApproval({
+    approvalId: req.params.approvalId,
+    businessId: req.params.id,
+    userId: req.user.sub,
+    decision: body.decision,
+    note: body.note || ''
+  });
+  res.json({ approval });
+}));
+
+// GET /api/businesses/:id/control-center
+router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(req.user.sub);
+  const recentCycles = db.prepare(`
+    SELECT id, status, triggered_by, started_at, completed_at, tasks_run, summary, error, created_at
+    FROM agent_cycles
+    WHERE business_id = ?
+    ORDER BY created_at DESC
+    LIMIT 10
+  `).all(req.params.id);
+
+  const latestCycle = recentCycles[0] || null;
+  const approvals = listApprovals(req.params.id, { limit: 10 });
+  const deployments = getDeployments(req.params.id, 10);
+  const integrations = listIntegrations(req.params.id);
+  const specialists = getSpecialistSummary(db, req.params.id);
+  const recentActivity = getRecentActivity(req.params.id, 8);
+  const usage = getUserUsage(db, req.user.sub, user.plan);
+
+  res.json({
+    business,
+    latestCycle,
+    recentCycles,
+    recentActivity,
+    approvals,
+    deployments,
+    integrations,
+    specialists,
+    usage,
+    plan: getPlanDefinition(user.plan)
+  });
+}));
+
+// GET /api/live — public transparency feed
+router.get('/live', asyncHandler(async (req, res) => {
+  const db = getDb();
+  const feed = db.prepare(`
+    SELECT a.id, a.type, a.department, a.title, a.created_at,
+           b.name AS business_name, b.slug AS business_slug
+    FROM activity a
+    JOIN businesses b ON b.id = a.business_id
+    ORDER BY a.created_at DESC
+    LIMIT 40
+  `).all();
+  res.json({ feed });
+}));
+
 // ─────────────────────────────────────────────────────────────────────────────
 // STRIPE WEBHOOK (raw body needed)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -369,6 +539,7 @@ router.use((err, req, res, next) => {
   if (err.message === 'EMAIL_TAKEN') return res.status(409).json({ error: 'Email already registered' });
   if (err.message === 'INVALID_CREDENTIALS') return res.status(401).json({ error: 'Invalid email or password' });
   if (err.message === 'INVALID_REFRESH_TOKEN') return res.status(401).json({ error: 'Invalid or expired refresh token' });
+  if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
 
   res.status(500).json({ error: err.message || 'Internal server error' });
 });

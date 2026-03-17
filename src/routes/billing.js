@@ -6,7 +6,8 @@ import express from 'express';
 import Stripe from 'stripe';
 import { requireAuth } from '../auth/auth.js';
 import { getDb } from '../db/migrate.js';
-import { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, BASE_URL } from '../config.js';
+import { STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, FRONTEND_URL } from '../config.js';
+import { getPlanDefinition, serializePlan } from '../billing/plans.js';
 
 const router = express.Router();
 const stripe = new Stripe(STRIPE_SECRET_KEY || 'sk_test_placeholder');
@@ -24,34 +25,14 @@ const PRICES = {
 // GET /api/billing/plans — return available plans and current plan
 router.get('/plans', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
-  const user = db.prepare('SELECT plan, stripe_customer_id FROM users WHERE id=?').get(req.user.sub);
+  const user = db.prepare('SELECT plan FROM users WHERE id=?').get(req.user.sub);
 
   res.json({
     current: user.plan,
     plans: [
-      {
-        id: 'trial',
-        name: 'Starter',
-        price_cents: 0,
-        features: ['1 business', '14-day trial', '5 tasks/mo', 'Community support'],
-        limits: { businesses: 1, tasks_per_month: 5 }
-      },
-      {
-        id: 'builder',
-        name: 'Builder',
-        price_cents: 4900,
-        features: ['3 businesses', '30 tasks/mo', 'All 6 agent departments', 'Priority model (Opus)', 'Email support'],
-        limits: { businesses: 3, tasks_per_month: 30 },
-        stripe_price_id: PRICES.builder_monthly
-      },
-      {
-        id: 'fleet',
-        name: 'Fleet',
-        price_cents: 19900,
-        features: ['10 businesses', '100 tasks/mo pooled', 'Custom agent prompts', 'Dedicated Slack channel', 'Cross-business analytics'],
-        limits: { businesses: 10, tasks_per_month: 100 },
-        stripe_price_id: PRICES.fleet_monthly
-      }
+      serializePlan('trial'),
+      serializePlan('builder', PRICES.builder_monthly),
+      serializePlan('fleet', PRICES.fleet_monthly)
     ]
   });
 }));
@@ -86,8 +67,8 @@ router.post('/checkout', requireAuth, asyncHandler(async (req, res) => {
     payment_method_types: ['card'],
     line_items: [{ price: priceId, quantity: 1 }],
     mode: 'subscription',
-    success_url: `${BASE_URL}/dashboard?upgrade=success&plan=${plan}`,
-    cancel_url: `${BASE_URL}/dashboard?upgrade=cancelled`,
+    success_url: `${FRONTEND_URL}?upgrade=success&plan=${plan}`,
+    cancel_url: `${FRONTEND_URL}?upgrade=cancelled`,
     metadata: { ventura_user_id: user.id, plan },
     subscription_data: {
       metadata: { ventura_user_id: user.id, plan }
@@ -111,7 +92,7 @@ router.post('/portal', requireAuth, asyncHandler(async (req, res) => {
 
   const session = await stripe.billingPortal.sessions.create({
     customer: user.stripe_customer_id,
-    return_url: `${BASE_URL}/dashboard`,
+    return_url: FRONTEND_URL,
   });
 
   res.json({ url: session.url });
@@ -164,7 +145,7 @@ router.post('/webhook',
           await sendEmail({
             to: user.email,
             subject: 'Payment failed — action needed',
-            html: `<p>Hi ${user.name}, your Ventura payment failed. <a href="${BASE_URL}/billing">Update your payment method</a> to keep your businesses running.</p>`
+            html: `<p>Hi ${user.name}, your Ventura payment failed. <a href="${FRONTEND_URL}">Open your Ventura dashboard</a> to update billing and keep your businesses running.</p>`
           }).catch(() => {});
         }
         break;
@@ -190,13 +171,20 @@ router.get('/usage', requireAuth, asyncHandler(async (req, res) => {
 
   const businessCount = db.prepare('SELECT COUNT(*) as n FROM businesses WHERE user_id=?').get(req.user.sub).n;
 
-  const limits = { trial: { tasks: 5, businesses: 1 }, builder: { tasks: 30, businesses: 3 }, fleet: { tasks: 100, businesses: 10 } };
-  const planLimits = limits[user.plan] || limits.trial;
+  const planLimits = getPlanDefinition(user.plan).limits;
 
   res.json({
     plan: user.plan,
-    tasks: { used: tasksThisMonth, limit: planLimits.tasks, pct: Math.round((tasksThisMonth / planLimits.tasks) * 100) },
-    businesses: { used: businessCount, limit: planLimits.businesses, pct: Math.round((businessCount / planLimits.businesses) * 100) }
+    tasks: {
+      used: tasksThisMonth,
+      limit: planLimits.tasks_per_month,
+      pct: Math.min(100, Math.round((tasksThisMonth / Math.max(planLimits.tasks_per_month, 1)) * 100))
+    },
+    businesses: {
+      used: businessCount,
+      limit: planLimits.businesses,
+      pct: Math.min(100, Math.round((businessCount / Math.max(planLimits.businesses, 1)) * 100))
+    }
   });
 }));
 

@@ -12,6 +12,7 @@ function required(key) {
 export const PORT              = process.env.PORT || 3001;
 export const NODE_ENV          = process.env.NODE_ENV || 'development';
 export const BASE_URL          = process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+export const FRONTEND_URL      = process.env.FRONTEND_URL || BASE_URL;
 
 export const JWT_SECRET        = process.env.JWT_SECRET || 'dev-secret-change-me';
 export const JWT_EXPIRES_IN    = process.env.JWT_EXPIRES_IN || '7d';

@@ -4,10 +4,15 @@
 import Database from 'better-sqlite3';
 import { DB_PATH } from '../config.js';
 
+let db;
+
 export function getDb() {
-  const db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
+  if (db) return db;
+
+  db = new Database(DB_PATH);
+  db.pragma(DB_PATH === ':memory:' ? 'journal_mode = MEMORY' : 'journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+  db.pragma('busy_timeout = 5000');
   return db;
 }
 
@@ -194,6 +199,46 @@ export function runMigrations() {
     );
 
     -- ─────────────────────────────────────────
+    -- APPROVALS (founder control layer)
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS approvals (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      task_id       TEXT REFERENCES tasks(id),
+      action_type   TEXT NOT NULL,
+      title         TEXT NOT NULL,
+      summary       TEXT,
+      payload       TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected | executed | failed
+      requested_by  TEXT NOT NULL DEFAULT 'agent',
+      decision_note TEXT,
+      decided_by    TEXT REFERENCES users(id),
+      decided_at    TEXT,
+      execution_result TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_approvals_business ON approvals(business_id);
+    CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
+
+    -- ─────────────────────────────────────────
+    -- INTEGRATIONS / INFRA REGISTRY
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS integrations (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      kind          TEXT NOT NULL,
+      provider      TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      config        TEXT DEFAULT '{}',
+      last_sync_at  TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(business_id, kind)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_integrations_business ON integrations(business_id);
+
+    -- ─────────────────────────────────────────
     -- REFRESH TOKENS
     -- ─────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -209,4 +254,10 @@ export function runMigrations() {
 
   console.log('✅ Database migrations complete');
   return db;
+}
+
+export function closeDb() {
+  if (!db) return;
+  db.close();
+  db = null;
 }

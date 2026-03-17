@@ -7,9 +7,9 @@ import http from 'http';
 import express from 'express';
 import cors from 'cors';
 import { PORT, NODE_ENV, BASE_URL, RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX } from './config.js';
-import { runMigrations } from './db/migrate.js';
-import { initWebSocket } from './ws/websocket.js';
-import { startAgentScheduler } from './agents/runner.js';
+import { closeDb, runMigrations } from './db/migrate.js';
+import { closeWebSocket, initWebSocket } from './ws/websocket.js';
+import { startAgentScheduler, stopAgentScheduler } from './agents/runner.js';
 import routes from './routes/index.js';
 import adminRoutes from './routes/admin.js';
 import billingRoutes from './routes/billing.js';
@@ -19,6 +19,7 @@ import leadsRoutes from './routes/leads.js';
 
 const app = express();
 const httpServer = http.createServer(app);
+let started = false;
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
@@ -96,6 +97,9 @@ app.use((err, req, res, next) => {
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 async function start() {
+  if (started || httpServer.listening) return httpServer;
+  started = true;
+
   console.log('\n🚀 Starting Ventura Backend...\n');
 
   // 1. Run DB migrations
@@ -108,17 +112,39 @@ async function start() {
   startAgentScheduler();
 
   // 4. Start HTTP server
-  httpServer.listen(PORT, () => {
-    console.log(`\n✅ Ventura Backend running`);
-    console.log(`   HTTP:      ${BASE_URL}`);
-    console.log(`   WebSocket: ws://localhost:${PORT}/ws`);
-    console.log(`   Env:       ${NODE_ENV}\n`);
+  await new Promise((resolve, reject) => {
+    httpServer.once('error', reject);
+    httpServer.listen(PORT, () => {
+      httpServer.off('error', reject);
+      console.log(`\n✅ Ventura Backend running`);
+      console.log(`   HTTP:      ${BASE_URL}`);
+      console.log(`   WebSocket: ws://localhost:${PORT}/ws`);
+      console.log(`   Env:       ${NODE_ENV}\n`);
+      resolve();
+    });
   });
+
+  return httpServer;
 }
 
-start().catch(err => {
+const serverReady = start();
+
+serverReady.catch(err => {
   console.error('Fatal startup error:', err);
   process.exit(1);
 });
 
 export default app;
+export { httpServer, serverReady, start };
+
+export async function shutdown() {
+  stopAgentScheduler();
+  closeWebSocket();
+  if (httpServer.listening) {
+    await new Promise((resolve, reject) => {
+      httpServer.close(err => (err ? reject(err) : resolve()));
+    });
+  }
+  closeDb();
+  started = false;
+}
