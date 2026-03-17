@@ -192,4 +192,4 @@ async function seed() {
   console.log(`   Business: Nova Analytics (${biz.id})\n`);
 }
 
-seed().catch(err => { console.error('Seed failed:', err); process.exit(1); });
+seed().then(() => process.exit(0)).catch(err => { console.error('Seed failed:', err); process.exit(1); });

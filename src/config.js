@@ -11,7 +11,7 @@ function required(key) {
 
 export const PORT              = process.env.PORT || 3001;
 export const NODE_ENV          = process.env.NODE_ENV || 'development';
-export const BASE_URL          = process.env.BASE_URL || `http://localhost:${PORT}`;
+export const BASE_URL          = process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
 
 export const JWT_SECRET        = process.env.JWT_SECRET || 'dev-secret-change-me';
 export const JWT_EXPIRES_IN    = process.env.JWT_EXPIRES_IN || '7d';
@@ -20,7 +20,7 @@ export const BCRYPT_ROUNDS     = parseInt(process.env.BCRYPT_ROUNDS || '10');
 export const DB_PATH           = process.env.DB_PATH || './ventura.db';
 
 export const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
-export const AGENT_MODEL       = process.env.AGENT_MODEL || 'claude-opus-4-6';
+export const AGENT_MODEL       = process.env.AGENT_MODEL || 'claude-sonnet-4-6';
 export const AGENT_MAX_TOKENS  = parseInt(process.env.AGENT_MAX_TOKENS || '8192');
 
 export const STRIPE_SECRET_KEY        = process.env.STRIPE_SECRET_KEY || '';

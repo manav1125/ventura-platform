@@ -1,15 +1,9 @@
 // ventura/config.js
-// ─────────────────────────────────────────────────────────────────────────────
-// IMPORTANT: Edit this file after deploying the backend.
-// Replace the API_URL below with your actual Render API service URL.
-//
-// Example:
-//   API_URL: "https://ventura-api.onrender.com"
-//
-// Leave as "/" if frontend and backend share the same domain.
-// ─────────────────────────────────────────────────────────────────────────────
+// Frontend runtime configuration.
+// This file is served as a static asset and loaded before any JS runs.
+// Edit API_URL to point to your Render API service.
 
 window.VENTURA_CONFIG = {
   API_URL: "https://ventura-api.onrender.com",
-  WS_URL:  null          // ← leave null — auto-derived from API_URL
+  WS_URL:  null   // auto-derived: wss://ventura-api.onrender.com/ws
 };

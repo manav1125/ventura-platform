@@ -83,7 +83,7 @@ export async function loginUser({ email, password }) {
 
 export function issueTokens(user) {
   const db = getDb();
-  const accessToken = signAccessToken({ sub: user.id, email: user.email, plan: user.plan });
+  const accessToken = signAccessToken({ sub: user.id, email: user.email, plan: user.plan, role: user.is_admin ? 'admin' : 'user' });
   const refreshToken = generateRefreshToken();
 
   // Hash and store refresh token

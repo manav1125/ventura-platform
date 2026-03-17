@@ -1503,7 +1503,9 @@
       <li><a href="#capabilities">Capabilities</a></li>
       <li><a href="#pricing">Pricing</a></li>
       <li><a href="#" onclick="showDashboard(event)">Dashboard →</a></li>
-      <li><a href="#" class="nav-cta" onclick="openModal(event)">Launch a business</a></li>
+      <li><a href="#" id="nav-login-btn" onclick="openAuthModal('login');event.preventDefault()">Sign in</a></li>
+      <li><a href="#" id="nav-logout-btn" onclick="logout();event.preventDefault()" style="display:none">Sign out</a></li>
+      <li><a href="#" id="nav-launch-btn" class="nav-cta" onclick="openModal(event)">Launch a business</a></li>
     </ul>
   </nav>
 
@@ -1974,7 +1976,7 @@
               <span class="panel-title">Recent activity</span>
               <button class="panel-action" onclick="showPage('activity',null)">view feed</button>
             </div>
-            <div class="panel-body" style="padding:0 16px;">
+            <div class="panel-body" id="activity-feed" style="padding:0 16px;">
               <div class="activity-item">
                 <div class="activity-icon code">⌥</div>
                 <div class="activity-content"><div class="activity-title">Shipped: mobile responsive nav</div><div class="activity-meta">Engineering · 2h ago</div></div>
@@ -2028,7 +2030,7 @@
         </div>
         <div class="panel">
           <div class="panel-header"><span class="panel-title">Queue — 3 remaining today</span></div>
-          <div class="panel-body" style="padding:0 20px;">
+          <div class="panel-body" id="tasks-list" style="padding:0 20px;">
             <div class="task-item done">
               <div class="task-check">✓</div>
               <div><div class="task-title">Deploy landing page v4 with new hero section</div><div class="task-meta">Completed 02:14 — Engineering</div></div>
@@ -2236,7 +2238,64 @@
   </div><!-- end dashboard -->
 </div><!-- end dashboard view -->
 
-<!-- ───── ONBOARDING MODAL ───── -->
+
+<!-- ───── AUTH MODAL (login / signup toggle) ───── -->
+<div class="modal-overlay" id="auth-overlay">
+  <div class="modal" style="max-width:480px;">
+    <button class="modal-close" onclick="closeAuthModal()">✕</button>
+
+    <!-- Login view -->
+    <div id="auth-login">
+      <h2>Welcome<br><span>back</span></h2>
+      <p class="modal-sub">Sign in to your Ventura account.</p>
+      <div class="form-field">
+        <label>Email address</label>
+        <input id="login-email" type="email" placeholder="you@email.com" onkeydown="if(event.key==='Enter')doLoginClick()"/>
+      </div>
+      <div class="form-field">
+        <label>Password</label>
+        <input id="login-password" type="password" placeholder="Your password" onkeydown="if(event.key==='Enter')doLoginClick()"/>
+      </div>
+      <div id="login-error" style="display:none;color:var(--accent);font-size:13px;margin-bottom:16px;font-family:'DM Mono',monospace;"></div>
+      <div class="modal-actions">
+        <button class="btn-primary" id="login-btn" onclick="doLoginClick()" style="flex:1;text-align:center;">Sign in →</button>
+      </div>
+      <p style="margin-top:20px;font-size:13px;color:var(--muted);text-align:center;">
+        No account? <a href="#" onclick="switchToSignup(event)" style="color:var(--accent);text-decoration:none;">Create one free →</a>
+      </p>
+      <p style="margin-top:8px;font-size:13px;color:var(--muted);text-align:center;">
+        Or try the demo: <a href="#" onclick="demoLogin(event)" style="color:var(--ink);text-decoration:none;border-bottom:1px solid var(--border);">demo@ventura.ai / password123</a>
+      </p>
+    </div>
+
+    <!-- Signup view -->
+    <div id="auth-signup" style="display:none">
+      <h2>Create your<br><span>account</span></h2>
+      <p class="modal-sub">Free to start. No credit card needed.</p>
+      <div class="form-field">
+        <label>Your name</label>
+        <input id="signup-name" type="text" placeholder="Your full name"/>
+      </div>
+      <div class="form-field">
+        <label>Email address</label>
+        <input id="signup-email" type="email" placeholder="you@email.com"/>
+      </div>
+      <div class="form-field">
+        <label>Password</label>
+        <input id="signup-password" type="password" placeholder="At least 8 characters"/>
+      </div>
+      <div id="signup-error" style="display:none;color:var(--accent);font-size:13px;margin-bottom:16px;font-family:'DM Mono',monospace;"></div>
+      <div class="modal-actions">
+        <button class="btn-primary" id="signup-btn" onclick="doSignupClick()" style="flex:1;text-align:center;">Create account →</button>
+      </div>
+      <p style="margin-top:20px;font-size:13px;color:var(--muted);text-align:center;">
+        Already have an account? <a href="#" onclick="switchToLogin(event)" style="color:var(--accent);text-decoration:none;">Sign in →</a>
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ───── BUSINESS LAUNCH MODAL (wizard) ───── -->
 <div class="modal-overlay" id="modal-overlay">
   <div class="modal">
     <button class="modal-close" onclick="closeModal()">✕</button>
@@ -2250,18 +2309,35 @@
       <div class="wizard-step"><span class="wizard-num">STEP 4</span>Launch</div>
     </div>
 
+    <!-- Page 1: idea + account creation -->
     <div id="wizard-page-1">
       <div class="form-field">
         <label>What business do you want to build?</label>
-        <textarea id="business-idea" placeholder="e.g. A SaaS tool that helps freelancers track their income and expenses automatically. Target: freelancers in the US." style="min-height:100px;"></textarea>
+        <textarea id="business-idea" placeholder="e.g. A SaaS tool that helps freelancers track income and expenses automatically. Target: freelancers in the US." style="min-height:100px;"></textarea>
       </div>
-      <div class="form-field">
-        <label>What's your name?</label>
-        <input id="founder-name" type="text" placeholder="Your name"/>
+      <div id="wizard-account-section">
+        <div style="margin:20px 0 16px;padding:14px;background:rgba(232,68,10,0.06);border:1px solid rgba(232,68,10,0.15);border-radius:2px;font-size:13px;color:var(--muted);">
+          Create your free account to launch:
+        </div>
+        <div class="form-field">
+          <label>Your name</label>
+          <input id="founder-name" type="text" placeholder="Your name"/>
+        </div>
+        <div class="form-field">
+          <label>Email address</label>
+          <input id="founder-email" type="email" placeholder="you@email.com"/>
+        </div>
+        <div class="form-field">
+          <label>Password</label>
+          <input id="founder-password" type="password" placeholder="At least 8 characters"/>
+        </div>
+        <div id="wizard-auth-error" style="display:none;color:var(--accent);font-size:13px;margin-bottom:12px;font-family:'DM Mono',monospace;"></div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:16px;">
+          Already have an account? <a href="#" onclick="openLoginFromWizard(event)" style="color:var(--accent);text-decoration:none;">Sign in →</a>
+        </p>
       </div>
-      <div class="form-field">
-        <label>Email address</label>
-        <input id="founder-email" type="email" placeholder="you@email.com"/>
+      <div id="wizard-logged-in-section" style="display:none;margin:16px 0;padding:12px 14px;background:rgba(40,202,65,0.06);border:1px solid rgba(40,202,65,0.15);border-radius:2px;font-size:13px;color:#28ca41;">
+        ✓ Signed in — continuing to launch your business
       </div>
       <div class="modal-actions">
         <button class="btn-primary" onclick="wizardNext(1)" style="flex:1;text-align:center;">Continue →</button>
@@ -2273,13 +2349,13 @@
         <label>Business category</label>
         <select id="biz-type">
           <option value="">Select a type...</option>
-          <option>SaaS / Software product</option>
-          <option>Agency / Consulting services</option>
-          <option>eCommerce / Physical products</option>
-          <option>Content / Media / Newsletter</option>
-          <option>Marketplace / Platform</option>
-          <option>Education / Courses</option>
-          <option>Other digital business</option>
+          <option value="saas">SaaS / Software product</option>
+          <option value="agency">Agency / Consulting services</option>
+          <option value="ecommerce">eCommerce / Physical products</option>
+          <option value="content">Content / Media / Newsletter</option>
+          <option value="marketplace">Marketplace / Platform</option>
+          <option value="education">Education / Courses</option>
+          <option value="other">Other digital business</option>
         </select>
       </div>
       <div class="form-field">
@@ -2306,9 +2382,9 @@
       <div class="form-field">
         <label>How involved do you want to be?</label>
         <select id="involvement">
-          <option>Full autopilot — let the agent handle everything</option>
-          <option>Review before sending emails / deploying code</option>
-          <option>Daily check-in — I want to approve major decisions</option>
+          <option value="autopilot">Full autopilot — let the agent handle everything</option>
+          <option value="review">Review before sending emails / deploying code</option>
+          <option value="daily">Daily check-in — I want to approve major decisions</option>
         </select>
       </div>
       <div class="modal-actions">
@@ -2320,17 +2396,18 @@
       <div style="font-size:48px;margin-bottom:16px;">🚀</div>
       <h3 style="font-family:'Bebas Neue',sans-serif;font-size:32px;margin-bottom:12px;letter-spacing:0.04em;">You're all set.</h3>
       <p style="font-size:15px;color:var(--muted);line-height:1.65;margin-bottom:32px;">Ventura is spinning up your infrastructure now. Your website, database, email, and first agent cycle will be ready in under 5 minutes.</p>
-      <button class="btn-primary" onclick="launchBusiness()" style="width:100%;text-align:center;font-size:16px;padding:18px;">Open my dashboard →</button>
+      <button class="btn-primary" id="launch-btn" onclick="launchBusiness()" style="width:100%;text-align:center;font-size:16px;padding:18px;">Open my dashboard →</button>
+      <div id="launch-error" style="display:none;color:var(--accent);font-size:13px;margin-top:16px;font-family:'DM Mono',monospace;"></div>
     </div>
   </div>
 </div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════════
-// VENTURA FRONTEND — fully wired to real backend API + WebSocket
+// VENTURA FRONTEND — complete auth + dashboard + real API + WebSocket
 // ═══════════════════════════════════════════════════════════════════
 
-// Read runtime config (set in config.js, overridable per-environment)
+// Read runtime config injected by config.js
 const _cfg = window.VENTURA_CONFIG || {};
 const _apiBase = (_cfg.API_URL && _cfg.API_URL !== '/') ? _cfg.API_URL.replace(/\/$/, '') : '';
 const API = _apiBase + '/api';
@@ -2339,41 +2416,335 @@ const WS_URL = _cfg.WS_URL ||
     ? _apiBase.replace(/^https/, 'wss').replace(/^http/, 'ws') + '/ws'
     : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
 
-// ── State ────────────────────────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────────────────────────
 let state = {
-  accessToken: localStorage.getItem('v_at'),
+  accessToken:  localStorage.getItem('v_at'),
   refreshToken: localStorage.getItem('v_rt'),
-  user: null,
-  businesses: [],
-  activeBiz: null,
-  ws: null,
-  wsReady: false,
+  user:         null,
+  businesses:   [],
+  activeBiz:    null,
+  ws:           null,
+  wsReady:      false,
 };
 
 // ── API helpers ───────────────────────────────────────────────────────────────
-async function api(method, path, body) {
+async function apiFetch(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (state.accessToken) headers['Authorization'] = `Bearer ${state.accessToken}`;
-  const res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
-  if (res.status === 401 && state.refreshToken) { await refreshTokens(); return api(method, path, body); }
+  const res = await fetch(API + path, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (res.status === 401 && state.refreshToken) {
+    const ok = await tryRefresh();
+    if (ok) return apiFetch(method, path, body);
+  }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
 }
-const GET  = (p)    => api('GET', p);
-const POST = (p, b) => api('POST', p, b);
-const PATCH = (p,b) => api('PATCH', p, b);
+const GET   = (p)    => apiFetch('GET', p);
+const POST  = (p, b) => apiFetch('POST', p, b);
+const PATCH = (p, b) => apiFetch('PATCH', p, b);
 
-async function refreshTokens() {
+async function tryRefresh() {
   try {
-    const d = await POST('/auth/refresh', { refreshToken: state.refreshToken });
-    setTokens(d.accessToken, d.refreshToken);
-  } catch { logout(); }
+    const d = await fetch(API + '/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: state.refreshToken })
+    }).then(r => r.json());
+    if (d.accessToken) { storeTokens(d.accessToken, d.refreshToken); return true; }
+  } catch {}
+  clearAuth();
+  return false;
 }
 
-function setTokens(at, rt) {
+function storeTokens(at, rt) {
   state.accessToken = at; state.refreshToken = rt;
-  localStorage.setItem('v_at', at); localStorage.setItem('v_rt', rt);
+  localStorage.setItem('v_at', at);
+  if (rt) localStorage.setItem('v_rt', rt);
+}
+
+function clearAuth() {
+  state.accessToken = null; state.refreshToken = null; state.user = null;
+  localStorage.removeItem('v_at'); localStorage.removeItem('v_rt');
+}
+
+// ── Auth: login / signup ──────────────────────────────────────────────────────
+async function checkAuth() {
+  if (!state.accessToken) return false;
+  try {
+    const d = await GET('/auth/me');
+    state.user = d.user;
+    return true;
+  } catch { clearAuth(); return false; }
+}
+
+async function doLogin(email, password) {
+  const d = await POST('/auth/login', { email, password });
+  storeTokens(d.accessToken, d.refreshToken);
+  state.user = d.user;
+}
+
+async function doRegister(email, name, password) {
+  const d = await POST('/auth/register', { email, name, password });
+  storeTokens(d.accessToken, d.refreshToken);
+  state.user = d.user;
+}
+
+function logout() {
+  clearAuth();
+  state.businesses = []; state.activeBiz = null;
+  state.ws?.close();
+  // Update nav to show login button
+  updateNavForAuth(false);
+  showLanding();
+  showToast('Signed out');
+}
+
+// ── Auth modal ────────────────────────────────────────────────────────────────
+function openAuthModal(defaultView = 'login') {
+  document.getElementById('auth-overlay').classList.add('open');
+  if (defaultView === 'signup') {
+    document.getElementById('auth-login').style.display = 'none';
+    document.getElementById('auth-signup').style.display = 'block';
+  } else {
+    document.getElementById('auth-login').style.display = 'block';
+    document.getElementById('auth-signup').style.display = 'none';
+  }
+  // Clear errors
+  document.getElementById('login-error').style.display = 'none';
+  document.getElementById('signup-error').style.display = 'none';
+}
+
+function closeAuthModal() {
+  document.getElementById('auth-overlay').classList.remove('open');
+}
+
+function switchToSignup(e) {
+  e.preventDefault();
+  document.getElementById('auth-login').style.display = 'none';
+  document.getElementById('auth-signup').style.display = 'block';
+  document.getElementById('signup-error').style.display = 'none';
+}
+
+function switchToLogin(e) {
+  e.preventDefault();
+  document.getElementById('auth-signup').style.display = 'none';
+  document.getElementById('auth-login').style.display = 'block';
+  document.getElementById('login-error').style.display = 'none';
+}
+
+async function doLoginClick() {
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl    = document.getElementById('login-error');
+  const btn      = document.getElementById('login-btn');
+
+  if (!email || !password) { showAuthError(errEl, 'Please fill in all fields'); return; }
+
+  btn.textContent = 'Signing in...'; btn.disabled = true;
+  try {
+    await doLogin(email, password);
+    closeAuthModal();
+    updateNavForAuth(true);
+    connectWS();
+    await loadBusinesses();
+    showDashboard(null);
+    showToast(`Welcome back, ${state.user.name.split(' ')[0]}!`);
+  } catch (err) {
+    showAuthError(errEl, err.message.includes('Invalid') ? 'Incorrect email or password' : err.message);
+  } finally {
+    btn.textContent = 'Sign in →'; btn.disabled = false;
+  }
+}
+
+async function doSignupClick() {
+  const name     = document.getElementById('signup-name').value.trim();
+  const email    = document.getElementById('signup-email').value.trim();
+  const password = document.getElementById('signup-password').value;
+  const errEl    = document.getElementById('signup-error');
+  const btn      = document.getElementById('signup-btn');
+
+  if (!name || !email || !password) { showAuthError(errEl, 'Please fill in all fields'); return; }
+  if (password.length < 8) { showAuthError(errEl, 'Password must be at least 8 characters'); return; }
+
+  btn.textContent = 'Creating account...'; btn.disabled = true;
+  try {
+    await doRegister(email, name, password);
+    closeAuthModal();
+    updateNavForAuth(true);
+    connectWS();
+    await loadBusinesses();
+    showDashboard(null);
+    showToast(`Account created! Welcome, ${name.split(' ')[0]}.`);
+    // If no businesses yet, prompt to launch one
+    if (state.businesses.length === 0) {
+      setTimeout(() => openModal(null), 1200);
+    }
+  } catch (err) {
+    showAuthError(errEl, err.message.includes('EMAIL_TAKEN') || err.message.includes('already') ? 'That email is already registered' : err.message);
+  } finally {
+    btn.textContent = 'Create account →'; btn.disabled = false;
+  }
+}
+
+async function demoLogin(e) {
+  e.preventDefault();
+  document.getElementById('login-email').value = 'demo@ventura.ai';
+  document.getElementById('login-password').value = 'password123';
+  await doLoginClick();
+}
+
+function showAuthError(el, msg) {
+  el.textContent = msg; el.style.display = 'block';
+}
+
+// ── Nav auth state ─────────────────────────────────────────────────────────────
+function updateNavForAuth(loggedIn) {
+  const loginBtn  = document.getElementById('nav-login-btn');
+  const logoutBtn = document.getElementById('nav-logout-btn');
+  const launchBtn = document.getElementById('nav-launch-btn');
+  if (loginBtn)  loginBtn.style.display  = loggedIn ? 'none' : 'inline-block';
+  if (logoutBtn) logoutBtn.style.display = loggedIn ? 'inline-block' : 'none';
+  if (launchBtn) launchBtn.style.display = 'inline-block';
+}
+
+// ── Wizard / launch modal ─────────────────────────────────────────────────────
+let wizardData = {};
+
+function openModal(e) {
+  if (e) e.preventDefault();
+  document.getElementById('modal-overlay').classList.add('open');
+  resetWizard();
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+function openLoginFromWizard(e) {
+  e.preventDefault();
+  closeModal();
+  openAuthModal('login');
+}
+
+function resetWizard() {
+  wizardData = {};
+  for (let i = 1; i <= 4; i++) {
+    const p = document.getElementById('wizard-page-' + i);
+    if (p) p.style.display = i === 1 ? 'block' : 'none';
+  }
+  document.querySelectorAll('.wizard-step').forEach((s, i) => {
+    s.classList.remove('active', 'done');
+    if (i === 0) s.classList.add('active');
+  });
+  // Show/hide account section based on auth state
+  const accountSection = document.getElementById('wizard-account-section');
+  const loggedInSection = document.getElementById('wizard-logged-in-section');
+  if (state.accessToken) {
+    if (accountSection) accountSection.style.display = 'none';
+    if (loggedInSection) loggedInSection.style.display = 'block';
+    if (loggedInSection && state.user) loggedInSection.textContent = `✓ Signed in as ${state.user.email}`;
+  } else {
+    if (accountSection) accountSection.style.display = 'block';
+    if (loggedInSection) loggedInSection.style.display = 'none';
+  }
+  const errEl = document.getElementById('wizard-auth-error');
+  if (errEl) errEl.style.display = 'none';
+}
+
+async function wizardNext(from) {
+  if (from === 1) {
+    wizardData.description = document.getElementById('business-idea')?.value?.trim() || '';
+    if (!wizardData.description) { showToast('Please describe your business idea first'); return; }
+    wizardData.name = wizardData.description.split(/[.\n]/)[0].slice(0, 60).trim() || 'My Business';
+
+    // If not logged in, register/login with provided credentials
+    if (!state.accessToken) {
+      const name     = document.getElementById('founder-name')?.value?.trim();
+      const email    = document.getElementById('founder-email')?.value?.trim();
+      const password = document.getElementById('founder-password')?.value;
+      const errEl    = document.getElementById('wizard-auth-error');
+
+      if (!name || !email || !password) {
+        showAuthError(errEl, 'Please fill in your name, email and password to continue');
+        return;
+      }
+      if (password.length < 8) {
+        showAuthError(errEl, 'Password must be at least 8 characters');
+        return;
+      }
+      try {
+        await doRegister(email, name, password);
+        updateNavForAuth(true);
+        connectWS();
+      } catch (err) {
+        if (err.message.includes('EMAIL_TAKEN') || err.message.includes('already')) {
+          // Already registered — try logging in
+          try {
+            await doLogin(email, password);
+            updateNavForAuth(true);
+            connectWS();
+          } catch {
+            showAuthError(errEl, 'That email exists but the password is wrong. Sign in first.');
+            return;
+          }
+        } else {
+          showAuthError(errEl, err.message);
+          return;
+        }
+      }
+    }
+    wizardData.founderEmail = state.user?.email;
+    wizardData.founderName  = state.user?.name;
+  }
+
+  if (from === 2) {
+    wizardData.type = document.getElementById('biz-type')?.value || 'other';
+    if (!wizardData.type || wizardData.type === '') { showToast('Please select a business type'); return; }
+    wizardData.targetCustomer = document.getElementById('target-customer')?.value?.trim() || 'Small businesses';
+    if (!wizardData.targetCustomer) { showToast('Please describe your target customer'); return; }
+  }
+
+  if (from === 3) {
+    wizardData.goal90d    = document.getElementById('goal-90d')?.value || 'Reach first paying customer';
+    wizardData.involvement = document.getElementById('involvement')?.value || 'autopilot';
+  }
+
+  const steps = document.querySelectorAll('.wizard-step');
+  document.getElementById('wizard-page-' + from).style.display = 'none';
+  document.getElementById('wizard-page-' + (from + 1)).style.display = 'block';
+  steps[from - 1].classList.remove('active'); steps[from - 1].classList.add('done');
+  steps[from].classList.add('active');
+}
+
+async function launchBusiness() {
+  const btn    = document.getElementById('launch-btn');
+  const errEl  = document.getElementById('launch-error');
+  btn.textContent = 'Launching...'; btn.disabled = true;
+  errEl.style.display = 'none';
+
+  try {
+    await POST('/businesses', {
+      name:           wizardData.name || 'My Business',
+      type:           wizardData.type || 'saas',
+      description:    wizardData.description || 'A new digital business',
+      targetCustomer: wizardData.targetCustomer || 'Small businesses',
+      goal90d:        wizardData.goal90d || 'Get first customers',
+      involvement:    wizardData.involvement || 'autopilot'
+    });
+    closeModal();
+    await loadBusinesses();
+    showDashboard(null);
+    showToast('🚀 Business launching — provisioning infrastructure...');
+  } catch (err) {
+    errEl.textContent = 'Launch failed: ' + err.message;
+    errEl.style.display = 'block';
+    btn.textContent = 'Try again →'; btn.disabled = false;
+  }
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
@@ -2384,98 +2755,50 @@ function connectWS() {
     state.ws.onopen = () => {
       state.wsReady = true;
       if (state.accessToken) state.ws.send(JSON.stringify({ type: 'auth', token: state.accessToken }));
-      if (state.activeBiz) state.ws.send(JSON.stringify({ type: 'subscribe', businessId: state.activeBiz.id }));
+      if (state.activeBiz)   state.ws.send(JSON.stringify({ type: 'subscribe', businessId: state.activeBiz.id }));
     };
-    state.ws.onmessage = (e) => {
-      try { handleWSEvent(JSON.parse(e.data)); } catch {}
-    };
-    state.ws.onclose = () => { state.wsReady = false; setTimeout(connectWS, 3000); };
-    state.ws.onerror = () => {};
+    state.ws.onmessage = (e) => { try { handleWSEvent(JSON.parse(e.data)); } catch {} };
+    state.ws.onclose   = () => { state.wsReady = false; setTimeout(connectWS, 3000); };
+    state.ws.onerror   = () => {};
   } catch {}
 }
 
 function handleWSEvent(msg) {
   switch (msg.event) {
-    case 'activity:new':
-      prependActivity(msg.activity);
-      break;
-    case 'task:complete':
-      showToast(`✓ ${msg.department}: ${msg.title}`);
-      loadTasks();
-      break;
-    case 'task:started':
-      showToast(`▶ Running: ${msg.title}`);
-      break;
-    case 'cycle:started':
-      updateTicker(`⚡ Agent cycle running now...`);
-      break;
+    case 'activity:new':       prependActivity(msg.activity); break;
+    case 'task:complete':      showToast(`✓ ${msg.department}: ${msg.title}`); loadTasks(); break;
+    case 'task:started':       showToast(`▶ Running: ${msg.title}`); break;
+    case 'cycle:started':      updateTicker('⚡ Agent cycle running now...'); break;
     case 'cycle:complete':
       updateTicker(`✓ Cycle complete — ${msg.tasksRun} tasks. ${msg.summary || ''}`);
-      showToast(`Agent cycle done: ${msg.tasksRun} tasks completed`);
+      showToast(`Agent done: ${msg.tasksRun} tasks completed`);
       loadDashboard();
       break;
-    case 'revenue:new':
-      showToast(`💰 Payment: $${(msg.amountCents/100).toFixed(2)}`);
-      break;
-    case 'message:new':
-      if (msg.role === 'assistant') appendChatMessage('ai', msg.content);
-      break;
-    case 'provisioning:step':
-      showToast(`Setting up: ${msg.step}...`);
-      break;
-    case 'provisioning:complete':
-      showToast('🚀 Business is live!');
-      loadBusinesses();
-      break;
+    case 'revenue:new':        showToast(`💰 Payment: $${(msg.amountCents/100).toFixed(2)}`); break;
+    case 'message:new':        if (msg.role === 'assistant') appendChatMessage('ai', msg.content); break;
+    case 'provisioning:step':  showToast(`Setting up: ${msg.step}...`); break;
+    case 'provisioning:complete': showToast('🚀 Business is live!'); loadBusinesses(); break;
   }
-}
-
-// ── Auth ──────────────────────────────────────────────────────────────────────
-async function checkAuth() {
-  if (!state.accessToken) return false;
-  try {
-    const d = await GET('/auth/me');
-    state.user = d.user;
-    return true;
-  } catch { return false; }
-}
-
-async function doLogin(email, password) {
-  const d = await POST('/auth/login', { email, password });
-  setTokens(d.accessToken, d.refreshToken);
-  state.user = d.user;
-  connectWS();
-}
-
-async function doRegister(email, name, password) {
-  const d = await POST('/auth/register', { email, name, password });
-  setTokens(d.accessToken, d.refreshToken);
-  state.user = d.user;
-  connectWS();
-}
-
-function logout() {
-  state.accessToken = null; state.refreshToken = null; state.user = null;
-  localStorage.removeItem('v_at'); localStorage.removeItem('v_rt');
-  state.ws?.close();
-  showLanding();
 }
 
 // ── Businesses ────────────────────────────────────────────────────────────────
 async function loadBusinesses() {
   try {
     const d = await GET('/businesses');
-    state.businesses = d.businesses;
+    state.businesses = d.businesses || [];
     renderSidebarBusinesses();
-    if (!state.activeBiz && d.businesses.length) {
-      setActiveBusiness(d.businesses[0]);
+    if (!state.activeBiz && state.businesses.length > 0) {
+      setActiveBusiness(state.businesses[0]);
+    } else if (state.activeBiz) {
+      // Refresh active biz data
+      const fresh = state.businesses.find(b => b.id === state.activeBiz.id);
+      if (fresh) setActiveBusiness(fresh);
     }
-  } catch (err) { console.error(err); }
+  } catch (err) { console.error('loadBusinesses:', err); }
 }
 
 function setActiveBusiness(biz) {
   state.activeBiz = biz;
-  // Subscribe to WS for live events
   if (state.wsReady) state.ws.send(JSON.stringify({ type: 'subscribe', businessId: biz.id }));
   document.querySelectorAll('.dash-co-name').forEach(el => el.textContent = biz.name);
   document.querySelectorAll('.dash-subtitle').forEach(el => {
@@ -2487,43 +2810,46 @@ function setActiveBusiness(biz) {
 async function loadDashboard() {
   if (!state.activeBiz) return;
   try {
-    const [metricsData, tasksData, activityData] = await Promise.all([
+    const [mData, tData, aData] = await Promise.all([
       GET(`/businesses/${state.activeBiz.id}/metrics`),
       GET(`/businesses/${state.activeBiz.id}/tasks`),
       GET(`/businesses/${state.activeBiz.id}/activity?limit=8`)
     ]);
-    renderMetrics(metricsData);
-    renderTasks(tasksData.tasks);
-    renderActivityFeed(activityData.activity);
-    renderRevChart(metricsData.daily);
-  } catch (err) { console.error('Dashboard load error:', err); }
+    renderMetrics(mData);
+    renderTasks(tData.tasks);
+    renderActivityFeed(aData.activity);
+    renderRevChart(mData.daily);
+  } catch (err) { console.error('loadDashboard:', err); }
 }
 
 async function loadTasks() {
   if (!state.activeBiz) return;
-  const d = await GET(`/businesses/${state.activeBiz.id}/tasks`);
-  renderTasks(d.tasks);
+  try {
+    const d = await GET(`/businesses/${state.activeBiz.id}/tasks`);
+    renderTasks(d.tasks);
+  } catch {}
 }
 
 // ── Render helpers ────────────────────────────────────────────────────────────
 function renderMetrics(data) {
   const biz = data.business || state.activeBiz;
-  setEl('metric-mrr',   `$${(biz.mrr_cents/100).toLocaleString('en-US',{minimumFractionDigits:0})}`);
-  setEl('metric-users', data.daily?.[0]?.active_users || '—');
-  setEl('metric-tasks', data.daily?.reduce((s,d)=>s+(d.tasks_done||0),0) || '—');
-  setEl('metric-leads', data.leads?.reduce((s,l)=>s+l.count,0) || '—');
+  if (!biz) return;
+  setEl('metric-mrr',   `$${(biz.mrr_cents/100).toLocaleString('en-US', {minimumFractionDigits:0})}`);
+  const day = data.daily?.[0];
+  setEl('metric-users', day?.active_users ?? '—');
+  setEl('metric-tasks', data.daily?.reduce((s,d) => s + (d.tasks_done||0), 0) ?? '—');
+  setEl('metric-leads', data.leads?.reduce((s,l) => s + l.count, 0) ?? '—');
 }
 
 function renderTasks(tasks) {
   const el = document.getElementById('tasks-list');
   if (!el) return;
-  const recent = (tasks || []).slice(0, 6);
-  el.innerHTML = recent.map(t => `
+  el.innerHTML = (tasks || []).slice(0, 6).map(t => `
     <div class="task-item ${t.status==='complete'?'done':''}">
       <div class="task-check">${t.status==='complete'?'✓':''}</div>
       <div>
         <div class="task-title">${esc(t.title)}</div>
-        <div class="task-meta">${t.status==='complete'?'Completed':'Queued'} · ${t.department}</div>
+        <div class="task-meta">${t.status==='running'?'Running now':t.status==='complete'?'Completed':'Queued'} · ${t.department}</div>
       </div>
       <span class="task-type type-${deptColor(t.department)}">${t.department.slice(0,3)}</span>
     </div>`).join('');
@@ -2548,7 +2874,6 @@ function prependActivity(a) {
   if (!el) return;
   const div = document.createElement('div');
   div.className = 'activity-item';
-  div.style.animation = 'fadeUp 0.3s ease';
   div.innerHTML = `
     <div class="activity-icon ${typeIcon(a.type)}">${typeEmoji(a.type)}</div>
     <div class="activity-content">
@@ -2565,17 +2890,11 @@ function renderRevChart(daily) {
   const vals = daily.slice().reverse().map(d => d.mrr_cents/100);
   const max = Math.max(...vals, 1);
   const pts = vals.map((v,i) => {
-    const x = 10 + (i / (vals.length-1)) * 380;
-    const y = 140 - (v/max)*130;
-    return `${x},${y}`;
-  }).join(' L ');
-  const fill = vals.map((v,i) => {
-    const x = 10 + (i / (vals.length-1)) * 380;
+    const x = 10 + (i/(vals.length-1))*380;
     const y = 140 - (v/max)*130;
     return `${x},${y}`;
   });
-  const areaD = `M ${fill[0]} L ${fill.slice(1).join(' L ')} L ${10+(vals.length-1)/(vals.length-1)*380},150 L 10,150 Z`;
-
+  const areaD = `M ${pts[0]} L ${pts.slice(1).join(' L ')} L ${10+(vals.length-1)/(vals.length-1)*380},150 L 10,150 Z`;
   document.querySelectorAll('.rev-chart svg').forEach(svg => {
     svg.innerHTML = `
       <defs><linearGradient id="rg" x1="0" y1="0" x2="0" y2="1">
@@ -2583,7 +2902,7 @@ function renderRevChart(daily) {
         <stop offset="100%" stop-color="#28ca41" stop-opacity="0"/>
       </linearGradient></defs>
       <path d="${areaD}" fill="url(#rg)"/>
-      <path d="M ${pts}" fill="none" stroke="#28ca41" stroke-width="1.5"/>`;
+      <path d="M ${pts.join(' L ')}" fill="none" stroke="#28ca41" stroke-width="1.5"/>`;
   });
 }
 
@@ -2591,13 +2910,12 @@ function renderSidebarBusinesses() {
   const el = document.getElementById('sidebar-businesses');
   if (!el) return;
   el.innerHTML = state.businesses.map(b => `
-    <a class="nav-item ${state.activeBiz?.id===b.id?'active-business':''}"
-       onclick="switchBusiness('${b.id}')"
-       style="${state.activeBiz?.id===b.id?'background:rgba(232,68,10,0.06);border-left:2px solid var(--accent);':''}padding:10px 20px;display:flex;align-items:center;gap:10px;font-size:12px;color:rgba(255,255,255,0.7)">
+    <a class="nav-item" onclick="switchBusiness('${b.id}')"
+       style="${state.activeBiz?.id===b.id?'background:rgba(232,68,10,0.06);border-left:2px solid var(--accent);':''} padding:10px 20px;display:flex;align-items:center;gap:10px;font-size:12px;color:rgba(255,255,255,0.7);cursor:pointer;">
       <span style="width:8px;height:8px;background:${b.status==='active'?'#28ca41':'#666'};border-radius:50%;flex-shrink:0;"></span>
       ${esc(b.name)}
     </a>`).join('') +
-    `<a class="nav-item" onclick="openModal(event)" style="color:rgba(232,68,10,0.7);font-size:12px;padding:10px 20px;">
+    `<a class="nav-item" onclick="openModal(event)" style="color:rgba(232,68,10,0.7);font-size:12px;padding:10px 20px;cursor:pointer;">
       <span class="nav-item-icon" style="font-size:12px">+</span> New business
     </a>`;
 }
@@ -2613,10 +2931,14 @@ let chatLoaded = false;
 async function loadChat() {
   if (!state.activeBiz || chatLoaded) return;
   chatLoaded = true;
-  const d = await GET(`/businesses/${state.activeBiz.id}/messages`);
-  const el = document.getElementById('chat-messages');
-  el.innerHTML = '';
-  (d.messages||[]).forEach(m => appendChatMessage(m.role === 'assistant' ? 'ai' : 'user', m.content));
+  try {
+    const d = await GET(`/businesses/${state.activeBiz.id}/messages`);
+    const el = document.getElementById('chat-messages');
+    if (el) {
+      el.innerHTML = '';
+      (d.messages||[]).forEach(m => appendChatMessage(m.role === 'assistant' ? 'ai' : 'user', m.content));
+    }
+  } catch {}
 }
 
 function appendChatMessage(role, content) {
@@ -2637,20 +2959,18 @@ async function sendChat() {
   input.value = '';
   appendChatMessage('user', msg);
 
-  // Optimistic typing indicator
   const typingId = 'typing-' + Date.now();
   const typing = document.createElement('div');
-  typing.id = typingId;
-  typing.className = 'chat-msg ai';
+  typing.id = typingId; typing.className = 'chat-msg ai';
   typing.innerHTML = `<div class="chat-avatar ai">V</div><div class="chat-bubble" style="color:rgba(255,255,255,0.3)">Thinking...</div>`;
-  document.getElementById('chat-messages').appendChild(typing);
+  document.getElementById('chat-messages')?.appendChild(typing);
   document.getElementById('chat-messages').scrollTop = 99999;
 
   try {
     const d = await POST(`/businesses/${state.activeBiz.id}/messages`, { content: msg });
     document.getElementById(typingId)?.remove();
     appendChatMessage('ai', d.message.content);
-  } catch (err) {
+  } catch {
     document.getElementById(typingId)?.remove();
     appendChatMessage('ai', 'Sorry, I had trouble responding. Try again.');
   }
@@ -2660,19 +2980,16 @@ function chatKeyDown(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
 }
 
-// ── Agent run ─────────────────────────────────────────────────────────────────
+// ── Agent ─────────────────────────────────────────────────────────────────────
 async function runAgentNow() {
   if (!state.activeBiz) return;
   updateTicker('⚡ Starting agent cycle...');
   try {
     await POST(`/businesses/${state.activeBiz.id}/run`, {});
-    updateTicker('▶ Agent cycle running — you\'ll see live updates below as tasks complete');
-  } catch (err) {
-    updateTicker(`Error: ${err.message}`);
-  }
+    updateTicker('▶ Agent running — live updates appear as tasks complete');
+  } catch (err) { updateTicker(`Error: ${err.message}`); }
 }
 
-// ── Task creation ─────────────────────────────────────────────────────────────
 async function addTask() {
   if (!state.activeBiz) return;
   const title = prompt('What task should the agent do?');
@@ -2689,98 +3006,26 @@ async function addTask() {
   } catch (err) { showToast(`Error: ${err.message}`); }
 }
 
-// ── Wizard (business creation) ────────────────────────────────────────────────
-let wizardData = {};
-
-function resetWizard() {
-  wizardData = {};
-  for (let i = 1; i <= 4; i++) {
-    const p = document.getElementById('wizard-page-' + i);
-    if (p) p.style.display = i === 1 ? 'block' : 'none';
-  }
-  document.querySelectorAll('.wizard-step').forEach((s,i) => {
-    s.classList.remove('active','done');
-    if (i===0) s.classList.add('active');
-  });
-}
-
-function wizardNext(from) {
-  // Collect data from current page
-  if (from === 1) {
-    wizardData.description = document.getElementById('business-idea')?.value || '';
-    wizardData.name = wizardData.description.split(/[.\n]/)[0].slice(0,60).trim() || 'My Business';
-    const nameEl = document.getElementById('founder-name');
-    const emailEl = document.getElementById('founder-email');
-    if (nameEl?.value) wizardData.founderName = nameEl.value;
-    if (emailEl?.value) wizardData.founderEmail = emailEl.value;
-  }
-  if (from === 2) {
-    wizardData.type = document.getElementById('biz-type')?.value?.toLowerCase().split('/')[0].trim() || 'other';
-    if (wizardData.type === 'saas') wizardData.type = 'saas';
-    if (wizardData.type === 'agency') wizardData.type = 'agency';
-    if (wizardData.type === 'ecommerce') wizardData.type = 'ecommerce';
-    if (wizardData.type === 'content') wizardData.type = 'content';
-    if (!['saas','agency','ecommerce','content','marketplace','education'].includes(wizardData.type)) wizardData.type = 'other';
-    wizardData.targetCustomer = document.getElementById('target-customer')?.value || 'Small businesses';
-  }
-  if (from === 3) {
-    wizardData.goal90d = document.getElementById('goal-90d')?.value || 'Reach first paying customer';
-    wizardData.involvement = (document.getElementById('involvement')?.value || '').includes('full') ? 'autopilot' :
-                             (document.getElementById('involvement')?.value || '').includes('Review') ? 'review' : 'daily';
-  }
-
-  const steps = document.querySelectorAll('.wizard-step');
-  document.getElementById('wizard-page-' + from).style.display = 'none';
-  document.getElementById('wizard-page-' + (from + 1)).style.display = 'block';
-  steps[from-1].classList.remove('active'); steps[from-1].classList.add('done');
-  steps[from].classList.add('active');
-}
-
-async function launchBusiness() {
-  // If not logged in, register with wizard data
-  if (!state.accessToken) {
-    try {
-      if (wizardData.founderEmail && wizardData.founderName) {
-        await doRegister(wizardData.founderEmail, wizardData.founderName, 'changeme123');
-      } else {
-        showToast('Please fill in your name and email first');
-        return;
-      }
-    } catch (err) {
-      if (err.message.includes('EMAIL_TAKEN') || err.message.includes('registered')) {
-        try { await doLogin(wizardData.founderEmail, 'changeme123'); } catch {}
-      }
-    }
-  }
-
-  try {
-    await POST('/businesses', {
-      name: wizardData.name || 'My Business',
-      type: wizardData.type || 'saas',
-      description: wizardData.description || 'A new digital business',
-      targetCustomer: wizardData.targetCustomer || 'Small businesses',
-      goal90d: wizardData.goal90d || 'Get first customers',
-      involvement: wizardData.involvement || 'autopilot'
-    });
-    closeModal();
-    await loadBusinesses();
-    showDashboard(null);
-  } catch (err) {
-    alert('Launch error: ' + err.message);
-  }
-}
-
 // ── View switching ────────────────────────────────────────────────────────────
 async function showDashboard(e) {
   if (e) e.preventDefault();
+
+  const authed = await checkAuth();
+  if (!authed) {
+    // Not logged in — show auth modal instead of blank dashboard
+    openAuthModal('login');
+    return;
+  }
+
   document.getElementById('view-landing').classList.remove('active');
   document.getElementById('view-dashboard').classList.add('active');
+  updateNavForAuth(true);
+  connectWS();
+  await loadBusinesses();
 
-  // Check auth and load data
-  const authed = await checkAuth();
-  if (authed) {
-    connectWS();
-    await loadBusinesses();
+  // If user has no businesses, prompt to create one
+  if (state.businesses.length === 0) {
+    setTimeout(() => openModal(null), 600);
   }
 }
 
@@ -2789,21 +3034,6 @@ function showLanding() {
   document.getElementById('view-landing').classList.add('active');
 }
 
-function openModal(e) {
-  if (e) e.preventDefault();
-  document.getElementById('modal-overlay').classList.add('open');
-  resetWizard();
-}
-
-function closeModal() {
-  document.getElementById('modal-overlay').classList.remove('open');
-}
-
-document.getElementById('modal-overlay').addEventListener('click', function(e) {
-  if (e.target === this) closeModal();
-});
-
-// ── Dashboard navigation ──────────────────────────────────────────────────────
 function showPage(pageId, el) {
   document.querySelectorAll('.dash-page').forEach(p => p.classList.remove('active'));
   const page = document.getElementById('page-' + pageId);
@@ -2822,8 +3052,8 @@ function updateTicker(msg) { const el = document.getElementById('live-ticker-tex
 function deptColor(d) { return {engineering:'code',marketing:'mkt',operations:'ops',sales:'mkt',strategy:'code',finance:'ops'}[d]||'ops'; }
 function typeIcon(t) { return {deploy:'code',email_sent:'mail',lead:'chart',content:'chart',alert:'plan',research:'plan',code:'code'}[t]||'plan'; }
 function typeEmoji(t) { return {deploy:'⌥',email_sent:'◆',lead:'▲',content:'◆',alert:'⚑',research:'◎',code:'⌥',metrics:'▲'}[t]||'✦'; }
-function statusClass(t) { return t==='alert'?'status-running':t==='content'||t==='deploy'||t==='email_sent'?'status-done':'status-queued'; }
-function statusLabel(t) { return t==='alert'?'review':t==='content'||t==='deploy'||t==='email_sent'?'done':'info'; }
+function statusClass(t) { return t==='alert'?'status-running':['content','deploy','email_sent'].includes(t)?'status-done':'status-queued'; }
+function statusLabel(t) { return t==='alert'?'review':['content','deploy','email_sent'].includes(t)?'done':'info'; }
 function timeAgo(iso) {
   if (!iso) return 'unknown';
   const diff = (Date.now() - new Date(iso)) / 1000;
@@ -2839,7 +3069,7 @@ function showToast(msg) {
   if (!toast) {
     toast = document.createElement('div');
     toast.id = 'v-toast';
-    toast.style.cssText = 'position:fixed;bottom:32px;right:32px;z-index:9999;background:#0a0a0a;color:#e0ddd5;padding:14px 22px;border-radius:4px;font-size:13px;font-family:"DM Mono",monospace;border:1px solid rgba(255,255,255,0.12);max-width:360px;transition:all 0.3s;transform:translateY(8px);opacity:0';
+    toast.style.cssText = 'position:fixed;bottom:32px;right:32px;z-index:9999;background:#0a0a0a;color:#e0ddd5;padding:14px 22px;border-radius:4px;font-size:13px;font-family:"DM Mono",monospace;border:1px solid rgba(255,255,255,0.12);max-width:360px;transition:all 0.3s;transform:translateY(8px);opacity:0;pointer-events:none;';
     document.body.appendChild(toast);
   }
   toast.textContent = msg;
@@ -2848,21 +3078,33 @@ function showToast(msg) {
   _toastTimer = setTimeout(() => { toast.style.opacity='0'; toast.style.transform='translateY(8px)'; }, 3500);
 }
 
-// Wire metric card IDs (add to existing cards in overview page)
+// ── Click-outside to close modals ─────────────────────────────────────────────
+document.getElementById('auth-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeAuthModal();
+});
+document.getElementById('modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ── Wire up metric card IDs and activity feed on DOM ready ────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  // Tag metric values with IDs for dynamic updates
   const cards = document.querySelectorAll('.metric-card');
   const ids = ['metric-mrr','metric-users','metric-tasks','metric-leads'];
-  cards.forEach((c,i) => {
+  cards.forEach((c, i) => {
     const val = c.querySelector('.metric-card-value');
     if (val && ids[i]) val.id = ids[i];
   });
-  // Tag activity feed container
-  const feed = document.querySelector('.panel-body .activity-item')?.parentElement;
+  const feed = document.querySelector('#page-overview .panel-body .activity-item')?.parentElement;
   if (feed) feed.id = 'activity-feed';
-  // Tag tasks list
   const tasksList = document.querySelector('#page-tasks .panel-body');
   if (tasksList) tasksList.id = 'tasks-list';
+
+  // Auto-restore session on page load
+  (async () => {
+    const authed = await checkAuth();
+    updateNavForAuth(authed);
+    if (authed) connectWS();
+  })();
 });
 </script>
 

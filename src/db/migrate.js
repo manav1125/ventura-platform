@@ -24,6 +24,7 @@ export function runMigrations() {
       name          TEXT NOT NULL,
       password_hash TEXT NOT NULL,
       plan          TEXT NOT NULL DEFAULT 'trial',  -- trial | builder | fleet
+      is_admin      INTEGER NOT NULL DEFAULT 0,
       stripe_customer_id TEXT,
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
