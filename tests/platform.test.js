@@ -66,7 +66,8 @@ describe('Auth', () => {
     assert.ok(body.accessToken, 'should return accessToken');
     assert.ok(body.refreshToken, 'should return refreshToken');
     assert.equal(body.user.email, 'test@ventura.test');
-    tokens = { access: body.accessToken, refresh: body.refreshToken };
+    assert.equal(body.user.email_verified, false);
+    tokens = { access: body.accessToken, refresh: body.refreshToken, userId: body.user.id };
   });
 
   it('rejects duplicate email', async () => {
@@ -99,6 +100,7 @@ describe('Auth', () => {
     const { status, body } = await GET('/api/auth/me', tokens.access);
     assert.equal(status, 200);
     assert.equal(body.user.email, 'test@ventura.test');
+    assert.equal(body.user.email_verified, false);
     assert.ok(!body.user.password_hash, 'should not leak password hash');
   });
 
@@ -118,6 +120,76 @@ describe('Auth', () => {
   it('blocks invalid tokens', async () => {
     const { status } = await GET('/api/businesses', 'invalid.token.here');
     assert.equal(status, 401);
+  });
+
+  it('resends a verification email for unverified founders', async () => {
+    const { status, body } = await POST('/api/auth/resend-verification', {}, tokens.access);
+    assert.equal(status, 200);
+    assert.equal(body.success, true);
+
+    const { getDb } = await import('../src/db/migrate.js');
+    const db = getDb();
+    const tokenRow = db.prepare('SELECT id FROM email_verification_tokens WHERE user_id = ?').get(tokens.userId);
+    assert.ok(tokenRow);
+  });
+
+  it('verifies the founder email with a verification token', async () => {
+    const { createEmailVerificationToken } = await import('../src/auth/auth.js');
+    const verifyToken = createEmailVerificationToken(tokens.userId);
+    const { status, body } = await POST('/api/auth/verify-email', { token: verifyToken });
+    assert.equal(status, 200);
+    assert.equal(body.success, true);
+    assert.equal(body.user.email_verified, true);
+
+    const me = await GET('/api/auth/me', tokens.access);
+    assert.equal(me.status, 200);
+    assert.equal(me.body.user.email_verified, true);
+  });
+
+  it('returns success for forgot-password without leaking account presence', async () => {
+    const existing = await POST('/api/auth/forgot-password', { email: 'test@ventura.test' });
+    const missing = await POST('/api/auth/forgot-password', { email: 'nobody@ventura.test' });
+    assert.equal(existing.status, 200);
+    assert.equal(missing.status, 200);
+    assert.equal(existing.body.success, true);
+    assert.equal(missing.body.success, true);
+
+    const { getDb } = await import('../src/db/migrate.js');
+    const db = getDb();
+    const tokenRow = db.prepare('SELECT id FROM password_reset_tokens WHERE user_id = ?').get(tokens.userId);
+    assert.ok(tokenRow);
+  });
+
+  it('resets password with a valid reset token', async () => {
+    const { createPasswordResetToken } = await import('../src/auth/auth.js');
+    const resetToken = createPasswordResetToken(tokens.userId);
+    const reset = await POST('/api/auth/reset-password', {
+      token: resetToken,
+      newPassword: 'new-password-123'
+    });
+    assert.equal(reset.status, 200);
+    assert.equal(reset.body.success, true);
+
+    const oldLogin = await POST('/api/auth/login', {
+      email: 'test@ventura.test',
+      password: 'password123'
+    });
+    assert.equal(oldLogin.status, 401);
+
+    const newLogin = await POST('/api/auth/login', {
+      email: 'test@ventura.test',
+      password: 'new-password-123'
+    });
+    assert.equal(newLogin.status, 200);
+    tokens.access = newLogin.body.accessToken;
+    tokens.refresh = newLogin.body.refreshToken;
+  });
+
+  it('rejects expired or invalid verification and reset tokens', async () => {
+    const badVerify = await POST('/api/auth/verify-email', { token: 'not-a-real-token' });
+    const badReset = await POST('/api/auth/reset-password', { token: 'not-a-real-token', newPassword: 'password1234' });
+    assert.equal(badVerify.status, 400);
+    assert.equal(badReset.status, 400);
   });
 });
 

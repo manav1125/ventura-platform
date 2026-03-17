@@ -74,6 +74,8 @@ export function runMigrations() {
       name          TEXT NOT NULL,
       password_hash TEXT NOT NULL,
       plan          TEXT NOT NULL DEFAULT 'trial',  -- trial | builder | fleet
+      email_verified INTEGER NOT NULL DEFAULT 0,
+      email_verified_at TEXT,
       is_admin      INTEGER NOT NULL DEFAULT 0,
       stripe_customer_id TEXT,
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
@@ -300,6 +302,32 @@ export function runMigrations() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
+
+    -- ─────────────────────────────────────────
+    -- PASSWORD RESET TOKENS
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id            TEXT PRIMARY KEY,
+      user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash    TEXT UNIQUE NOT NULL,
+      expires_at    TEXT NOT NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id);
+
+    -- ─────────────────────────────────────────
+    -- EMAIL VERIFICATION TOKENS
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS email_verification_tokens (
+      id            TEXT PRIMARY KEY,
+      user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash    TEXT UNIQUE NOT NULL,
+      expires_at    TEXT NOT NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user ON email_verification_tokens(user_id);
   `);
 
   // Existing SQLite tables do not gain new columns from CREATE TABLE IF NOT EXISTS,
@@ -309,6 +337,13 @@ export function runMigrations() {
   ensureColumn(db, 'businesses', 'revenue_share_pct', 'INTEGER NOT NULL DEFAULT -1');
   ensureColumn(db, 'businesses', 'tasks_included_per_month', 'INTEGER NOT NULL DEFAULT -1');
   ensureColumn(db, 'businesses', 'infrastructure_included', 'INTEGER NOT NULL DEFAULT -1');
+  ensureColumn(db, 'users', 'email_verified', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn(db, 'users', 'email_verified_at', 'TEXT');
+  db.prepare(`
+    UPDATE users
+    SET email_verified_at = COALESCE(email_verified_at, created_at)
+    WHERE email_verified = 1
+  `).run();
   backfillBusinessEconomics(db);
 
   console.log('✅ Database migrations complete');

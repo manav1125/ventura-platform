@@ -3,7 +3,7 @@
 // Also includes email templates for platform notifications
 
 import nodemailer from 'nodemailer';
-import { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, NODE_ENV } from '../config.js';
+import { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, NODE_ENV, FRONTEND_URL } from '../config.js';
 
 let transporter;
 
@@ -15,9 +15,9 @@ function getTransporter() {
     return transporter;
   }
 
-  if (NODE_ENV === 'development' && !SMTP_HOST) {
+  if (!SMTP_HOST) {
     transporter = nodemailer.createTransport({ jsonTransport: true });
-    console.log('📧 Email: using JSON transport (dev mode — emails not delivered)');
+    console.log(`📧 Email: using JSON transport (${NODE_ENV} mode — SMTP not configured, emails not delivered)`);
     return transporter;
   }
 
@@ -70,6 +70,25 @@ export async function sendPasswordReset(email, resetUrl) {
   });
 }
 
+export async function sendEmailVerification(email, name, verifyUrl) {
+  return sendEmail({
+    to: email,
+    subject: 'Verify your Ventura email',
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:40px 20px;color:#0a0a0a">
+        <h2 style="font-size:24px;margin-bottom:16px">Confirm your email</h2>
+        <p style="color:#6b6459;line-height:1.6;margin-bottom:24px">
+          ${name ? `Hi ${name},` : 'Hi,'} confirm this email address so Ventura can send founder alerts, approval requests, and account recovery links.
+        </p>
+        <a href="${verifyUrl}" style="background:#e8440a;color:white;padding:12px 24px;text-decoration:none;border-radius:2px;display:inline-block">
+          Verify email →
+        </a>
+        <p style="margin-top:24px;font-size:12px;color:#aaa">If you did not create this account, you can ignore this email.</p>
+      </div>
+    `
+  });
+}
+
 export async function sendCycleDigest(userEmail, userName, businesses) {
   const summaries = businesses.map(b => `
     <div style="padding:16px;background:#f5f2eb;border-radius:4px;margin-bottom:12px">
@@ -86,7 +105,7 @@ export async function sendCycleDigest(userEmail, userName, businesses) {
         <h2 style="font-size:22px;margin-bottom:6px">Morning, ${userName}.</h2>
         <p style="color:#6b6459;margin-bottom:24px">Here's what your agents did overnight:</p>
         ${summaries}
-        <a href="https://ventura.ai/dashboard" style="background:#e8440a;color:white;padding:12px 24px;text-decoration:none;border-radius:2px;display:inline-block;margin-top:8px">
+        <a href="${FRONTEND_URL}" style="background:#e8440a;color:white;padding:12px 24px;text-decoration:none;border-radius:2px;display:inline-block;margin-top:8px">
           Open dashboard →
         </a>
       </div>
@@ -105,7 +124,7 @@ export async function sendAlertEmail(userEmail, businessName, alertTitle, alertD
         </div>
         <h3 style="margin-bottom:8px">${alertTitle}</h3>
         <p style="color:#6b6459;line-height:1.6">${alertDetail}</p>
-        <a href="https://ventura.ai/dashboard" style="background:#0a0a0a;color:white;padding:12px 24px;text-decoration:none;border-radius:2px;display:inline-block;margin-top:20px">
+        <a href="${FRONTEND_URL}" style="background:#0a0a0a;color:white;padding:12px 24px;text-decoration:none;border-radius:2px;display:inline-block;margin-top:20px">
           Review in dashboard →
         </a>
       </div>

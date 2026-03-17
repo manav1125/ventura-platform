@@ -6,7 +6,9 @@ import { z } from 'zod';
 import { v4 as uuid } from 'uuid';
 import {
   registerUser, loginUser, issueTokens, rotateRefreshToken,
-  requireAuth, getUserById
+  requireAuth, getUserById, getUserByEmail,
+  createEmailVerificationToken, verifyEmailToken,
+  createPasswordResetToken, resetPasswordWithToken
 } from '../auth/auth.js';
 import { provisionBusiness } from '../provisioning/provision.js';
 import { runBusinessCycle } from '../agents/runner.js';
@@ -21,7 +23,8 @@ import { listIntegrations, syncBusinessIntegrations, upsertIntegration } from '.
 import { getPlanDefinition, resolveBusinessEconomics, serializePlan } from '../billing/plans.js';
 import { dispatchSpecialistTask } from '../business/specialists.js';
 import Anthropic from '@anthropic-ai/sdk';
-import { ANTHROPIC_API_KEY, AGENT_MODEL, STRIPE_SECRET_KEY } from '../config.js';
+import { ANTHROPIC_API_KEY, AGENT_MODEL, STRIPE_SECRET_KEY, FRONTEND_URL } from '../config.js';
+import { sendPasswordReset, sendEmailVerification } from '../integrations/email.js';
 
 const router = express.Router();
 
@@ -38,6 +41,19 @@ function validate(schema, data) {
 
 function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+}
+
+function serializeUser(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    plan: user.plan,
+    email_verified: !!user.email_verified,
+    email_verified_at: user.email_verified_at || null,
+    created_at: user.created_at
+  };
 }
 
 function getUserUsage(db, userId, plan) {
@@ -609,8 +625,15 @@ router.post('/auth/register', asyncHandler(async (req, res) => {
   });
   const body = validate(schema, req.body);
   const user = await registerUser(body);
+  const verificationToken = createEmailVerificationToken(user.id);
+  sendEmailVerification(user.email, user.name, `${FRONTEND_URL}#verify-email/${verificationToken}`)
+    .catch(err => console.error(`Verification email failed: ${err.message}`));
   const tokens = issueTokens(user);
-  res.status(201).json({ user: { id: user.id, email: user.email, name: user.name }, ...tokens });
+  res.status(201).json({
+    user: serializeUser(user),
+    verification: { required: true },
+    ...tokens
+  });
 }));
 
 // POST /api/auth/login
@@ -622,7 +645,7 @@ router.post('/auth/login', asyncHandler(async (req, res) => {
   const body = validate(schema, req.body);
   const user = await loginUser(body);
   const tokens = issueTokens(user);
-  const safeUser = { id: user.id, email: user.email, name: user.name, plan: user.plan };
+  const safeUser = serializeUser(user);
   res.json({ user: safeUser, ...tokens });
 }));
 
@@ -638,7 +661,64 @@ router.post('/auth/refresh', asyncHandler(async (req, res) => {
 router.get('/auth/me', requireAuth, asyncHandler(async (req, res) => {
   const user = getUserById(req.user.sub);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  res.json({ user });
+  res.json({ user: serializeUser(user) });
+}));
+
+// POST /api/auth/forgot-password
+router.post('/auth/forgot-password', asyncHandler(async (req, res) => {
+  const schema = z.object({
+    email: z.string().email()
+  });
+  const body = validate(schema, req.body);
+  const user = getUserByEmail(body.email);
+
+  if (user) {
+    const resetToken = createPasswordResetToken(user.id);
+    sendPasswordReset(user.email, `${FRONTEND_URL}#reset-password/${resetToken}`)
+      .catch(err => console.error(`Password reset email failed: ${err.message}`));
+  }
+
+  res.json({
+    success: true,
+    message: 'If that email exists, a password reset link is on the way.'
+  });
+}));
+
+// POST /api/auth/reset-password
+router.post('/auth/reset-password', asyncHandler(async (req, res) => {
+  const schema = z.object({
+    token: z.string().min(10),
+    newPassword: z.string().min(8)
+  });
+  const body = validate(schema, req.body);
+  await resetPasswordWithToken(body.token, body.newPassword);
+  res.json({ success: true, message: 'Password updated. You can sign in now.' });
+}));
+
+// POST /api/auth/resend-verification
+router.post('/auth/resend-verification', requireAuth, asyncHandler(async (req, res) => {
+  const user = getUserById(req.user.sub);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  if (user.email_verified) {
+    return res.json({ success: true, alreadyVerified: true });
+  }
+
+  const verificationToken = createEmailVerificationToken(user.id);
+  sendEmailVerification(user.email, user.name, `${FRONTEND_URL}#verify-email/${verificationToken}`)
+    .catch(err => console.error(`Resend verification failed: ${err.message}`));
+
+  res.json({ success: true });
+}));
+
+// POST /api/auth/verify-email
+router.post('/auth/verify-email', asyncHandler(async (req, res) => {
+  const schema = z.object({
+    token: z.string().min(10)
+  });
+  const body = validate(schema, req.body);
+  const user = verifyEmailToken(body.token);
+  res.json({ success: true, user: serializeUser(user) });
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1338,6 +1418,8 @@ router.use((err, req, res, next) => {
   if (err.message === 'EMAIL_TAKEN') return res.status(409).json({ error: 'Email already registered' });
   if (err.message === 'INVALID_CREDENTIALS') return res.status(401).json({ error: 'Invalid email or password' });
   if (err.message === 'INVALID_REFRESH_TOKEN') return res.status(401).json({ error: 'Invalid or expired refresh token' });
+  if (err.message === 'INVALID_RESET_TOKEN') return res.status(400).json({ error: 'This password reset link is invalid or expired' });
+  if (err.message === 'INVALID_VERIFICATION_TOKEN') return res.status(400).json({ error: 'This verification link is invalid or expired' });
   if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
 
   res.status(500).json({ error: err.message || 'Internal server error' });

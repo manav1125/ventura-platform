@@ -1999,6 +1999,8 @@
           Agent last ran 2h ago — Completed: deployed landing page v4, sent 40 cold emails, updated pricing — Next cycle in 21h 44m
         </div>
 
+        <div id="account-status-banner" style="display:none;"></div>
+
         <div class="metric-row">
           <div class="metric-card">
             <div class="metric-card-label">Monthly Revenue</div>
@@ -2432,6 +2434,9 @@
       <div class="modal-actions">
         <button class="btn-primary" id="login-btn" onclick="doLoginClick()" style="flex:1;text-align:center;">Sign in →</button>
       </div>
+      <p style="margin-top:12px;font-size:13px;color:var(--muted);text-align:center;">
+        <a href="#" onclick="switchToForgotPassword(event)" style="color:var(--muted);text-decoration:none;border-bottom:1px solid var(--border);">Forgot password?</a>
+      </p>
       <p style="margin-top:20px;font-size:13px;color:var(--muted);text-align:center;">
         No account? <a href="#" onclick="switchToSignup(event)" style="color:var(--accent);text-decoration:none;">Create one free →</a>
       </p>
@@ -2460,8 +2465,51 @@
       <div class="modal-actions">
         <button class="btn-primary" id="signup-btn" onclick="doSignupClick()" style="flex:1;text-align:center;">Create account →</button>
       </div>
+      <p style="margin-top:14px;font-size:13px;color:var(--muted);text-align:center;">
+        Ventura will send a verification email after signup so we can deliver founder alerts and recovery links.
+      </p>
       <p style="margin-top:20px;font-size:13px;color:var(--muted);text-align:center;">
         Already have an account? <a href="#" onclick="switchToLogin(event)" style="color:var(--accent);text-decoration:none;">Sign in →</a>
+      </p>
+    </div>
+
+    <!-- Forgot password view -->
+    <div id="auth-forgot" style="display:none">
+      <h2>Reset your<br><span>password</span></h2>
+      <p class="modal-sub">We’ll email you a secure reset link.</p>
+      <div class="form-field">
+        <label>Email address</label>
+        <input id="forgot-email" type="email" placeholder="you@email.com" onkeydown="if(event.key==='Enter')doForgotPasswordClick()"/>
+      </div>
+      <div id="forgot-error" style="display:none;color:var(--accent);font-size:13px;margin-bottom:16px;font-family:'DM Mono',monospace;"></div>
+      <div id="forgot-success" style="display:none;color:#28ca41;font-size:13px;margin-bottom:16px;font-family:'DM Mono',monospace;"></div>
+      <div class="modal-actions">
+        <button class="btn-primary" id="forgot-btn" onclick="doForgotPasswordClick()" style="flex:1;text-align:center;">Send reset link →</button>
+      </div>
+      <p style="margin-top:20px;font-size:13px;color:var(--muted);text-align:center;">
+        Remembered it? <a href="#" onclick="switchToLogin(event)" style="color:var(--accent);text-decoration:none;">Back to sign in →</a>
+      </p>
+    </div>
+
+    <!-- Reset password view -->
+    <div id="auth-reset" style="display:none">
+      <h2>Create a new<br><span>password</span></h2>
+      <p class="modal-sub">This password reset link can only be used once.</p>
+      <div class="form-field">
+        <label>New password</label>
+        <input id="reset-password" type="password" placeholder="At least 8 characters" onkeydown="if(event.key==='Enter')doResetPasswordClick()"/>
+      </div>
+      <div class="form-field">
+        <label>Confirm password</label>
+        <input id="reset-password-confirm" type="password" placeholder="Repeat your password" onkeydown="if(event.key==='Enter')doResetPasswordClick()"/>
+      </div>
+      <div id="reset-error" style="display:none;color:var(--accent);font-size:13px;margin-bottom:16px;font-family:'DM Mono',monospace;"></div>
+      <div id="reset-success" style="display:none;color:#28ca41;font-size:13px;margin-bottom:16px;font-family:'DM Mono',monospace;"></div>
+      <div class="modal-actions">
+        <button class="btn-primary" id="reset-btn" onclick="doResetPasswordClick()" style="flex:1;text-align:center;">Update password →</button>
+      </div>
+      <p style="margin-top:20px;font-size:13px;color:var(--muted);text-align:center;">
+        Need the sign-in screen instead? <a href="#" onclick="switchToLogin(event)" style="color:var(--accent);text-decoration:none;">Back to sign in →</a>
       </p>
     </div>
   </div>
@@ -2599,6 +2647,7 @@ let state = {
   operating:    null,
   portfolio:    null,
   billing:      null,
+  authResetToken: null,
   live:         null,
   liveSlug:     null,
   liveDetail:   null,
@@ -2647,8 +2696,25 @@ function storeTokens(at, rt) {
 }
 
 function clearAuth() {
-  state.accessToken = null; state.refreshToken = null; state.user = null;
+  state.accessToken = null; state.refreshToken = null; state.user = null; state.authResetToken = null;
   localStorage.removeItem('v_at'); localStorage.removeItem('v_rt');
+}
+
+function setAuthView(view) {
+  ['login', 'signup', 'forgot', 'reset'].forEach(name => {
+    const el = document.getElementById(`auth-${name}`);
+    if (el) el.style.display = name === view ? 'block' : 'none';
+  });
+}
+
+function clearAuthMessages() {
+  ['login-error', 'signup-error', 'forgot-error', 'forgot-success', 'reset-error', 'reset-success'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.textContent = '';
+      el.style.display = 'none';
+    }
+  });
 }
 
 // ── Auth: login / signup ──────────────────────────────────────────────────────
@@ -2686,16 +2752,8 @@ function logout() {
 // ── Auth modal ────────────────────────────────────────────────────────────────
 function openAuthModal(defaultView = 'login') {
   document.getElementById('auth-overlay').classList.add('open');
-  if (defaultView === 'signup') {
-    document.getElementById('auth-login').style.display = 'none';
-    document.getElementById('auth-signup').style.display = 'block';
-  } else {
-    document.getElementById('auth-login').style.display = 'block';
-    document.getElementById('auth-signup').style.display = 'none';
-  }
-  // Clear errors
-  document.getElementById('login-error').style.display = 'none';
-  document.getElementById('signup-error').style.display = 'none';
+  setAuthView(defaultView);
+  clearAuthMessages();
 }
 
 function closeAuthModal() {
@@ -2704,16 +2762,31 @@ function closeAuthModal() {
 
 function switchToSignup(e) {
   e.preventDefault();
-  document.getElementById('auth-login').style.display = 'none';
-  document.getElementById('auth-signup').style.display = 'block';
-  document.getElementById('signup-error').style.display = 'none';
+  setAuthView('signup');
+  clearAuthMessages();
 }
 
 function switchToLogin(e) {
+  if (e) e.preventDefault();
+  setAuthView('login');
+  clearAuthMessages();
+}
+
+function switchToForgotPassword(e) {
   e.preventDefault();
-  document.getElementById('auth-signup').style.display = 'none';
-  document.getElementById('auth-login').style.display = 'block';
-  document.getElementById('login-error').style.display = 'none';
+  setAuthView('forgot');
+  clearAuthMessages();
+  const loginEmail = document.getElementById('login-email')?.value?.trim();
+  const forgotEmail = document.getElementById('forgot-email');
+  if (forgotEmail && loginEmail) forgotEmail.value = loginEmail;
+}
+
+function switchToResetPassword(e, token = null) {
+  if (e) e.preventDefault();
+  if (token) state.authResetToken = token;
+  document.getElementById('auth-overlay').classList.add('open');
+  setAuthView('reset');
+  clearAuthMessages();
 }
 
 async function doLoginClick() {
@@ -2758,7 +2831,7 @@ async function doSignupClick() {
     connectWS();
     await loadBusinesses();
     showDashboard(null);
-    showToast(`Account created! Welcome, ${name.split(' ')[0]}.`);
+    showToast(`Account created! Verify ${email} when the email arrives.`);
     // If no businesses yet, prompt to launch one
     if (state.businesses.length === 0) {
       setTimeout(() => openModal(null), 1200);
@@ -2775,6 +2848,72 @@ async function demoLogin(e) {
   document.getElementById('login-email').value = 'demo@ventura.ai';
   document.getElementById('login-password').value = 'password123';
   await doLoginClick();
+}
+
+async function doForgotPasswordClick() {
+  const email = document.getElementById('forgot-email')?.value?.trim();
+  const errorEl = document.getElementById('forgot-error');
+  const successEl = document.getElementById('forgot-success');
+  const btn = document.getElementById('forgot-btn');
+  clearAuthMessages();
+
+  if (!email) {
+    showAuthError(errorEl, 'Enter your email to receive a reset link');
+    return;
+  }
+
+  btn.textContent = 'Sending...';
+  btn.disabled = true;
+  try {
+    await POST('/auth/forgot-password', { email });
+    successEl.textContent = 'If that email exists, a reset link is on the way.';
+    successEl.style.display = 'block';
+  } catch (err) {
+    showAuthError(errorEl, err.message || 'Could not start password reset');
+  } finally {
+    btn.textContent = 'Send reset link →';
+    btn.disabled = false;
+  }
+}
+
+async function doResetPasswordClick() {
+  const password = document.getElementById('reset-password')?.value || '';
+  const confirm = document.getElementById('reset-password-confirm')?.value || '';
+  const errorEl = document.getElementById('reset-error');
+  const successEl = document.getElementById('reset-success');
+  const btn = document.getElementById('reset-btn');
+  clearAuthMessages();
+
+  if (!state.authResetToken) {
+    showAuthError(errorEl, 'This reset link is missing or expired');
+    return;
+  }
+  if (password.length < 8) {
+    showAuthError(errorEl, 'Password must be at least 8 characters');
+    return;
+  }
+  if (password !== confirm) {
+    showAuthError(errorEl, 'Passwords do not match');
+    return;
+  }
+
+  btn.textContent = 'Updating...';
+  btn.disabled = true;
+  try {
+    await POST('/auth/reset-password', { token: state.authResetToken, newPassword: password });
+    successEl.textContent = 'Password updated. You can sign in now.';
+    successEl.style.display = 'block';
+    state.authResetToken = null;
+    document.getElementById('reset-password').value = '';
+    document.getElementById('reset-password-confirm').value = '';
+    setTimeout(() => switchToLogin(null), 900);
+    setRoute('');
+  } catch (err) {
+    showAuthError(errorEl, err.message || 'Could not reset password');
+  } finally {
+    btn.textContent = 'Update password →';
+    btn.disabled = false;
+  }
 }
 
 function showAuthError(el, msg) {
@@ -2795,6 +2934,56 @@ function updateNavForAuth(loggedIn) {
     const el = document.getElementById(id);
     if (el) el.style.display = 'inline-block';
   });
+}
+
+function renderAccountStatusBanner() {
+  const el = document.getElementById('account-status-banner');
+  if (!el) return;
+  if (!state.user || state.user.email_verified) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="margin:16px 0 18px;padding:14px 16px;background:rgba(200,168,75,0.08);border:1px solid rgba(200,168,75,0.16);border-radius:3px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--gold);margin-bottom:6px;">EMAIL VERIFICATION PENDING</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.78);line-height:1.6;">Verify <strong>${esc(state.user.email)}</strong> so Ventura can send approval alerts, recovery links, and founder digests reliably.</div>
+      </div>
+      <button class="icon-btn" onclick="resendVerificationEmail()">Resend link</button>
+    </div>
+  `;
+}
+
+async function resendVerificationEmail() {
+  try {
+    const result = await POST('/auth/resend-verification', {});
+    showToast(result.alreadyVerified ? 'Email already verified' : 'Verification email sent');
+    if (result.alreadyVerified) {
+      state.user.email_verified = true;
+      renderAccountStatusBanner();
+    }
+  } catch (err) {
+    showToast(`Could not resend verification: ${err.message}`);
+  }
+}
+
+async function consumeEmailVerification(token) {
+  try {
+    const data = await POST('/auth/verify-email', { token });
+    if (state.user && data.user && state.user.id === data.user.id) {
+      state.user = data.user;
+    }
+    showToast('Email verified');
+    setRoute('');
+    openAuthModal('login');
+  } catch (err) {
+    showToast(`Verification failed: ${err.message}`);
+    setRoute('');
+    openAuthModal('login');
+  }
 }
 
 // ── Wizard / launch modal ─────────────────────────────────────────────────────
@@ -3019,6 +3208,7 @@ async function loadDashboard() {
     state.operating = oData;
     state.portfolio = pData;
     state.billing = bData;
+    renderAccountStatusBanner();
     renderMetrics(mData, oData);
     renderOverviewTasks(tData.tasks);
     renderTasks(tData.tasks);
@@ -4222,6 +4412,7 @@ async function showDashboard(e) {
   showView('dashboard');
   setRoute('dashboard');
   updateNavForAuth(true);
+  renderAccountStatusBanner();
   connectWS();
   await loadBusinesses();
 
@@ -4250,6 +4441,17 @@ function showPage(pageId, el) {
 
 async function routeFromHash() {
   const hash = (location.hash || '').replace(/^#/, '');
+  if (hash.startsWith('verify-email/')) {
+    const token = decodeURIComponent(hash.split('/').slice(1).join('/'));
+    await consumeEmailVerification(token);
+    return;
+  }
+  if (hash.startsWith('reset-password/')) {
+    const token = decodeURIComponent(hash.split('/').slice(1).join('/'));
+    state.authResetToken = token;
+    switchToResetPassword(null, token);
+    return;
+  }
   if (hash === 'dashboard') {
     await showDashboard(null);
     return;
