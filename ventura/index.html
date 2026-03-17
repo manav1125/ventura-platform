@@ -3783,6 +3783,8 @@ function renderLiveBusinessDetail(data) {
   const approvals = data.recentApprovals || [];
   const pendingApprovals = approvals.filter(item => item.status === 'pending').length;
   const integrations = data.integrations || [];
+  const infrastructure = data.infrastructure || {};
+  const infrastructureAssets = infrastructure.assets || [];
   const activityRows = (data.recentActivity || []).map(item => `
     <div class="activity-item">
       <div class="activity-icon ${typeIcon(item.type)}">${typeEmoji(item.type)}</div>
@@ -3825,6 +3827,21 @@ function renderLiveBusinessDetail(data) {
       <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(item.status)};padding:4px 10px;background:${integrationBg(item.status)};border-radius:999px;white-space:nowrap;">${esc(item.status).toUpperCase()}</span>
     </div>
   `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No infrastructure mapped yet.</div>`;
+  const infrastructureRows = infrastructureAssets.length ? infrastructureAssets.map(item => `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:12px;">
+      <div>
+        <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(titleCase(item.kind))}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.55;">${
+          item.kind === 'domain'
+            ? esc(item.custom_domain || item.active_domain || 'Platform domain')
+            : item.kind === 'mailbox'
+              ? esc(item.address || 'Mailbox pending')
+              : `${esc(titleCase(item.provider || 'internal metrics'))}${item.site ? ` · ${esc(item.site)}` : ''}`
+        }</div>
+      </div>
+      <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(item.status)};padding:4px 10px;background:${integrationBg(item.status)};border-radius:999px;white-space:nowrap;">${esc(item.status).toUpperCase()}</span>
+    </div>
+  `).join('') : `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No infrastructure assets published yet.</div>`;
 
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:24px;flex-wrap:wrap;">
@@ -3870,7 +3887,22 @@ function renderLiveBusinessDetail(data) {
         </div>
         <div class="panel" style="margin:0;">
           <div class="panel-header"><span class="panel-title">Infrastructure footprint</span></div>
-          <div class="panel-body">${stackRows}</div>
+          <div class="panel-body">
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:16px;">
+              <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+                <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">ASSETS READY</div>
+                <div style="font-size:20px;color:#e0ddd5;">${infrastructure.summary?.connected_assets || 0}/${infrastructure.summary?.total_assets || 0}</div>
+              </div>
+              <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+                <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">PUBLIC DOMAIN</div>
+                <div style="font-size:20px;color:#e0ddd5;">${esc(infrastructureAssets.find(item => item.kind === 'domain')?.active_domain || biz.slug || 'pending')}</div>
+              </div>
+            </div>
+            <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:8px;">INFRASTRUCTURE ASSETS</div>
+            ${infrastructureRows}
+            <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin:16px 0 8px;">INTEGRATION REGISTRY</div>
+            ${stackRows}
+          </div>
         </div>
         <div class="panel" style="margin:0;">
           <div class="panel-header"><span class="panel-title">Approval audit trail</span></div>
@@ -4150,6 +4182,9 @@ function renderSettings(data, operating = null, billing = null) {
   const infraEl = document.getElementById('settings-infrastructure');
   if (infraEl) {
     const integrations = data.integrations || [];
+    const infrastructure = operating?.infrastructure || data.infrastructure || {};
+    const infrastructureAssets = infrastructure.assets || [];
+    const readiness = infrastructure.readiness || {};
     const stripeIntegration = integrations.find(i => i.kind === 'stripe') || null;
     const stripeConfig = {
       ...((operating?.billing?.stripe) || {}),
@@ -4161,6 +4196,29 @@ function renderSettings(data, operating = null, billing = null) {
     const twitterOauth = twitter.oauth || {};
     const linkedinOauth = linkedin.oauth || {};
     const linkedinOrganizations = Array.isArray(linkedin.organizations) ? linkedin.organizations : [];
+    const domainAsset = infrastructureAssets.find(asset => asset.kind === 'domain') || { status: 'connected', config: {}, checks: {} };
+    const mailboxAsset = infrastructureAssets.find(asset => asset.kind === 'mailbox') || { status: 'preview', config: {}, checks: {} };
+    const analyticsAsset = infrastructureAssets.find(asset => asset.kind === 'analytics') || { status: 'pending', config: {}, checks: {} };
+    const providerRows = (readiness.providers || []).map(item => `
+      <div style="padding:14px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+          <div>
+            <div style="font-size:13px;color:#e0ddd5;">${esc(item.label)}</div>
+            <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-top:5px;">${item.configured ? 'configured' : 'missing setup'}</div>
+          </div>
+          <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(item.status)};padding:4px 10px;background:${integrationBg(item.status)};border-radius:999px;white-space:nowrap;">${esc(item.status).toUpperCase()}</span>
+        </div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.58);line-height:1.55;">${esc(item.summary || '')}</div>
+        ${item.missing?.length ? `<div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);">Missing: ${esc(item.missing.join(', '))}</div>` : ''}
+      </div>
+    `).join('');
+    const domainDnsRows = Array.isArray(domainAsset.config?.dns_records) ? domainAsset.config.dns_records.map(record => `
+      <div style="padding:12px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">${esc(record.type)} · ${esc(record.host)}</div>
+        <div style="font-size:13px;color:#e0ddd5;">${esc(record.value)}</div>
+        ${record.reason ? `<div style="font-size:11px;color:rgba(255,255,255,0.38);line-height:1.5;margin-top:8px;">${esc(record.reason)}</div>` : ''}
+      </div>
+    `).join('') : '';
     const stackRows = integrations
       .filter(i => !['stripe', 'social'].includes(i.kind))
       .map(i => `
@@ -4180,9 +4238,155 @@ function renderSettings(data, operating = null, billing = null) {
         : stripeConfig.account_id
           ? `Connect account created${stripeConfig.requirements_due ? ` with ${stripeConfig.requirements_due} requirement${stripeConfig.requirements_due === 1 ? '' : 's'} still due.` : ', waiting for onboarding completion.'}`
           : 'No Connect account exists yet for this business. Ventura will create one as soon as you start onboarding.';
+    const domainSummary = domainAsset.config?.custom_domain
+      ? (domainAsset.status === 'connected'
+        ? `${domainAsset.config.custom_domain} is active for this business. Ventura will keep the platform subdomain as the rollback target.`
+        : `Ventura generated DNS records for ${domainAsset.config.custom_domain}. Add them at your registrar, then verify the domain here.`)
+      : `Ventura is currently serving this business from ${domainAsset.config?.active_domain || domainAsset.config?.platform_domain || 'the managed platform domain'}.`;
+    const mailboxSummary = mailboxAsset.checks?.smtp_configured
+      ? (mailboxAsset.checks?.last_test_status === 'success'
+        ? `SMTP is configured and the last mailbox test to ${mailboxAsset.checks?.last_test_target || mailboxAsset.config?.forwarding_address || mailboxAsset.config?.address || 'the configured inbox'} succeeded.`
+        : 'SMTP is configured. Send a mailbox test to confirm delivery and founder alerts.')
+      : 'Mailbox delivery is still in preview mode. Add SMTP credentials on Render to make verification, reset, and outreach emails deliver live.';
+    const analyticsSummary = analyticsAsset.config?.provider === 'internal_metrics'
+      ? 'Ventura internal metrics are live now. You can optionally add an external destination so founders can mirror data into their own analytics stack.'
+      : analyticsAsset.status === 'configured' || analyticsAsset.status === 'connected'
+        ? `${titleCase(analyticsAsset.config?.provider || 'analytics')} is configured for ${analyticsAsset.config?.site || biz.slug}. Run a test event to confirm the setup.`
+        : 'Pick an external analytics provider if you want Ventura to push data beyond the built-in metrics pipeline.';
 
     infraEl.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:16px;">
+        <div style="padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px;">
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:6px;">PROVIDER READINESS</div>
+              <div style="font-size:14px;color:#e0ddd5;line-height:1.6;">${(readiness.summary?.ready_providers || 0)}/${(readiness.summary?.total_providers || 0)} platform dependencies are configured. Ventura uses this checklist to decide whether it can run live billing, real email delivery, business-owned social posting, and automated deploys.</div>
+            </div>
+            <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor((readiness.summary?.next_steps || 0) ? 'action_required' : 'connected')};padding:4px 10px;background:${integrationBg((readiness.summary?.next_steps || 0) ? 'action_required' : 'connected')};border-radius:999px;white-space:nowrap;">${(readiness.summary?.next_steps || 0) ? 'ACTION NEEDED' : 'READY'}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:${readiness.next_steps?.length ? '14px' : '0'};">
+            ${providerRows || `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No provider diagnostics yet.</div>`}
+          </div>
+          ${readiness.next_steps?.length ? `
+            <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:8px;">NEXT STEPS</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+              ${readiness.next_steps.map(step => `<span class="tag">${esc(step)}</span>`).join('')}
+            </div>
+          ` : ''}
+        </div>
+
+        <div style="padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px;">
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:6px;">CUSTOM DOMAIN</div>
+              <div style="font-size:14px;color:#e0ddd5;line-height:1.6;">${esc(domainSummary)}</div>
+            </div>
+            <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(domainAsset.status || 'connected')};padding:4px 10px;background:${integrationBg(domainAsset.status || 'connected')};border-radius:999px;white-space:nowrap;">${esc((domainAsset.status || 'connected').toUpperCase())}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px;">
+            <div class="form-field" style="margin:0;">
+              <label style="color:rgba(255,255,255,0.3)">Custom domain</label>
+              <input id="settings-domain-custom" value="${esc(domainAsset.config?.custom_domain || '')}" placeholder="app.yourdomain.com" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+            </div>
+            <div class="form-field" style="margin:0;">
+              <label style="color:rgba(255,255,255,0.3)">DNS provider</label>
+              <input id="settings-domain-dns-provider" value="${esc(domainAsset.config?.dns_provider || '')}" placeholder="Cloudflare / Namecheap" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+            </div>
+            <div class="form-field" style="margin:0;">
+              <label style="color:rgba(255,255,255,0.3)">Notes</label>
+              <input id="settings-domain-notes" value="${esc(domainAsset.config?.notes || '')}" placeholder="Any registrar or DNS notes" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:${domainDnsRows ? '14px' : '0'};">
+            <button class="icon-btn" onclick="saveCustomDomain()">Save domain plan</button>
+            <button class="icon-btn" onclick="verifyCustomDomain(true)">${domainAsset.config?.custom_domain ? 'Mark DNS added + verify' : 'Verify current domain'}</button>
+          </div>
+          ${domainDnsRows ? `
+            <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:8px;">DNS RECORDS</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:10px;">
+              ${domainDnsRows}
+            </div>
+          ` : ''}
+          <div style="font-size:11px;color:rgba(255,255,255,0.38);font-family:'DM Mono',monospace;">${esc(domainAsset.checks?.last_checked_message || 'Ventura will keep the managed subdomain live until you switch to a custom domain.')}</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">
+          <div style="padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px;">
+              <div>
+                <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:6px;">MAILBOX</div>
+                <div style="font-size:14px;color:#e0ddd5;line-height:1.6;">${esc(mailboxSummary)}</div>
+              </div>
+              <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(mailboxAsset.status || 'preview')};padding:4px 10px;background:${integrationBg(mailboxAsset.status || 'preview')};border-radius:999px;white-space:nowrap;">${esc((mailboxAsset.status || 'preview').toUpperCase())}</span>
+            </div>
+            <div class="form-field" style="margin:0 0 10px;">
+              <label style="color:rgba(255,255,255,0.3)">Business mailbox</label>
+              <input value="${esc(mailboxAsset.config?.address || biz.email_address || '')}" disabled style="background:rgba(255,255,255,0.025);border-color:rgba(255,255,255,0.08);color:#8d867b;">
+            </div>
+            <div class="form-field" style="margin:0 0 10px;">
+              <label style="color:rgba(255,255,255,0.3)">Forwarding / test inbox</label>
+              <input id="settings-mailbox-forwarding" value="${esc(mailboxAsset.config?.forwarding_address || '')}" placeholder="founder@yourdomain.com" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+            </div>
+            <div class="form-field" style="margin:0 0 10px;">
+              <label style="color:rgba(255,255,255,0.3)">Reply-to</label>
+              <input id="settings-mailbox-reply-to" value="${esc(mailboxAsset.config?.reply_to || '')}" placeholder="support@yourdomain.com" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+            </div>
+            <div class="form-field" style="margin:0 0 10px;">
+              <label style="color:rgba(255,255,255,0.3)">Sender name</label>
+              <input id="settings-mailbox-sender-name" value="${esc(mailboxAsset.config?.sender_name || biz.name || '')}" placeholder="Nova Analytics" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+            </div>
+            <div class="form-field" style="margin:0 0 10px;">
+              <label style="color:rgba(255,255,255,0.3)">Test recipient</label>
+              <input id="settings-mailbox-test-recipient" value="${esc(mailboxAsset.checks?.last_test_target || mailboxAsset.config?.forwarding_address || state.user?.email || '')}" placeholder="you@company.com" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+              <button class="icon-btn" onclick="saveMailboxSettings()">Save mailbox</button>
+              <button class="icon-btn" onclick="sendMailboxTest()">Send test</button>
+            </div>
+            <div style="font-size:11px;color:rgba(255,255,255,0.38);font-family:'DM Mono',monospace;">${esc(mailboxAsset.checks?.last_test_note || '')}</div>
+          </div>
+
+          <div style="padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px;">
+              <div>
+                <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-bottom:6px;">ANALYTICS DESTINATION</div>
+                <div style="font-size:14px;color:#e0ddd5;line-height:1.6;">${esc(analyticsSummary)}</div>
+              </div>
+              <span style="font-size:11px;font-family:'DM Mono',monospace;color:${integrationColor(analyticsAsset.status || 'pending')};padding:4px 10px;background:${integrationBg(analyticsAsset.status || 'pending')};border-radius:999px;white-space:nowrap;">${esc((analyticsAsset.status || 'pending').toUpperCase())}</span>
+            </div>
+            <div class="form-field" style="margin:0 0 10px;">
+              <label style="color:rgba(255,255,255,0.3)">Provider</label>
+              <select id="settings-analytics-provider" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+                <option value="internal_metrics" ${analyticsAsset.config?.provider === 'internal_metrics' ? 'selected' : ''}>Internal metrics only</option>
+                <option value="plausible" ${analyticsAsset.config?.provider === 'plausible' ? 'selected' : ''}>Plausible</option>
+                <option value="posthog" ${analyticsAsset.config?.provider === 'posthog' ? 'selected' : ''}>PostHog</option>
+                <option value="ga4" ${analyticsAsset.config?.provider === 'ga4' ? 'selected' : ''}>Google Analytics 4</option>
+              </select>
+            </div>
+            <div class="form-field" style="margin:0 0 10px;">
+              <label style="color:rgba(255,255,255,0.3)">Tracked site</label>
+              <input id="settings-analytics-site" value="${esc(analyticsAsset.config?.site || domainAsset.config?.active_domain || biz.slug || '')}" placeholder="nova-analytics.co" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+            </div>
+            <div class="form-field" style="margin:0 0 10px;">
+              <label style="color:rgba(255,255,255,0.3)">Dashboard URL</label>
+              <input id="settings-analytics-dashboard-url" value="${esc(analyticsAsset.config?.dashboard_url || '')}" placeholder="https://plausible.io/nova-analytics.co" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+            </div>
+            <div class="form-field" style="margin:0 0 10px;">
+              <label style="color:rgba(255,255,255,0.3)">Measurement ID / site ID</label>
+              <input id="settings-analytics-measurement-id" value="${esc(analyticsAsset.config?.measurement_id || '')}" placeholder="G-XXXXXXX or site-id" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+            </div>
+            <div class="form-field" style="margin:0 0 10px;">
+              <label style="color:rgba(255,255,255,0.3)">Public key (optional)</label>
+              <input id="settings-analytics-public-key" value="${esc(analyticsAsset.config?.public_key || '')}" placeholder="phc_xxx / public token" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+              <button class="icon-btn" onclick="saveAnalyticsSettings()">Save analytics</button>
+              <button class="icon-btn" onclick="testAnalyticsIntegration()">Run test event</button>
+            </div>
+            <div style="font-size:11px;color:rgba(255,255,255,0.38);font-family:'DM Mono',monospace;">${esc(analyticsAsset.checks?.install_hint || '')}</div>
+          </div>
+        </div>
+
         <div style="padding:16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:12px;">
             <div>
@@ -4402,6 +4606,99 @@ async function syncIntegrations() {
     await loadDashboard();
   } catch (err) {
     showToast(`Sync failed: ${err.message}`);
+  }
+}
+
+async function saveCustomDomain() {
+  if (!state.activeBiz) return;
+  const customDomain = document.getElementById('settings-domain-custom')?.value?.trim() || '';
+  const dnsProvider = document.getElementById('settings-domain-dns-provider')?.value?.trim() || '';
+  const notes = document.getElementById('settings-domain-notes')?.value?.trim() || '';
+  try {
+    await PATCH(`/businesses/${state.activeBiz.id}/infrastructure/domain`, {
+      customDomain,
+      dnsProvider,
+      notes
+    });
+    showToast(customDomain ? 'Custom domain plan saved' : 'Ventura managed domain restored');
+    await loadBusinesses();
+    await loadDashboard();
+    activateDashboardPage('settings');
+  } catch (err) {
+    showToast(`Domain update failed: ${err.message}`);
+  }
+}
+
+async function verifyCustomDomain(dnsConfirmed = false) {
+  if (!state.activeBiz) return;
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/infrastructure/domain/verify`, { dnsConfirmed });
+    showToast(dnsConfirmed ? 'Domain verification updated' : 'Domain verification checked');
+    await loadBusinesses();
+    await loadDashboard();
+    activateDashboardPage('settings');
+  } catch (err) {
+    showToast(`Domain verification failed: ${err.message}`);
+  }
+}
+
+async function saveMailboxSettings() {
+  if (!state.activeBiz) return;
+  try {
+    await PATCH(`/businesses/${state.activeBiz.id}/infrastructure/mailbox`, {
+      forwardingAddress: document.getElementById('settings-mailbox-forwarding')?.value?.trim() || '',
+      replyTo: document.getElementById('settings-mailbox-reply-to')?.value?.trim() || '',
+      senderName: document.getElementById('settings-mailbox-sender-name')?.value?.trim() || ''
+    });
+    showToast('Mailbox settings saved');
+    await loadDashboard();
+    activateDashboardPage('settings');
+  } catch (err) {
+    showToast(`Mailbox update failed: ${err.message}`);
+  }
+}
+
+async function sendMailboxTest() {
+  if (!state.activeBiz) return;
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/infrastructure/mailbox/test`, {
+      recipient: document.getElementById('settings-mailbox-test-recipient')?.value?.trim() || ''
+    });
+    showToast('Mailbox test sent');
+    await loadDashboard();
+    activateDashboardPage('settings');
+  } catch (err) {
+    showToast(`Mailbox test failed: ${err.message}`);
+  }
+}
+
+async function saveAnalyticsSettings() {
+  if (!state.activeBiz) return;
+  try {
+    await PATCH(`/businesses/${state.activeBiz.id}/infrastructure/analytics`, {
+      provider: document.getElementById('settings-analytics-provider')?.value || 'internal_metrics',
+      site: document.getElementById('settings-analytics-site')?.value?.trim() || '',
+      dashboardUrl: document.getElementById('settings-analytics-dashboard-url')?.value?.trim() || '',
+      measurementId: document.getElementById('settings-analytics-measurement-id')?.value?.trim() || '',
+      publicKey: document.getElementById('settings-analytics-public-key')?.value?.trim() || ''
+    });
+    showToast('Analytics destination saved');
+    await loadDashboard();
+    activateDashboardPage('settings');
+  } catch (err) {
+    showToast(`Analytics update failed: ${err.message}`);
+  }
+}
+
+async function testAnalyticsIntegration() {
+  if (!state.activeBiz) return;
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/infrastructure/analytics/test`, {});
+    showToast('Analytics test event recorded');
+    await loadDashboard();
+    activateDashboardPage('settings');
+  } catch (err) {
+    showToast(`Analytics test failed: ${err.message}`);
   }
 }
 
@@ -4852,8 +5149,8 @@ function typeIcon(t) { return {deploy:'code',email_sent:'mail',lead:'chart',cont
 function typeEmoji(t) { return {deploy:'⌥',email_sent:'◆',lead:'▲',content:'◆',alert:'⚑',research:'◎',code:'⌥',metrics:'▲',system:'✦',revenue:'▲'}[t]||'✦'; }
 function statusClass(t) { return t==='alert'?'status-running':['content','deploy','email_sent','system','revenue'].includes(t)?'status-done':'status-queued'; }
 function statusLabel(t) { return t==='alert'?'review':['content','deploy','email_sent','system','revenue'].includes(t)?'done':'info'; }
-function integrationColor(status) { return ({ connected:'#28ca41', active:'#28ca41', mocked:'var(--gold)', pending:'var(--gold)', failed:'#ff6b6b' }[status] || '#9aa0aa'); }
-function integrationBg(status) { return ({ connected:'rgba(40,202,65,0.1)', active:'rgba(40,202,65,0.1)', mocked:'rgba(200,168,75,0.1)', pending:'rgba(200,168,75,0.1)', failed:'rgba(255,107,107,0.12)' }[status] || 'rgba(255,255,255,0.06)'); }
+function integrationColor(status) { return ({ connected:'#28ca41', configured:'#28ca41', active:'#28ca41', mocked:'var(--gold)', preview:'var(--gold)', verifying:'var(--gold)', pending:'var(--gold)', action_required:'#ff6b6b', failed:'#ff6b6b' }[status] || '#9aa0aa'); }
+function integrationBg(status) { return ({ connected:'rgba(40,202,65,0.1)', configured:'rgba(40,202,65,0.1)', active:'rgba(40,202,65,0.1)', mocked:'rgba(200,168,75,0.1)', preview:'rgba(200,168,75,0.1)', verifying:'rgba(200,168,75,0.1)', pending:'rgba(200,168,75,0.1)', action_required:'rgba(255,107,107,0.12)', failed:'rgba(255,107,107,0.12)' }[status] || 'rgba(255,255,255,0.06)'); }
 function approvalTone(status) { return ({ pending:'var(--gold)', executed:'#28ca41', approved:'#28ca41', rejected:'#9aa0aa', failed:'#ff6b6b' }[status] || '#9aa0aa'); }
 function approvalBg(status) { return ({ pending:'rgba(200,168,75,0.1)', executed:'rgba(40,202,65,0.1)', approved:'rgba(40,202,65,0.1)', rejected:'rgba(255,255,255,0.06)', failed:'rgba(255,107,107,0.12)' }[status] || 'rgba(255,255,255,0.06)'); }
 function formatApprovalResult(result) {

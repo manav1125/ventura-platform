@@ -42,6 +42,15 @@ import {
 } from '../integrations/social-oauth.js';
 import { getPlanDefinition, resolveBusinessEconomics, serializePlan } from '../billing/plans.js';
 import { dispatchSpecialistTask } from '../business/specialists.js';
+import {
+  getInfrastructureSnapshot,
+  testAnalyticsAsset,
+  testMailboxAsset,
+  updateAnalyticsAsset,
+  updateDomainAsset,
+  updateMailboxAsset,
+  verifyDomainAsset
+} from '../infrastructure/assets.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { ANTHROPIC_API_KEY, AGENT_MODEL, STRIPE_SECRET_KEY, FRONTEND_URL } from '../config.js';
 import { sendPasswordReset, sendEmailVerification } from '../integrations/email.js';
@@ -375,6 +384,7 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   const memory = normaliseMemory(business.agent_memory, business);
   const economics = resolveBusinessEconomics(business, userPlan);
   const integrations = getBusinessIntegrations(business);
+  const infrastructure = getInfrastructureSnapshot(business, integrations);
   const stripeIntegration = integrations.find(integration => integration.kind === 'stripe');
   const stripeConfig = stripeIntegration?.config || {};
   const engineeringTasks = tasks.filter(task => task.department === 'engineering');
@@ -527,7 +537,8 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       },
       trend,
       funnel: leadsByStatus
-    }
+    },
+    infrastructure
   };
 }
 
@@ -549,6 +560,35 @@ function sanitizePublicIntegration(kind, config = {}) {
   };
   if (kind === 'calendar') return { note: config.note || null };
   return {};
+}
+
+function sanitizePublicInfrastructureAsset(asset = {}) {
+  if (asset.kind === 'domain') {
+    return {
+      kind: 'domain',
+      status: asset.status,
+      active_domain: asset.config?.active_domain || null,
+      custom_domain: asset.config?.custom_domain || null,
+      using_platform_domain: !!asset.config?.using_platform_domain
+    };
+  }
+  if (asset.kind === 'mailbox') {
+    return {
+      kind: 'mailbox',
+      status: asset.status,
+      address: asset.config?.address || null,
+      delivery_mode: asset.config?.delivery_mode || null
+    };
+  }
+  if (asset.kind === 'analytics') {
+    return {
+      kind: 'analytics',
+      status: asset.status,
+      provider: asset.config?.provider || null,
+      site: asset.config?.site || null
+    };
+  }
+  return { kind: asset.kind, status: asset.status };
 }
 
 function serializePublicBusiness(row, fallbackPlan = 'trial') {
@@ -600,6 +640,7 @@ function getApprovalSummary(db, businessId) {
 function getPublicBusinessDetail(db, businessRow, fallbackPlan = 'trial') {
   const business = serializePublicBusiness(businessRow, fallbackPlan);
   const integrations = getBusinessIntegrations(businessRow);
+  const infrastructure = getInfrastructureSnapshot(businessRow, integrations);
 
   const recentActivity = db.prepare(`
     SELECT type, department, title, created_at
@@ -651,6 +692,13 @@ function getPublicBusinessDetail(db, businessRow, fallbackPlan = 'trial') {
 
   return {
     business,
+    infrastructure: {
+      summary: {
+        connected_assets: infrastructure.assets.filter(asset => ['connected', 'configured'].includes(asset.status)).length,
+        total_assets: infrastructure.assets.length
+      },
+      assets: infrastructure.assets.map(sanitizePublicInfrastructureAsset)
+    },
     integrations: integrations.map(integration => ({
       kind: integration.kind,
       provider: integration.provider,
@@ -994,13 +1042,14 @@ router.post('/businesses/:id/integrations/sync', requireAuth, asyncHandler(async
   if (!business) return res.status(404).json({ error: 'Not found' });
 
   const integrations = syncBusinessIntegrations(business);
+  const infrastructure = getInfrastructureSnapshot(business, integrations);
   await logActivity(req.params.id, {
     type: 'system',
     department: 'operations',
     title: 'Founder synced the integration registry',
     detail: { integrations: integrations.length }
   });
-  res.json({ integrations, syncedAt: new Date().toISOString() });
+  res.json({ integrations, infrastructure, syncedAt: new Date().toISOString() });
 }));
 
 // POST /api/businesses/:id/integrations/social/:provider/oauth/start
@@ -1351,6 +1400,7 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
   const approvals = listApprovals(req.params.id, { limit: 25 });
   let deployments = getDeployments(req.params.id, 10);
   const integrations = getBusinessIntegrations(hydratedBusiness);
+  const infrastructure = getInfrastructureSnapshot(hydratedBusiness, integrations);
   if (!deployments.length) {
     deployments = db.prepare(`
       SELECT id,
@@ -1378,11 +1428,190 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
     approvals,
     deployments,
     integrations,
+    infrastructure,
     specialists,
     usage,
     economics,
     plan: serializePlan(user.plan)
   });
+}));
+
+// GET /api/businesses/:id/infrastructure/readiness — domain, mailbox, analytics, provider checklist
+router.get('/businesses/:id/infrastructure/readiness', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const integrations = getBusinessIntegrations(business);
+  res.json(getInfrastructureSnapshot(business, integrations));
+}));
+
+// PATCH /api/businesses/:id/infrastructure/domain
+router.patch('/businesses/:id/infrastructure/domain', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const schema = z.object({
+    customDomain: z.union([z.string().min(3).max(255), z.literal('')]).optional(),
+    dnsProvider: z.string().max(120).optional(),
+    notes: z.string().max(400).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const asset = updateDomainAsset(business, body);
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'engineering',
+    title: asset?.config?.custom_domain
+      ? `Founder updated custom domain to ${asset.config.custom_domain}`
+      : 'Founder restored the Ventura managed domain',
+    detail: {
+      active_domain: asset?.config?.active_domain || null,
+      custom_domain: asset?.config?.custom_domain || null
+    }
+  });
+
+  res.json({ asset, infrastructure: getInfrastructureSnapshot({ ...business, web_url: asset?.config?.active_url || business.web_url }) });
+}));
+
+// POST /api/businesses/:id/infrastructure/domain/verify
+router.post('/businesses/:id/infrastructure/domain/verify', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const schema = z.object({
+    dnsConfirmed: z.boolean().optional()
+  });
+  const body = validate(schema, req.body || {});
+  const asset = verifyDomainAsset(business, { dnsConfirmed: !!body.dnsConfirmed });
+
+  await logActivity(req.params.id, {
+    type: asset.status === 'connected' ? 'deploy' : 'system',
+    department: 'engineering',
+    title: asset.status === 'connected'
+      ? `Custom domain verified: ${asset.config.active_domain}`
+      : `Custom domain verification started for ${asset.config.custom_domain}`,
+    detail: {
+      active_domain: asset.config.active_domain,
+      custom_domain: asset.config.custom_domain,
+      status: asset.status
+    }
+  });
+
+  res.json({ asset, infrastructure: getInfrastructureSnapshot({ ...business, web_url: asset.config.active_url }) });
+}));
+
+// PATCH /api/businesses/:id/infrastructure/mailbox
+router.patch('/businesses/:id/infrastructure/mailbox', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const schema = z.object({
+    forwardingAddress: z.union([z.string().email(), z.literal('')]).optional(),
+    replyTo: z.union([z.string().email(), z.literal('')]).optional(),
+    senderName: z.string().max(120).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const asset = updateMailboxAsset(business, body);
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'operations',
+    title: 'Founder updated mailbox routing',
+    detail: {
+      forwarding_address: asset?.config?.forwarding_address || null,
+      delivery_mode: asset?.config?.delivery_mode || null
+    }
+  });
+
+  res.json({ asset, infrastructure: getInfrastructureSnapshot(business) });
+}));
+
+// POST /api/businesses/:id/infrastructure/mailbox/test
+router.post('/businesses/:id/infrastructure/mailbox/test', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const schema = z.object({
+    recipient: z.union([z.string().email(), z.literal('')]).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const founder = getUserById(req.user.sub);
+  const result = await testMailboxAsset(business, {
+    recipient: body.recipient || founder?.email || '',
+    requesterName: founder?.name || ''
+  });
+
+  await logActivity(req.params.id, {
+    type: 'email_sent',
+    department: 'operations',
+    title: result.preview ? 'Mailbox test ran in preview mode' : 'Mailbox test email sent',
+    detail: {
+      target: result.target,
+      preview: result.preview,
+      message_id: result.messageId
+    }
+  });
+
+  res.json({
+    ...result,
+    infrastructure: getInfrastructureSnapshot(business)
+  });
+}));
+
+// PATCH /api/businesses/:id/infrastructure/analytics
+router.patch('/businesses/:id/infrastructure/analytics', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const schema = z.object({
+    provider: z.enum(['internal_metrics', 'plausible', 'posthog', 'ga4']).optional(),
+    site: z.string().max(255).optional(),
+    dashboardUrl: z.union([z.string().url(), z.literal('')]).optional(),
+    measurementId: z.string().max(255).optional(),
+    publicKey: z.string().max(255).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const asset = updateAnalyticsAsset(business, body);
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'marketing',
+    title: `Founder updated analytics destination to ${asset.config.provider}`,
+    detail: {
+      provider: asset.config.provider,
+      site: asset.config.site
+    }
+  });
+
+  res.json({ asset, infrastructure: getInfrastructureSnapshot(business) });
+}));
+
+// POST /api/businesses/:id/infrastructure/analytics/test
+router.post('/businesses/:id/infrastructure/analytics/test', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const asset = testAnalyticsAsset(business);
+
+  await logActivity(req.params.id, {
+    type: 'system',
+    department: 'marketing',
+    title: `Analytics test event recorded via ${asset.config.provider}`,
+    detail: {
+      provider: asset.config.provider,
+      site: asset.config.site,
+      event: asset.checks.last_event_name
+    }
+  });
+
+  res.json({ asset, infrastructure: getInfrastructureSnapshot(business) });
 }));
 
 // GET /api/portfolio/overview — multi-business operating snapshot for founder

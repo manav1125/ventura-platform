@@ -14,6 +14,7 @@ import { createVercelProject } from '../integrations/deploy.js';
 import { saveStripeIntegrationState, seedDefaultIntegrations, upsertIntegration } from '../integrations/registry.js';
 import { createConnectAccount, getConnectAccountSnapshot } from '../integrations/stripe.js';
 import { getPlanEconomics } from '../billing/plans.js';
+import { syncInfrastructureAssets } from '../infrastructure/assets.js';
 
 // ─── Slug generator ───────────────────────────────────────────────────────────
 
@@ -85,6 +86,13 @@ export async function provisionBusiness({ userId, name, type, description, targe
     await stepScaffoldWebsite(businessId, slug, name, type, description, userId);
     const stripeAccountId = await stepSetupStripe(businessId, userId);
     seedDefaultIntegrations({ businessId, slug, emailAddress, webUrl, stripeAccountId });
+    syncInfrastructureAssets({
+      id: businessId,
+      slug,
+      name,
+      web_url: webUrl,
+      email_address: emailAddress
+    });
     await stepActivate(businessId, userId);
     await stepSeedAgentMemory(businessId, { name, type, description, targetCustomer, goal90d, involvement, webUrl, emailAddress });
     await stepQueueInitialTasks(businessId, type);

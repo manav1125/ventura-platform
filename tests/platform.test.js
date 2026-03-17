@@ -703,7 +703,81 @@ describe('Control center', () => {
     assert.ok(body.analytics);
     assert.ok(body.memory);
     assert.ok(body.billing);
+    assert.ok(body.infrastructure);
+    assert.ok(Array.isArray(body.infrastructure.assets));
+    assert.ok(body.infrastructure.readiness);
     assert.ok(Array.isArray(body.analytics.trend));
+  });
+
+  it('returns infrastructure readiness details for the business', async () => {
+    const { status, body } = await GET(`/api/businesses/${bizId}/infrastructure/readiness`, tokens.access);
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(body.assets));
+    assert.ok(body.readiness);
+    assert.ok(Array.isArray(body.readiness.providers));
+    assert.ok(body.assets.find(asset => asset.kind === 'domain'));
+    assert.ok(body.assets.find(asset => asset.kind === 'mailbox'));
+    assert.ok(body.assets.find(asset => asset.kind === 'analytics'));
+  });
+
+  it('saves and verifies a custom domain plan', async () => {
+    const saved = await PATCH(`/api/businesses/${bizId}/infrastructure/domain`, {
+      customDomain: 'app.testsaas.dev',
+      dnsProvider: 'Cloudflare',
+      notes: 'Use orange-cloud proxy off'
+    }, tokens.access);
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.asset.config.custom_domain, 'app.testsaas.dev');
+    assert.equal(saved.body.asset.status, 'action_required');
+    assert.ok(Array.isArray(saved.body.asset.config.dns_records));
+    assert.ok(saved.body.asset.config.dns_records.length >= 1);
+
+    const verified = await POST(`/api/businesses/${bizId}/infrastructure/domain/verify`, {
+      dnsConfirmed: true
+    }, tokens.access);
+    assert.equal(verified.status, 200);
+    assert.equal(verified.body.asset.status, 'connected');
+    assert.equal(verified.body.asset.config.active_domain, 'app.testsaas.dev');
+
+    const business = await GET(`/api/businesses/${bizId}`, tokens.access);
+    assert.equal(business.status, 200);
+    assert.equal(business.body.business.web_url, 'https://app.testsaas.dev');
+  });
+
+  it('updates mailbox routing and sends a preview mailbox test', async () => {
+    const saved = await PATCH(`/api/businesses/${bizId}/infrastructure/mailbox`, {
+      forwardingAddress: 'founder@testsaas.dev',
+      replyTo: 'reply@testsaas.dev',
+      senderName: 'Test SaaS Ops'
+    }, tokens.access);
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.asset.config.forwarding_address, 'founder@testsaas.dev');
+    assert.equal(saved.body.asset.status, 'preview');
+
+    const tested = await POST(`/api/businesses/${bizId}/infrastructure/mailbox/test`, {
+      recipient: 'alerts@testsaas.dev'
+    }, tokens.access);
+    assert.equal(tested.status, 200);
+    assert.equal(tested.body.preview, true);
+    assert.equal(tested.body.target, 'alerts@testsaas.dev');
+    assert.equal(tested.body.asset.checks.last_test_status, 'success');
+  });
+
+  it('updates analytics settings and records a test event', async () => {
+    const saved = await PATCH(`/api/businesses/${bizId}/infrastructure/analytics`, {
+      provider: 'plausible',
+      site: 'app.testsaas.dev',
+      dashboardUrl: 'https://plausible.io/app.testsaas.dev',
+      measurementId: 'plausible-site-id'
+    }, tokens.access);
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.asset.config.provider, 'plausible');
+    assert.equal(saved.body.asset.status, 'configured');
+
+    const tested = await POST(`/api/businesses/${bizId}/infrastructure/analytics/test`, {}, tokens.access);
+    assert.equal(tested.status, 200);
+    assert.equal(tested.body.asset.checks.last_test_status, 'success');
+    assert.equal(tested.body.asset.checks.last_event_name, 'ventura_founder_test_event');
   });
 
   it('lets the founder update agent memory', async () => {
@@ -797,6 +871,8 @@ describe('Public live board', () => {
     assert.equal(status, 200);
     assert.ok(body.business);
     assert.equal(body.business.slug, 'test-saas');
+    assert.ok(body.infrastructure);
+    assert.ok(Array.isArray(body.infrastructure.assets));
     assert.ok(Array.isArray(body.recentActivity));
     assert.ok(Array.isArray(body.integrations));
     assert.ok(Array.isArray(body.recentApprovals));

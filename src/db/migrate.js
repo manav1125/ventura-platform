@@ -293,6 +293,25 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_integrations_business ON integrations(business_id);
 
     -- ─────────────────────────────────────────
+    -- INFRASTRUCTURE ASSETS
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS infrastructure_assets (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      kind          TEXT NOT NULL,
+      provider      TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      config        TEXT DEFAULT '{}',
+      checks        TEXT DEFAULT '{}',
+      last_checked_at TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(business_id, kind)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_infrastructure_assets_business ON infrastructure_assets(business_id);
+
+    -- ─────────────────────────────────────────
     -- REFRESH TOKENS
     -- ─────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS refresh_tokens (
