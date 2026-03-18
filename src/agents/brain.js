@@ -16,7 +16,7 @@ import { createArtifact, listArtifacts } from './artifacts.js';
 import { logTaskEvent } from './task-events.js';
 import { getWorkspacePromptContext } from '../integrations/workspace-sync.js';
 
-const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+let agentClient = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY }) : null;
 
 const AGENT_TOOLS = [
   {
@@ -156,7 +156,7 @@ export async function runTask(task, business, cycleId = null) {
 
   while (iterations < 12) {
     iterations++;
-    const response = await client.messages.create({
+    const response = await getAgentClient().messages.create({
       model: AGENT_MODEL,
       max_tokens: AGENT_MAX_TOKENS,
       system: buildSystemPrompt(business, memory, workflowState, workspace),
@@ -164,62 +164,86 @@ export async function runTask(task, business, cycleId = null) {
       messages
     });
 
-    messages.push({ role: 'assistant', content: response.content });
-    if (response.stop_reason === 'end_turn') break;
+    const assistantContent = Array.isArray(response.content) ? response.content : [];
+    const toolUses = assistantContent.filter(block => block.type === 'tool_use');
+    const assistantText = extractAssistantText(assistantContent);
 
-    if (response.stop_reason === 'tool_use') {
-      const toolResultContent = [];
-      for (const block of response.content) {
-        if (block.type !== 'tool_use') continue;
-        let result;
-        try {
-          logTaskEvent({
-            businessId: business.id,
-            taskId: task.id,
-            cycleId,
-            phase: 'tool_started',
-            title: `${block.name} started`,
-            detail: block.input?.description || block.input?.title || block.input?.query || block.input?.subject || 'Ventura is executing a tool step.',
-            metadata: {
-              tool: block.name
-            }
-          });
-          result = await executeTool(block.name, block.input, task, business, memory, pendingFiles, cycleId);
-          toolResults.push({ tool: block.name, result });
-          if (block.name === 'task_complete') {
-            finalSummary = block.input.summary;
-            nextSteps = block.input.next_steps || [];
-          }
-          logTaskEvent({
-            businessId: business.id,
-            taskId: task.id,
-            cycleId,
-            phase: 'tool_succeeded',
-            title: `${block.name} finished`,
-            detail: summarizeToolResult(block.name, result),
-            metadata: {
-              tool: block.name
-            }
-          });
-        } catch (err) {
-          result = { error: err.message };
-          logTaskEvent({
-            businessId: business.id,
-            taskId: task.id,
-            cycleId,
-            phase: 'tool_failed',
-            title: `${block.name} failed`,
-            detail: err.message,
-            metadata: {
-              tool: block.name
-            }
-          });
-        }
-        toolResultContent.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
+    messages.push({ role: 'assistant', content: assistantContent });
+
+    if (response.stop_reason === 'end_turn') {
+      if (!finalSummary && assistantText) {
+        finalSummary = assistantText;
       }
-      messages.push({ role: 'user', content: toolResultContent });
-      if (toolResults.some(r => r.tool === 'task_complete')) break;
+      break;
     }
+
+    if (!toolUses.length) {
+      if (response.stop_reason === 'pause_turn') continue;
+      throw new Error(`Agent stopped with "${response.stop_reason || 'unknown'}" before returning any tool calls.`);
+    }
+
+    const toolResultContent = [];
+    let sawTaskComplete = false;
+
+    for (const block of toolUses) {
+      let result;
+      let isError = false;
+
+      try {
+        logTaskEvent({
+          businessId: business.id,
+          taskId: task.id,
+          cycleId,
+          phase: 'tool_started',
+          title: `${block.name} started`,
+          detail: block.input?.description || block.input?.title || block.input?.query || block.input?.subject || 'Ventura is executing a tool step.',
+          metadata: {
+            tool: block.name
+          }
+        });
+        result = await executeTool(block.name, block.input, task, business, memory, pendingFiles, cycleId);
+        toolResults.push({ tool: block.name, result });
+        if (block.name === 'task_complete') {
+          sawTaskComplete = true;
+          finalSummary = block.input.summary;
+          nextSteps = block.input.next_steps || [];
+        }
+        logTaskEvent({
+          businessId: business.id,
+          taskId: task.id,
+          cycleId,
+          phase: 'tool_succeeded',
+          title: `${block.name} finished`,
+          detail: summarizeToolResult(block.name, result),
+          metadata: {
+            tool: block.name
+          }
+        });
+      } catch (err) {
+        isError = true;
+        result = { error: err.message };
+        logTaskEvent({
+          businessId: business.id,
+          taskId: task.id,
+          cycleId,
+          phase: 'tool_failed',
+          title: `${block.name} failed`,
+          detail: err.message,
+          metadata: {
+            tool: block.name
+          }
+        });
+      }
+
+      toolResultContent.push(formatToolResultBlock(block.id, result, { isError }));
+    }
+
+    if (!toolResultContent.length) {
+      throw new Error('Agent requested tool use but no tool results were produced.');
+    }
+
+    messages.push({ role: 'user', content: toolResultContent });
+    if (sawTaskComplete) break;
   }
 
   const executionResult = { summary: finalSummary, toolResults, nextSteps };
@@ -530,4 +554,49 @@ function splitThread(text, max = 270) {
   }
   if (cur.trim()) parts.push(cur.trim());
   return parts.length ? parts : [text.slice(0, max)];
+}
+
+function getAgentClient() {
+  if (!ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY is missing');
+  }
+  if (!agentClient) {
+    agentClient = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+  }
+  return agentClient;
+}
+
+function extractAssistantText(blocks = []) {
+  return blocks
+    .filter(block => block?.type === 'text' && typeof block.text === 'string')
+    .map(block => block.text.trim())
+    .filter(Boolean)
+    .join('\n\n')
+    .trim();
+}
+
+function formatToolResultBlock(toolUseId, result, { isError = false } = {}) {
+  const payload = typeof result === 'string'
+    ? result
+    : JSON.stringify(result ?? {});
+
+  return {
+    type: 'tool_result',
+    tool_use_id: toolUseId,
+    content: [
+      {
+        type: 'text',
+        text: payload
+      }
+    ],
+    ...(isError ? { is_error: true } : {})
+  };
+}
+
+export function __setAgentClientForTests(mockClient) {
+  agentClient = mockClient;
+}
+
+export function __resetAgentClientForTests() {
+  agentClient = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY }) : null;
 }

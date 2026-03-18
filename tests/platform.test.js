@@ -1344,6 +1344,119 @@ describe('Chat', () => {
   });
 });
 
+describe('Agent runtime', () => {
+
+  it('handles multi-step Anthropic tool loops without dropping tool results', async () => {
+    const { getDb } = await import('../src/db/migrate.js');
+    const { queueTask, getAllTasks } = await import('../src/agents/tasks.js');
+    const { listArtifacts } = await import('../src/agents/artifacts.js');
+    const { listTaskEvents } = await import('../src/agents/task-events.js');
+    const { runTask, __setAgentClientForTests, __resetAgentClientForTests } = await import('../src/agents/brain.js');
+
+    const db = getDb();
+    const business = db.prepare('SELECT * FROM businesses WHERE id = ?').get(bizId);
+    const taskId = await queueTask({
+      businessId: bizId,
+      business,
+      title: 'Build launch narrative from live research',
+      description: 'Research the market and turn it into a launch brief.',
+      department: 'strategy',
+      triggeredBy: 'agent'
+    });
+    const task = getAllTasks(bizId, 200).find(item => item.id === taskId);
+    assert.ok(task);
+
+    const calls = [];
+    __setAgentClientForTests({
+      messages: {
+        create: async (payload) => {
+          calls.push(JSON.parse(JSON.stringify(payload)));
+
+          if (calls.length === 1) {
+            return {
+              stop_reason: 'tool_use',
+              content: [
+                { type: 'text', text: 'I am starting with live research.' },
+                {
+                  type: 'tool_use',
+                  id: 'toolu_search',
+                  name: 'web_search',
+                  input: {
+                    query: 'best landing page conversion tactics for B2B SaaS fundraising products',
+                    purpose: 'market_research'
+                  }
+                }
+              ]
+            };
+          }
+
+          if (calls.length === 2) {
+            return {
+              stop_reason: 'tool_use',
+              content: [
+                { type: 'text', text: 'Research collected. I am turning it into an artifact and wrapping the task.' },
+                {
+                  type: 'tool_use',
+                  id: 'toolu_content',
+                  name: 'create_content',
+                  input: {
+                    type: 'report',
+                    title: 'Launch brief',
+                    content: 'Signal Match Studio should lead with warm investor introductions and faster fundraising outcomes.'
+                  }
+                },
+                {
+                  type: 'tool_use',
+                  id: 'toolu_complete',
+                  name: 'task_complete',
+                  input: {
+                    summary: 'Launch brief written from live research.',
+                    next_steps: ['Stage landing page copy', 'Create founder outreach list']
+                  }
+                }
+              ]
+            };
+          }
+
+          throw new Error(`Unexpected Anthropic mock call ${calls.length}`);
+        }
+      }
+    });
+
+    try {
+      const result = await runTask(task, business, null);
+      assert.equal(result.summary, 'Launch brief written from live research.');
+      assert.deepEqual(result.nextSteps, ['Stage landing page copy', 'Create founder outreach list']);
+    } finally {
+      __resetAgentClientForTests();
+    }
+
+    assert.equal(calls.length, 2);
+    const secondCallMessages = calls[1].messages;
+    const previousAssistant = secondCallMessages[secondCallMessages.length - 2];
+    const toolResultMessage = secondCallMessages[secondCallMessages.length - 1];
+
+    assert.equal(previousAssistant.role, 'assistant');
+    assert.ok(previousAssistant.content.some(block => block.type === 'tool_use' && block.id === 'toolu_search'));
+    assert.equal(toolResultMessage.role, 'user');
+    assert.ok(Array.isArray(toolResultMessage.content));
+    assert.equal(toolResultMessage.content[0].type, 'tool_result');
+    assert.equal(toolResultMessage.content[0].tool_use_id, 'toolu_search');
+    assert.ok(Array.isArray(toolResultMessage.content[0].content));
+    assert.equal(toolResultMessage.content[0].content[0].type, 'text');
+
+    const artifacts = listArtifacts(bizId, { taskId, limit: 10 });
+    assert.ok(artifacts.some(item => item.kind === 'research'));
+    assert.ok(artifacts.some(item => item.kind === 'content'));
+    assert.ok(artifacts.some(item => item.kind === 'task_summary'));
+
+    const events = listTaskEvents(bizId, { taskId, limit: 20 });
+    assert.ok(events.some(item => item.phase === 'tool_started' && item.title.includes('web_search')));
+    assert.ok(events.some(item => item.phase === 'tool_succeeded' && item.title.includes('create_content')));
+    assert.ok(events.some(item => item.phase === 'tool_succeeded' && item.title.includes('task_complete')));
+  });
+});
+
 // ─── BILLING ─────────────────────────────────────────────────────────────────
 describe('Billing', () => {
 

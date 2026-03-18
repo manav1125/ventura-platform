@@ -1587,20 +1587,20 @@
   <!-- STATS -->
   <div class="stats-bar">
     <div class="stat-item">
-      <div class="stat-val">730<span>+</span></div>
-      <div class="stat-label">Businesses launched</div>
+      <div class="stat-val" id="landing-stat-businesses">0</div>
+      <div class="stat-label">Active companies</div>
     </div>
     <div class="stat-item">
-      <div class="stat-val">$<span>490k</span></div>
-      <div class="stat-label">Combined ARR</div>
+      <div class="stat-val" id="landing-stat-mrr">$0</div>
+      <div class="stat-label">Tracked MRR</div>
     </div>
     <div class="stat-item">
-      <div class="stat-val">24<span>/7</span></div>
-      <div class="stat-label">Agent uptime</div>
+      <div class="stat-val" id="landing-stat-revenue">$0</div>
+      <div class="stat-label">Revenue tracked</div>
     </div>
     <div class="stat-item">
-      <div class="stat-val">0</div>
-      <div class="stat-label">Employees needed</div>
+      <div class="stat-val" id="landing-stat-approvals">0</div>
+      <div class="stat-label">Pending approvals</div>
     </div>
   </div>
 
@@ -2000,6 +2000,29 @@
         </div>
 
         <div id="account-status-banner" style="display:none;"></div>
+
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">What Ventura is doing now</span>
+            </div>
+            <div class="panel-body" id="runtime-now">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">
+                Ventura will describe the live cycle, current task, and next action here once the runtime loads.
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">Blockers + latest output</span>
+            </div>
+            <div class="panel-body" id="runtime-sidecar">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">
+                Founder approvals, recovery cases, and the latest artifact will appear here.
+              </div>
+            </div>
+          </div>
+        </div>
 
         <div class="metric-row">
           <div class="metric-card">
@@ -3222,6 +3245,7 @@ async function loadDashboard() {
     state.billing = bData;
     renderAccountStatusBanner();
     renderMetrics(mData, oData);
+    renderRuntimeOverview(cData, oData);
     renderOverviewTasks(tData.tasks);
     renderTasks(tData.tasks);
     renderActivityFeed(cData.recentActivity || aData.activity);
@@ -3248,6 +3272,7 @@ async function loadLiveBoard(preferredSlug = null) {
   try {
     const data = await GET('/live');
     state.live = data;
+    renderLandingPulse(data);
     renderLiveBoard(data);
     const slug = preferredSlug || state.liveSlug || data.businesses?.[0]?.slug || null;
     if (slug) {
@@ -3297,6 +3322,118 @@ function renderMetrics(data, operating) {
   setEl('metric-users-delta', formatSignedPct(summary.active_users_change_pct, 'user growth'));
   setEl('metric-tasks-delta', `${summary.tasks_30d || 0} tasks shipped in 30 days`);
   setEl('metric-leads-delta', `${marketing.qualified_leads || 0} qualified · ${marketing.won_leads || 0} won`);
+}
+
+function renderLandingPulse(data) {
+  const summary = data?.summary || {};
+  setEl('landing-stat-businesses', summary.active_businesses ?? 0);
+  setEl('landing-stat-mrr', formatMoney(summary.total_mrr_cents || 0));
+  setEl('landing-stat-revenue', formatMoney(summary.total_revenue_cents || 0));
+  setEl('landing-stat-approvals', summary.approvals_pending ?? 0);
+}
+
+function renderRuntimeOverview(controlData, operatingData) {
+  const runtime = controlData?.runtime || operatingData?.runtime || {};
+  const approvals = (controlData?.approvals || []).filter(item => item.status === 'pending');
+  const recoveries = controlData?.recoveryCases || [];
+  const artifacts = controlData?.artifacts || operatingData?.artifacts || [];
+  const primaryEl = document.getElementById('runtime-now');
+  const secondaryEl = document.getElementById('runtime-sidecar');
+  if (!primaryEl || !secondaryEl) return;
+
+  const now = runtime.now || {};
+  const currentTask = runtime.currentTask || null;
+  const nextTask = runtime.nextTask || null;
+  const cycleSummary = runtime.activeCycleSummary || {};
+  const latestEvent = runtime.latestEvent || null;
+  const latestFailure = runtime.latestFailure || null;
+  const latestArtifact = artifacts[0] || runtime.latestContent || runtime.latestPlan || null;
+  const primaryTone = now.status === 'attention'
+    ? 'rgba(255,107,107,0.08)'
+    : now.status === 'running'
+      ? 'rgba(40,202,65,0.05)'
+      : 'rgba(255,255,255,0.03)';
+  const primaryBorder = now.status === 'attention'
+    ? 'rgba(255,107,107,0.16)'
+    : now.status === 'running'
+      ? 'rgba(40,202,65,0.1)'
+      : 'rgba(255,255,255,0.06)';
+
+  primaryEl.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="padding:14px;background:${primaryTone};border:1px solid ${primaryBorder};border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:${now.status === 'attention' ? '#ff6b6b' : now.status === 'running' ? '#28ca41' : 'rgba(255,255,255,0.45)'};margin-bottom:6px;">${esc((now.status || 'idle').toUpperCase())}</div>
+        <div style="font-size:16px;color:#e0ddd5;line-height:1.45;">${esc(now.headline || 'Ventura is loading the runtime state.')}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.58);line-height:1.6;margin-top:8px;">${esc(now.detail || 'No cycle detail available yet.')}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;">
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">RUNNING</div>
+          <div style="font-size:22px;color:#e0ddd5;">${cycleSummary.running_tasks ?? runtime.summary?.running_tasks ?? 0}</div>
+        </div>
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">QUEUED</div>
+          <div style="font-size:22px;color:#e0ddd5;">${cycleSummary.queued_tasks ?? runtime.summary?.queued_tasks ?? 0}</div>
+        </div>
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">DONE</div>
+          <div style="font-size:22px;color:#e0ddd5;">${cycleSummary.completed_tasks ?? runtime.summary?.completed_tasks ?? 0}</div>
+        </div>
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">FAILED</div>
+          <div style="font-size:22px;color:#e0ddd5;">${cycleSummary.failed_tasks ?? runtime.summary?.failed_tasks ?? 0}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;">
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">CURRENT TASK</div>
+          <div style="font-size:13px;color:#e0ddd5;line-height:1.55;">${esc(currentTask?.title || 'Nothing is running right now.')}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:6px;">${esc(currentTask?.description || latestEvent?.title || 'Waiting for the next tool step or run.')}</div>
+        </div>
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">NEXT UP</div>
+          <div style="font-size:13px;color:#e0ddd5;line-height:1.55;">${esc(nextTask?.title || 'No queued follow-up yet.')}</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:6px;">${esc(nextTask?.description || 'Ventura will queue the next highest-leverage step here.')}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const blocker = approvals[0]
+    ? {
+        label: 'FOUNDER APPROVAL',
+        title: approvals[0].title,
+        detail: approvals[0].summary || 'Ventura is waiting for your approval before executing a high-stakes action.'
+      }
+    : recoveries[0]
+      ? {
+          label: 'RECOVERY CASE',
+          title: recoveries[0].title,
+          detail: recoveries[0].summary || 'Ventura recorded a failure that can be retried from the founder controls.'
+        }
+      : latestFailure
+        ? {
+            label: 'LATEST FAILURE',
+            title: latestFailure.title,
+            detail: latestFailure.detail || 'Ventura hit an execution issue in the latest cycle.'
+          }
+        : null;
+
+  secondaryEl.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="padding:14px;background:${blocker ? 'rgba(200,168,75,0.08)' : 'rgba(255,255,255,0.03)'};border:1px solid ${blocker ? 'rgba(200,168,75,0.14)' : 'rgba(255,255,255,0.06)'};border-radius:3px;min-height:132px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:${blocker ? 'var(--gold)' : 'rgba(255,255,255,0.4)'};margin-bottom:6px;">${esc(blocker?.label || 'NO BLOCKER')}</div>
+        <div style="font-size:14px;color:#e0ddd5;line-height:1.55;">${esc(blocker?.title || 'Ventura is clear to keep operating.')}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.58);line-height:1.6;margin-top:8px;">${esc(blocker?.detail || 'If something needs review, retry, or a missing credential, it will surface here.')}</div>
+      </div>
+      <div style="padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px;min-height:132px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;margin-bottom:6px;">LATEST OUTPUT</div>
+        <div style="font-size:14px;color:#e0ddd5;line-height:1.55;">${esc(latestArtifact?.title || 'No artifact persisted yet.')}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.58);line-height:1.6;margin-top:8px;">${esc(latestArtifact?.summary || latestArtifact?.content_preview || 'When Ventura creates a plan, report, release note, email, or deployment artifact, the newest one will show up here.')}</div>
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-top:8px;">${esc(latestArtifact ? `${titleCase(latestArtifact.kind || 'artifact')} · ${timeAgo(latestArtifact.created_at)}` : 'Awaiting first artifact')}</div>
+      </div>
+    </div>
+  `;
 }
 
 function describeTaskMeta(task) {
@@ -6010,6 +6147,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const authed = await checkAuth();
     updateNavForAuth(authed);
     if (authed) connectWS();
+    try {
+      const liveData = await GET('/live');
+      state.live = liveData;
+      renderLandingPulse(liveData);
+    } catch {}
     await routeFromHash();
   })();
 });

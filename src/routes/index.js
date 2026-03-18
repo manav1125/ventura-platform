@@ -275,11 +275,71 @@ function getRuntimeSnapshot(db, businessId, tasks = null, recentCycles = null) {
   const latestPlan = compactArtifact(getLatestArtifactByKind(businessId, 'launch_plan'));
   const latestSummary = compactArtifact(getLatestArtifactByKind(businessId, 'task_summary'));
   const latestContent = compactArtifact(getLatestArtifactByKind(businessId, 'content'));
+  const currentTask = runningTasks[0] || null;
+  const nextTask = queuedTasks[0] || null;
+  const latestEvent = taskEvents[0] || null;
+  const latestFailure = taskEvents.find(item => ['failed', 'tool_failed'].includes(item.phase)) || null;
+  const activeCycleTasks = activeCycle
+    ? hydratedTasks.filter(task => task.cycle_id === activeCycle.id)
+    : [];
+  const activeCycleSummary = {
+    total_tasks: activeCycleTasks.length,
+    queued_tasks: activeCycleTasks.filter(task => task.status === 'queued').length,
+    running_tasks: activeCycleTasks.filter(task => task.status === 'running').length,
+    completed_tasks: activeCycleTasks.filter(task => task.status === 'complete').length,
+    failed_tasks: activeCycleTasks.filter(task => task.status === 'failed').length
+  };
+  const now = activeCycle
+    ? {
+        status: 'running',
+        headline: currentTask
+          ? `Running ${humanDepartment(currentTask.department)}: ${currentTask.title}`
+          : `Running ${activeCycle.triggered_by || 'system'} cycle`,
+        detail: latestEvent?.detail
+          || currentTask?.description
+          || 'Ventura is progressing through the current cycle now.',
+        phase: latestEvent?.phase || null,
+        updated_at: latestEvent?.created_at || activeCycle.started_at || activeCycle.created_at || null
+      }
+    : latestFailure
+      ? {
+          status: 'attention',
+          headline: `Attention needed: ${latestFailure.title}`,
+          detail: latestFailure.detail || 'Ventura hit an execution issue and needs a retry or follow-up.',
+          phase: latestFailure.phase,
+          updated_at: latestFailure.created_at || null
+        }
+      : cycles[0]
+        ? {
+            status: 'idle',
+            headline: cycles[0].summary
+              ? 'Latest cycle finished'
+              : `Latest cycle ${cycles[0].status}`,
+            detail: cycles[0].summary
+              || latestSummary?.summary
+              || latestPlan?.summary
+              || 'Ventura is between cycles right now.',
+            phase: null,
+            updated_at: cycles[0].completed_at || cycles[0].created_at || null
+          }
+        : {
+            status: 'starting',
+            headline: 'Ventura is ready for the first run',
+            detail: latestPlan?.summary || 'No autonomous cycle has completed yet.',
+            phase: null,
+            updated_at: latestPlan?.created_at || null
+          };
 
   return {
     activeCycle,
     latestCycle: cycles[0] || null,
     cycles,
+    currentTask,
+    nextTask,
+    latestEvent,
+    latestFailure,
+    activeCycleSummary,
+    now,
     runningTasks,
     queuedTasks,
     completedTasks: completedTasks.slice(0, 8),
@@ -289,6 +349,13 @@ function getRuntimeSnapshot(db, businessId, tasks = null, recentCycles = null) {
     latestPlan,
     latestSummary,
     latestContent,
+    blockers: latestFailure ? [{
+      type: 'execution_failure',
+      title: latestFailure.title,
+      detail: latestFailure.detail,
+      phase: latestFailure.phase,
+      created_at: latestFailure.created_at
+    }] : [],
     summary: {
       total_tasks: hydratedTasks.length,
       queued_tasks: queuedTasks.length,
