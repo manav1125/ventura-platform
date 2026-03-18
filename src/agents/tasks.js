@@ -4,12 +4,14 @@
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db/migrate.js';
 import { emitToBusiness } from '../ws/websocket.js';
+import { logActivity } from './activity.js';
 import {
   composeTaskBrief,
   getWorkflowState,
   hydrateTask,
   normalizeWorkflowKey
 } from './execution-intelligence.js';
+import { logTaskEvent } from './task-events.js';
 
 export async function queueTask({
   businessId,
@@ -57,6 +59,20 @@ export async function queueTask({
     event: 'task:queued',
     task: { id, title, department, workflow_key: normalizedWorkflowKey, brief, status: 'queued', priority }
   });
+  logTaskEvent({
+    businessId,
+    taskId: id,
+    cycleId,
+    phase: 'queued',
+    title: `Task queued: ${title}`,
+    detail: description || `Queued in ${department}`,
+    metadata: {
+      department,
+      workflow_key: normalizedWorkflowKey,
+      priority,
+      triggered_by: triggeredBy
+    }
+  });
 
   return id;
 }
@@ -89,7 +105,21 @@ export function startTask(taskId, cycleId) {
   `).run(started_at, cycleId, taskId);
 
   const task = db.prepare('SELECT * FROM tasks WHERE id=?').get(taskId);
-  if (task) emitToBusiness(task.business_id, { event: 'task:started', taskId, title: task.title });
+  if (task) {
+    emitToBusiness(task.business_id, { event: 'task:started', taskId, title: task.title });
+    logTaskEvent({
+      businessId: task.business_id,
+      taskId,
+      cycleId,
+      phase: 'started',
+      title: `Started ${task.title}`,
+      detail: `Ventura is working on this ${task.department} task now.`,
+      metadata: {
+        department: task.department,
+        workflow_key: task.workflow_key || null
+      }
+    });
+  }
 }
 
 export function completeTask(taskId, result) {
@@ -100,16 +130,65 @@ export function completeTask(taskId, result) {
   `).run(JSON.stringify(result || {}), completed_at, taskId);
 
   const task = db.prepare('SELECT * FROM tasks WHERE id=?').get(taskId);
-  if (task) emitToBusiness(task.business_id, {
-    event: 'task:complete',
-    taskId,
-    title: task.title,
-    department: task.department,
-    result
-  });
+  if (task) {
+    db.prepare(`
+      INSERT INTO metrics (id, business_id, date, tasks_done)
+      VALUES (?, ?, date('now'), 1)
+      ON CONFLICT(business_id, date) DO UPDATE SET tasks_done = tasks_done + 1
+    `).run(`task-metric-${Date.now()}`, task.business_id);
+
+    emitToBusiness(task.business_id, {
+      event: 'task:complete',
+      taskId,
+      title: task.title,
+      department: task.department,
+      result
+    });
+    logTaskEvent({
+      businessId: task.business_id,
+      taskId,
+      cycleId: task.cycle_id,
+      phase: 'completed',
+      title: `Completed ${task.title}`,
+      detail: result?.summary || 'Task finished successfully.',
+      metadata: {
+        department: task.department,
+        next_steps: result?.nextSteps || result?.next_steps || []
+      }
+    });
+    logActivity(task.business_id, {
+      type: 'task_complete',
+      department: task.department,
+      title: task.title,
+      detail: {
+        summary: result?.summary || null,
+        taskId
+      }
+    }).catch(() => {});
+  }
 }
 
 export function failTask(taskId, error) {
   const db = getDb();
   db.prepare(`UPDATE tasks SET status='failed', error=? WHERE id=?`).run(error, taskId);
+  const task = db.prepare('SELECT * FROM tasks WHERE id=?').get(taskId);
+  if (task) {
+    logTaskEvent({
+      businessId: task.business_id,
+      taskId,
+      cycleId: task.cycle_id,
+      phase: 'failed',
+      title: `Failed ${task.title}`,
+      detail: error,
+      metadata: {
+        department: task.department
+      }
+    });
+    logActivity(task.business_id, {
+      type: 'alert',
+      department: task.department,
+      title: `Task failed: ${task.title}`,
+      detail: { error, taskId }
+    }).catch(() => {});
+  }
 }

@@ -262,6 +262,51 @@ export function runMigrations() {
     );
 
     -- ─────────────────────────────────────────
+    -- ARTIFACTS (plans, outputs, site files)
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS artifacts (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      task_id       TEXT REFERENCES tasks(id),
+      cycle_id      TEXT REFERENCES agent_cycles(id),
+      department    TEXT,
+      kind          TEXT NOT NULL, -- launch_plan | task_summary | content | email | social_post | research | site_file
+      title         TEXT NOT NULL,
+      summary       TEXT,
+      path          TEXT,
+      content       TEXT,
+      content_type  TEXT NOT NULL DEFAULT 'text/markdown',
+      status        TEXT NOT NULL DEFAULT 'published', -- draft | published | superseded | archived
+      metadata      TEXT DEFAULT '{}',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_artifacts_business ON artifacts(business_id);
+    CREATE INDEX IF NOT EXISTS idx_artifacts_task ON artifacts(task_id);
+    CREATE INDEX IF NOT EXISTS idx_artifacts_kind ON artifacts(kind);
+    CREATE INDEX IF NOT EXISTS idx_artifacts_path ON artifacts(path);
+
+    -- ─────────────────────────────────────────
+    -- TASK EVENTS (live execution telemetry)
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS task_events (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      task_id       TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      cycle_id      TEXT REFERENCES agent_cycles(id),
+      phase         TEXT NOT NULL, -- queued | started | tool_started | tool_succeeded | tool_failed | completed | failed | note
+      title         TEXT NOT NULL,
+      detail        TEXT,
+      metadata      TEXT DEFAULT '{}',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_task_events_business ON task_events(business_id);
+    CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_events_cycle ON task_events(cycle_id);
+
+    -- ─────────────────────────────────────────
     -- APPROVALS (founder control layer)
     -- ─────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS approvals (

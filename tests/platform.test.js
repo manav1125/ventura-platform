@@ -1309,6 +1309,33 @@ describe('Chat', () => {
     assert.ok(Array.isArray(body.messages));
   });
 
+  it('exposes persisted artifacts and task events for the founder runtime', async () => {
+    const artifactsRes = await GET(`/api/businesses/${bizId}/artifacts`, tokens.access);
+    assert.equal(artifactsRes.status, 200);
+    assert.ok(Array.isArray(artifactsRes.body.artifacts));
+    assert.ok(artifactsRes.body.artifacts.some(item => item.kind === 'launch_plan'));
+
+    const eventsRes = await GET(`/api/businesses/${bizId}/task-events`, tokens.access);
+    assert.equal(eventsRes.status, 200);
+    assert.ok(Array.isArray(eventsRes.body.taskEvents));
+    assert.ok(eventsRes.body.taskEvents.some(item => item.phase === 'queued'));
+  });
+
+  it('turns actionable founder chat into a queued Ventura task', async () => {
+    const { status, body } = await POST(
+      `/api/businesses/${bizId}/messages`,
+      { content: 'Build a sharper landing page hero focused on investor matching and queue it now.' },
+      tokens.access
+    );
+    assert.equal(status, 200);
+    assert.equal(body.message.role, 'assistant');
+    assert.ok(body.meta.queuedTaskId);
+
+    const tasksRes = await GET(`/api/businesses/${bizId}/tasks`, tokens.access);
+    assert.equal(tasksRes.status, 200);
+    assert.ok(tasksRes.body.tasks.some(task => task.id === body.meta.queuedTaskId));
+  });
+
   // Note: full chat test requires a real Anthropic API key
   // In CI with mock key, we just confirm the endpoint shape
   it('chat endpoint exists and requires auth', async () => {

@@ -14,6 +14,7 @@ import routes from './routes/index.js';
 import adminRoutes from './routes/admin.js';
 import billingRoutes from './routes/billing.js';
 import leadsRoutes from './routes/leads.js';
+import sitesRoutes from './routes/sites.js';
 
 // ─── App setup ────────────────────────────────────────────────────────────────
 
@@ -76,6 +77,7 @@ app.use('/api', routes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/businesses/:bizId/leads', leadsRoutes);
+app.use('/sites', sitesRoutes);
 
 // Root
 app.get('/', (req, res) => {

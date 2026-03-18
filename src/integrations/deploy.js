@@ -7,8 +7,9 @@
 // Falls back to a local "file store" in dev mode.
 
 import { getDb } from '../db/migrate.js';
-import { VERCEL_TOKEN, VERCEL_TEAM_ID, PLATFORM_DOMAIN, NODE_ENV } from '../config.js';
+import { BASE_URL, VERCEL_TOKEN, VERCEL_TEAM_ID, PLATFORM_DOMAIN } from '../config.js';
 import { logActivity } from '../agents/activity.js';
+import { createArtifact, publishSiteFiles } from '../agents/artifacts.js';
 
 const VERCEL_API = 'https://api.vercel.com';
 
@@ -16,8 +17,12 @@ const VERCEL_API = 'https://api.vercel.com';
 
 export async function createVercelProject(businessId, slug) {
   if (!VERCEL_TOKEN) {
-    console.log(`[Deploy] No Vercel token — using local deploy for ${slug}`);
-    return { projectId: `local_${slug}`, url: `https://${slug}.${PLATFORM_DOMAIN}` };
+    console.log(`[Deploy] No Vercel token — using Ventura hosted site for ${slug}`);
+    const url = `${BASE_URL.replace(/\/$/, '')}/sites/${slug}`;
+    const db = getDb();
+    db.prepare('UPDATE businesses SET web_url=? WHERE id=?')
+      .run(url, businessId);
+    return { projectId: `internal_${slug}`, url };
   }
 
   const headers = {
@@ -60,8 +65,8 @@ export async function deployFiles(businessId, files, versionNote) {
   const biz = db.prepare('SELECT * FROM businesses WHERE id=?').get(businessId);
   if (!biz) throw new Error('Business not found');
 
-  if (!VERCEL_TOKEN || NODE_ENV === 'development') {
-    return localDeploy(businessId, biz.slug, files, versionNote);
+  if (!VERCEL_TOKEN) {
+    return internalDeploy(businessId, biz.slug, files, versionNote);
   }
 
   const headers = {
@@ -96,6 +101,25 @@ export async function deployFiles(businessId, files, versionNote) {
     INSERT INTO deployments (id, business_id, version, description, files_changed, status)
     VALUES (?, ?, ?, ?, ?, 'live')
   `).run(`dep_${Date.now()}`, businessId, version, versionNote, files.length);
+  publishSiteFiles({
+    businessId,
+    taskId: null,
+    files,
+    summary: versionNote || `Published ${files.length} files`
+  });
+  createArtifact({
+    businessId,
+    department: 'engineering',
+    kind: 'deployment_release',
+    title: version,
+    summary: versionNote,
+    content: files.map(file => `- ${file.path}`).join('\n'),
+    metadata: {
+      files_changed: files.length,
+      provider: 'vercel',
+      live_url: biz.web_url
+    }
+  });
 
   await logActivity(businessId, {
     type: 'deploy',
@@ -107,37 +131,45 @@ export async function deployFiles(businessId, files, versionNote) {
   return { version, url: biz.web_url, deploymentId: deployment.id };
 }
 
-// ─── Local deploy (dev mode) ──────────────────────────────────────────────────
+// ─── Ventura-hosted deploy (fallback when no external deploy provider exists) ─
 
-async function localDeploy(businessId, slug, files, versionNote) {
-  const { mkdirSync, writeFileSync } = await import('fs');
-  const { join } = await import('path');
-
-  const dir = join('./sites', slug);
-  mkdirSync(dir, { recursive: true });
-
-  for (const file of files) {
-    const filePath = join(dir, file.path);
-    const fileDir = filePath.split('/').slice(0, -1).join('/');
-    if (fileDir) mkdirSync(fileDir, { recursive: true });
-    writeFileSync(filePath, file.content, 'utf-8');
-  }
-
+async function internalDeploy(businessId, slug, files, versionNote) {
   const version = `v${Date.now()}`;
   const db = getDb();
+  const liveUrl = `${BASE_URL.replace(/\/$/, '')}/sites/${slug}`;
+  db.prepare('UPDATE businesses SET web_url=? WHERE id=?').run(liveUrl, businessId);
   db.prepare(`
     INSERT INTO deployments (id, business_id, version, description, files_changed, status)
     VALUES (?, ?, ?, ?, ?, 'live')
   `).run(`dep_${Date.now()}`, businessId, version, versionNote, files.length);
 
-  console.log(`[Deploy] Local deploy for ${slug}: ${files.length} files → ./sites/${slug}/`);
+  publishSiteFiles({
+    businessId,
+    files,
+    summary: versionNote || `Published ${files.length} files`
+  });
+  createArtifact({
+    businessId,
+    department: 'engineering',
+    kind: 'deployment_release',
+    title: version,
+    summary: versionNote || 'Ventura internal deploy',
+    content: files.map(file => `- ${file.path}`).join('\n'),
+    metadata: {
+      files_changed: files.length,
+      provider: 'ventura-hosted',
+      live_url: liveUrl
+    }
+  });
+
+  console.log(`[Deploy] Ventura hosted deploy for ${slug}: ${files.length} files → ${liveUrl}`);
   await logActivity(businessId, {
     type: 'deploy',
     department: 'engineering',
     title: `Deployed ${version}: ${versionNote}`,
-    detail: { version, files: files.map(f => f.path), local: true }
+    detail: { version, files: files.map(f => f.path), hosted_by: 'ventura' }
   });
-  return { version, url: `http://localhost:8080/${slug}`, local: true };
+  return { version, url: liveUrl, internal: true };
 }
 
 // ─── Get deployment history ───────────────────────────────────────────────────

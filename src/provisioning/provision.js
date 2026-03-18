@@ -8,11 +8,13 @@ import { getDb } from '../db/migrate.js';
 import { FRONTEND_URL, PLATFORM_DOMAIN, STRIPE_SECRET_KEY } from '../config.js';
 import { emitToUser } from '../ws/websocket.js';
 import { logActivity } from '../agents/activity.js';
+import { createArtifact } from '../agents/artifacts.js';
 import { scheduleNextRun } from '../agents/cadence.js';
+import { generateLaunchPlan, renderLaunchSite } from '../agents/launch-planner.js';
 import { startBusinessCycleIfIdle } from '../agents/runner.js';
 import { queueTask } from '../agents/tasks.js';
 import { sendEmail } from '../integrations/email.js';
-import { createVercelProject } from '../integrations/deploy.js';
+import { createVercelProject, deployFiles } from '../integrations/deploy.js';
 import { saveStripeIntegrationState, seedDefaultIntegrations, upsertIntegration } from '../integrations/registry.js';
 import { createConnectAccount, getConnectAccountSnapshot } from '../integrations/stripe.js';
 import { getPlanEconomics } from '../billing/plans.js';
@@ -100,8 +102,20 @@ export async function provisionBusiness({ userId, name, type, description, targe
     scheduleNextRun(businessId, { mode: 'daily', preferredHourUtc: 2 });
     let activeBusiness = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
     await syncWorkspaceData({ business: activeBusiness, triggeredBy: 'provisioning' });
-    await stepSeedAgentMemory(businessId, { name, type, description, targetCustomer, goal90d, involvement, webUrl, emailAddress });
-    await stepQueueInitialTasks(businessId, type);
+    const launchPlan = await stepGenerateLaunchPlan({
+      businessId,
+      name,
+      type,
+      description,
+      targetCustomer,
+      goal90d,
+      involvement,
+      webUrl: activeBusiness.web_url || webUrl,
+      emailAddress
+    });
+    await stepSeedAgentMemory(businessId, { name, type, description, targetCustomer, goal90d, involvement, webUrl: activeBusiness.web_url || webUrl, emailAddress }, launchPlan);
+    await stepPublishInitialSite(businessId, launchPlan);
+    await stepQueueInitialTasks(businessId, type, launchPlan);
     activeBusiness = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
     const launchCycle = startBusinessCycleIfIdle(activeBusiness, 'launch');
     if (launchCycle.started) {
@@ -240,32 +254,95 @@ function notifyProvisioningComplete(businessId, userId) {
   emitToUser(userId, { event: 'provisioning:complete', businessId });
 }
 
-async function stepSeedAgentMemory(businessId, context) {
+async function stepSeedAgentMemory(businessId, context, launchPlan = null) {
   const db = getDb();
   const memory = {
     business: context,
     history: [],
     last_cycle: null,
-    learnings: [],
-    priorities: [],
+    learnings: launchPlan?.proof_points || [],
+    priorities: (launchPlan?.tasks || []).slice(0, 5).map(task => task.title),
     leads: [],
+    notes: launchPlan ? [
+      launchPlan.launch_summary,
+      launchPlan.positioning,
+      `CTA: ${launchPlan.cta}`
+    ].filter(Boolean) : [],
+    customer_insights: launchPlan?.proof_points || [],
+    launch_plan: launchPlan ? {
+      headline: launchPlan.headline,
+      subheadline: launchPlan.subheadline,
+      offer: launchPlan.offer
+    } : null
   };
   db.prepare(`UPDATE businesses SET agent_memory=? WHERE id=?`)
     .run(JSON.stringify(memory), businessId);
 }
 
-async function stepQueueInitialTasks(businessId, type) {
-  // Queue a set of bootstrapping tasks based on business type
+async function stepGenerateLaunchPlan(context) {
+  const plan = await generateLaunchPlan(context);
+  createArtifact({
+    businessId: context.businessId,
+    department: 'strategy',
+    kind: 'launch_plan',
+    title: `${context.name} launch plan`,
+    summary: plan.launch_summary,
+    content: [
+      `Headline: ${plan.headline}`,
+      `Subheadline: ${plan.subheadline}`,
+      `Offer: ${plan.offer}`,
+      '',
+      'Tasks:',
+      ...(plan.tasks || []).map(task => `- [${task.department}] ${task.title}: ${task.description}`)
+    ].join('\n'),
+    metadata: plan
+  });
+  createArtifact({
+    businessId: context.businessId,
+    department: 'marketing',
+    kind: 'content',
+    title: `${context.name} launch copy`,
+    summary: 'Initial landing-page copy generated during provisioning.',
+    content: [
+      `# ${plan.headline}`,
+      '',
+      plan.subheadline,
+      '',
+      `CTA: ${plan.cta}`,
+      '',
+      ...(plan.site_sections || []).map(section => `## ${section.heading}\n${section.body}`)
+    ].join('\n\n'),
+    metadata: {
+      source: 'launch_planner'
+    }
+  });
+  return plan;
+}
+
+async function stepPublishInitialSite(businessId, launchPlan) {
   const db = getDb();
   const business = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
-  const initialTasks = getBootstrapTasks(type);
+  if (!business || !launchPlan) return;
+
+  const html = renderLaunchSite(business, launchPlan);
+  await deployFiles(businessId, [{
+    path: 'index.html',
+    content: html
+  }], 'Initial Ventura launch site');
+}
+
+async function stepQueueInitialTasks(businessId, type, launchPlan = null) {
+  const db = getDb();
+  const business = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
+  const initialTasks = (launchPlan?.tasks?.length ? launchPlan.tasks : getBootstrapTasks(type))
+    .sort((a, b) => (a.priority || 5) - (b.priority || 5));
   for (const task of initialTasks) {
     await queueTask({
       businessId,
       business,
       ...task,
       triggeredBy: 'system',
-      priority: 1
+      priority: task.priority || 5
     });
   }
 }

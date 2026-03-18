@@ -12,8 +12,13 @@ import {
 } from '../auth/auth.js';
 import { provisionBusiness } from '../provisioning/provision.js';
 import { startBusinessCycleIfIdle } from '../agents/runner.js';
+import {
+  getLatestArtifactByKind,
+  listArtifacts
+} from '../agents/artifacts.js';
 import { ensureBusinessCadence, getCadenceSnapshot, scheduleNextRun } from '../agents/cadence.js';
 import { queueTask, getAllTasks, getQueuedTasks } from '../agents/tasks.js';
+import { listTaskEvents } from '../agents/task-events.js';
 import { listApprovals, decideApproval } from '../agents/approvals.js';
 import {
   getActionOperationById,
@@ -101,6 +106,19 @@ function asyncHandler(fn) {
 
 function cleanString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function relativeTime(value) {
+  if (!value) return 'recently';
+  const ts = new Date(value).getTime();
+  if (!Number.isFinite(ts)) return 'recently';
+  const diff = Date.now() - ts;
+  const minutes = Math.max(1, Math.round(diff / 60000));
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
 }
 
 function serializeUser(user) {
@@ -207,6 +225,159 @@ function getBusinessIntegrations(business) {
       }
     };
   });
+}
+
+function compactArtifact(artifact) {
+  if (!artifact) return null;
+  const content = cleanString(artifact.content || '');
+  return {
+    id: artifact.id,
+    business_id: artifact.business_id,
+    task_id: artifact.task_id,
+    cycle_id: artifact.cycle_id,
+    department: artifact.department,
+    kind: artifact.kind,
+    title: artifact.title,
+    summary: artifact.summary,
+    path: artifact.path,
+    status: artifact.status,
+    content_preview: content ? content.slice(0, 1200) : '',
+    content_length: content.length,
+    content_type: artifact.content_type,
+    metadata: artifact.metadata || {},
+    created_at: artifact.created_at,
+    updated_at: artifact.updated_at
+  };
+}
+
+function getRuntimeSnapshot(db, businessId, tasks = null, recentCycles = null) {
+  const hydratedTasks = Array.isArray(tasks)
+    ? tasks
+    : getAllTasks(businessId, 100);
+  const cycles = Array.isArray(recentCycles)
+    ? recentCycles
+    : db.prepare(`
+        SELECT id, status, triggered_by, started_at, completed_at, tasks_run, summary, error, created_at
+        FROM agent_cycles
+        WHERE business_id = ?
+        ORDER BY created_at DESC
+        LIMIT 10
+      `).all(businessId);
+  const taskEvents = listTaskEvents(businessId, { limit: 40 });
+  const artifacts = listArtifacts(businessId, { limit: 20 })
+    .filter(item => item.kind !== 'site_file')
+    .map(compactArtifact);
+  const activeCycle = cycles.find(item => item.status === 'running') || null;
+  const runningTasks = hydratedTasks.filter(task => task.status === 'running');
+  const queuedTasks = hydratedTasks.filter(task => task.status === 'queued');
+  const completedTasks = hydratedTasks.filter(task => task.status === 'complete');
+  const failedTasks = hydratedTasks.filter(task => task.status === 'failed');
+  const latestPlan = compactArtifact(getLatestArtifactByKind(businessId, 'launch_plan'));
+  const latestSummary = compactArtifact(getLatestArtifactByKind(businessId, 'task_summary'));
+  const latestContent = compactArtifact(getLatestArtifactByKind(businessId, 'content'));
+
+  return {
+    activeCycle,
+    latestCycle: cycles[0] || null,
+    cycles,
+    runningTasks,
+    queuedTasks,
+    completedTasks: completedTasks.slice(0, 8),
+    failedTasks: failedTasks.slice(0, 8),
+    taskEvents,
+    artifacts,
+    latestPlan,
+    latestSummary,
+    latestContent,
+    summary: {
+      total_tasks: hydratedTasks.length,
+      queued_tasks: queuedTasks.length,
+      running_tasks: runningTasks.length,
+      completed_tasks: completedTasks.length,
+      failed_tasks: failedTasks.length,
+      latest_event_at: taskEvents[0]?.created_at || null
+    }
+  };
+}
+
+function inferFounderTaskDepartment(content = '') {
+  const text = cleanString(content).toLowerCase();
+  if (!text) return 'strategy';
+  if (/(deploy|bug|code|build|api|frontend|backend|website|site|landing page|product|feature|auth|integration|repo|database|render)/.test(text)) return 'engineering';
+  if (/(email|outreach|seo|copy|landing copy|campaign|ads|social|post|blog|newsletter|lead|prospect|investor outreach|positioning|pricing)/.test(text)) return 'marketing';
+  if (/(inbox|support|calendar|ops|operations|finance|billing|invoice|payment|accounting|process|workflow|customer support)/.test(text)) return 'operations';
+  if (/(strategy|plan|roadmap|priorit|market|research|thesis|goal|offer|icp|customer)/.test(text)) return 'strategy';
+  return 'strategy';
+}
+
+function humanDepartment(department = '') {
+  return ({
+    strategy: 'Planning',
+    engineering: 'Engineering',
+    marketing: 'Marketing',
+    sales: 'Marketing',
+    operations: 'Operations',
+    finance: 'Operations'
+  }[department] || 'Planning');
+}
+
+function founderTaskTitle(content = '') {
+  const cleaned = cleanString(content)
+    .replace(/^(can you|could you|please|i want you to|have ventura|make ventura)\s+/i, '')
+    .replace(/\?+$/, '')
+    .trim();
+  if (!cleaned) return 'Founder-requested task';
+  return cleaned.length > 96 ? `${cleaned.slice(0, 93)}...` : cleaned;
+}
+
+function shouldQueueFounderTask(content = '') {
+  const text = cleanString(content).toLowerCase();
+  if (!text) return false;
+  if (/\?$/.test(text) && !/(please|can you|could you|i want|queue|create|add|run|start|build|deploy|write|research|fix|publish|send|draft|analyze)/.test(text)) {
+    return false;
+  }
+  return /^(build|deploy|write|draft|create|research|analyze|audit|fix|launch|publish|send|set up|configure|plan|prioritise|prioritize|review|reply|ship|make)\b/.test(text)
+    || /\b(can you|could you|please|i want you to|queue|add a task|create a task|have ventura|make ventura|send this|publish this)\b/.test(text);
+}
+
+function wantsCycleRun(content = '') {
+  const text = cleanString(content).toLowerCase();
+  return /(run agent|run the agent|start the agent|start a cycle|run a cycle|kick off the loop|start the loop|resume the loop|run now)/.test(text);
+}
+
+function buildRuntimeNarrative(business, runtime, approvals = []) {
+  const parts = [];
+  if (runtime.activeCycle) {
+    parts.push(`A ${runtime.activeCycle.triggered_by || 'system'} cycle is currently running.`);
+  } else if (runtime.latestCycle) {
+    parts.push(`The last cycle ${runtime.latestCycle.completed_at ? 'completed' : runtime.latestCycle.status} ${runtime.latestCycle.completed_at ? relativeTime(runtime.latestCycle.completed_at) : relativeTime(runtime.latestCycle.created_at)}.`);
+  } else {
+    parts.push('No completed cycle exists yet.');
+  }
+
+  if (runtime.runningTasks.length) {
+    parts.push(`Running now: ${runtime.runningTasks.map(task => task.title).join('; ')}.`);
+  } else if (runtime.queuedTasks.length) {
+    parts.push(`Next queued: ${runtime.queuedTasks.slice(0, 3).map(task => task.title).join('; ')}.`);
+  } else {
+    parts.push('No queued tasks right now.');
+  }
+
+  if (approvals.length) {
+    parts.push(`${approvals.length} founder approval${approvals.length === 1 ? '' : 's'} pending.`);
+  }
+  if (runtime.latestPlan?.summary) {
+    parts.push(`Launch plan: ${runtime.latestPlan.summary}`);
+  }
+  return parts.join(' ');
+}
+
+function buildFounderChatFallback(business, runtime, approvals = []) {
+  return [
+    `Ventura is operating ${business.name}.`,
+    buildRuntimeNarrative(business, runtime, approvals),
+    'You can ask me to explain the current cycle, queue work, or start a new run.'
+  ].join(' ');
 }
 
 async function replayActionOperation(operation, business) {
@@ -445,13 +616,7 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   const latest = trend[trend.length - 1] || {};
   const previousWeek = trend.slice(Math.max(0, trend.length - 14), Math.max(0, trend.length - 7));
   const latestWeek = trend.slice(Math.max(0, trend.length - 7));
-  const tasks = db.prepare(`
-    SELECT id, title, description, department, status, priority, triggered_by, created_at, completed_at
-    FROM tasks
-    WHERE business_id = ?
-    ORDER BY created_at DESC
-    LIMIT 60
-  `).all(business.id);
+  const tasks = getAllTasks(business.id, 60);
   const activity = db.prepare(`
     SELECT id, type, department, title, detail, created_at
     FROM activity
@@ -471,6 +636,7 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
     ORDER BY created_at DESC
     LIMIT 10
   `).all(business.id);
+  const runtime = getRuntimeSnapshot(db, business.id, tasks, recentCycles);
   const leadsByStatus = db.prepare(`
     SELECT status, COUNT(*) AS count
     FROM leads
@@ -501,6 +667,7 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   const economics = resolveBusinessEconomics(business, userPlan);
   const integrations = getBusinessIntegrations(business);
   const infrastructure = getInfrastructureSnapshot(business, integrations);
+  const deploymentAsset = (infrastructure.assets || []).find(item => item.kind === 'deployment') || null;
   const workspace = getWorkspaceSnapshot(business.id);
   const workspaceAutomation = getWorkspaceAutomationSnapshot(business.id);
   const execution = getExecutionIntelligenceSnapshot(business.id);
@@ -508,6 +675,10 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   const operationSummary = getActionOperationSummary(business.id);
   const recoveryCases = listRecoveryCases(business.id, { limit: 12 });
   const recoverySummary = getRecoverySummary(business.id);
+  const artifacts = listArtifacts(business.id, { limit: 18 })
+    .filter(item => item.kind !== 'site_file')
+    .map(compactArtifact);
+  const taskEvents = listTaskEvents(business.id, { limit: 40 });
   const stripeIntegration = integrations.find(integration => integration.kind === 'stripe');
   const stripeConfig = stripeIntegration?.config || {};
   const engineeringTasks = tasks.filter(task => task.department === 'engineering');
@@ -594,7 +765,11 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
     + workspace.inbox.filter(item => item.status === 'attention').length
     + Number(workspaceAutomation.summary.retry_actions || 0);
   const recentAlerts = recentAlertItems.length;
-  const uptimePct = Math.max(97, Number((99.9 - Math.min(recentAlerts * 0.3, 2.5)).toFixed(1)));
+  const uptimePct = deploymentAsset?.checks?.last_smoke_status === 'success'
+    ? 100
+    : deploymentAsset?.checks?.last_smoke_status === 'failed'
+      ? 0
+      : null;
 
   return {
     business: {
@@ -651,6 +826,7 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       recent_verifications: execution.recent_verifications,
       verification_summary: execution.verification_summary,
       skill_library: execution.skill_library,
+      runtime,
       operations,
       operation_summary: operationSummary,
       cadence
@@ -660,7 +836,9 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
         deployments_30d: deployments30d,
         open_tasks: openEngineeringTasks,
         completed_7d: engineeringTasks.filter(task => task.status === 'complete' && new Date(task.completed_at || task.created_at).getTime() >= since7d).length,
-        uptime_pct: uptimePct
+        uptime_pct: uptimePct,
+        smoke_status: deploymentAsset?.checks?.last_smoke_status || null,
+        smoke_checked_at: deploymentAsset?.checks?.last_smoke_checked_at || null
       },
       deployments,
       tasks: engineeringTasks.slice(0, 12),
@@ -734,7 +912,10 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
     },
     infrastructure,
     workspace,
-    workspace_automation: workspaceAutomation
+    workspace_automation: workspaceAutomation,
+    artifacts,
+    taskEvents,
+    runtime
   };
 }
 
@@ -1273,6 +1454,43 @@ router.post('/businesses/:id/tasks', requireAuth, asyncHandler(async (req, res) 
   res.status(201).json({ taskId });
 }));
 
+// GET /api/businesses/:id/artifacts
+router.get('/businesses/:id/artifacts', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const kind = req.query.kind ? String(req.query.kind) : null;
+  const taskId = req.query.taskId ? String(req.query.taskId) : null;
+  const status = req.query.status ? String(req.query.status) : null;
+  const limit = parseInt(req.query.limit || '25', 10);
+  const includeContent = req.query.includeContent === 'true';
+  const artifacts = listArtifacts(req.params.id, { kind, taskId, status, limit }).map(item => (
+    includeContent ? item : compactArtifact(item)
+  ));
+  res.json({ artifacts });
+}));
+
+// GET /api/businesses/:id/task-events
+router.get('/businesses/:id/task-events', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const taskId = req.query.taskId ? String(req.query.taskId) : null;
+  const cycleId = req.query.cycleId ? String(req.query.cycleId) : null;
+  const limit = parseInt(req.query.limit || '50', 10);
+  res.json({ taskEvents: listTaskEvents(req.params.id, { taskId, cycleId, limit }) });
+}));
+
+// GET /api/businesses/:id/tasks/:taskId/events
+router.get('/businesses/:id/tasks/:taskId/events', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+  res.json({ taskEvents: listTaskEvents(req.params.id, { taskId: req.params.taskId, limit: 50 }) });
+}));
+
 // GET /api/businesses/:id/integrations
 router.get('/businesses/:id/integrations', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
@@ -1634,47 +1852,132 @@ router.post('/businesses/:id/messages', requireAuth, asyncHandler(async (req, re
   const schema = z.object({ content: z.string().min(1).max(4000) });
   const { content } = validate(schema, req.body);
 
-  // Save user message
   const userMsgId = uuid();
   db.prepare(`INSERT INTO messages (id, business_id, role, content) VALUES (?, ?, 'user', ?)`).run(userMsgId, req.params.id, content);
 
-  // Build history for context
   const history = db.prepare(`
-    SELECT role, content FROM messages WHERE business_id=? ORDER BY created_at ASC LIMIT 20
-  `).all(req.params.id);
+    SELECT role, content
+    FROM messages
+    WHERE business_id = ?
+    ORDER BY created_at DESC
+    LIMIT 12
+  `).all(req.params.id).reverse();
+  const runtime = getRuntimeSnapshot(db, req.params.id);
+  const approvals = listApprovals(req.params.id, { status: 'pending', limit: 10 });
+  const recentActivity = getRecentActivity(req.params.id, 8);
+  const memory = normaliseMemory(business.agent_memory, business);
+  const actionable = shouldQueueFounderTask(content);
+  const requestedRun = wantsCycleRun(content);
 
-  // Get agent reply
-  const memory = JSON.parse(business.agent_memory || '{}');
-  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+  let aiContent = '';
+  let queuedTaskId = null;
+  let runStarted = false;
 
-  const systemPrompt = `You are the AI operator for "${business.name}", a ${business.type} business. You have been running this business for ${business.day_count} days.
+  if (requestedRun) {
+    if (business.status !== 'active') {
+      aiContent = `The loop is currently ${business.status}. Resume the business first, then I can start a cycle.`;
+    } else {
+      const cycle = startBusinessCycleIfIdle(business, 'founder_chat');
+      if (cycle.started) {
+        runStarted = true;
+        cycle.promise
+          .catch(err => console.error(`Founder chat cycle failed: ${err.message}`));
+        aiContent = `I started a new Ventura cycle for ${business.name}. I’ll update the task stream as work progresses.`;
+      } else {
+        aiContent = `A Ventura cycle is already running for ${business.name}. ${buildRuntimeNarrative(business, runtime, approvals)}`;
+      }
+    }
+  } else if (actionable) {
+    const department = inferFounderTaskDepartment(content);
+    queuedTaskId = await queueTask({
+      businessId: req.params.id,
+      business,
+      title: founderTaskTitle(content),
+      description: content,
+      department,
+      priority: 2,
+      triggeredBy: 'user'
+    });
 
-Current MRR: $${(business.mrr_cents / 100).toFixed(2)}
-Website: ${business.web_url}
-Goal: ${business.goal_90d}
+    if (business.status === 'active') {
+      const cycle = startBusinessCycleIfIdle(business, 'founder_chat');
+      if (cycle.started) {
+        runStarted = true;
+        cycle.promise
+          .catch(err => console.error(`Founder task cycle failed: ${err.message}`));
+      }
+    }
 
-Memory context: ${JSON.stringify(memory, null, 2)}
+    aiContent = `Queued under ${humanDepartment(department)}: "${founderTaskTitle(content)}". ${runStarted ? 'I also kicked off the execution loop.' : 'It will run in the current cadence.'}`;
+  } else if (!ANTHROPIC_API_KEY) {
+    aiContent = buildFounderChatFallback(business, runtime, approvals);
+  } else {
+    try {
+      const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+      const systemPrompt = `You are Ventura's founder-facing operator console for "${business.name}".
 
-You are talking directly with the founder. Be direct, specific, and helpful. Reference real data about the business when relevant. You can suggest tasks, explain decisions you made, and give strategic advice. Keep responses conversational and under 200 words.`;
+You are not a generic advisor. You speak from the actual live runtime state of this business.
 
-  const aiResponse = await client.messages.create({
-    model: AGENT_MODEL,
-    max_tokens: 512,
-    system: systemPrompt,
-    messages: history.map(m => ({ role: m.role, content: m.content }))
-  });
+RULES:
+- Answer using only the runtime context provided.
+- Never tell the founder to hire a developer, use Carrd, use Framer, or build the product manually if Ventura can queue or perform the work.
+- If something is missing, say exactly what is missing.
+- Be concise, operational, and specific.
+- When useful, explain what Ventura is currently doing, what is queued next, what artifacts exist, and what approvals/blockers remain.
+- Keep the response under 220 words.
 
-  const aiContent = aiResponse.content[0].text;
+BUSINESS:
+${JSON.stringify({
+  name: business.name,
+  type: business.type,
+  description: business.description,
+  target_customer: business.target_customer,
+  goal_90d: business.goal_90d,
+  involvement: business.involvement,
+  web_url: business.web_url,
+  day_count: business.day_count
+}, null, 2)}
 
-  // Save AI reply
+RUNTIME:
+${JSON.stringify({
+  summary: runtime.summary,
+  activeCycle: runtime.activeCycle,
+  runningTasks: runtime.runningTasks.slice(0, 4),
+  queuedTasks: runtime.queuedTasks.slice(0, 5),
+  taskEvents: runtime.taskEvents.slice(0, 10),
+  artifacts: runtime.artifacts.slice(0, 8),
+  pendingApprovals: approvals.slice(0, 5),
+  recentActivity
+}, null, 2)}
+
+MEMORY:
+${JSON.stringify(memory, null, 2)}`;
+
+      const aiResponse = await client.messages.create({
+        model: AGENT_MODEL,
+        max_tokens: 512,
+        system: systemPrompt,
+        messages: history.map(m => ({ role: m.role, content: m.content }))
+      });
+      aiContent = aiResponse.content[0]?.text || buildFounderChatFallback(business, runtime, approvals);
+    } catch (error) {
+      aiContent = `${buildFounderChatFallback(business, runtime, approvals)} Anthropic response failed: ${error.message}`;
+    }
+  }
+
   const aiMsgId = uuid();
   db.prepare(`INSERT INTO messages (id, business_id, role, content) VALUES (?, ?, 'assistant', ?)`).run(aiMsgId, req.params.id, aiContent);
 
-  // Push via WebSocket
   const { emitToBusiness } = await import('../ws/websocket.js');
   emitToBusiness(req.params.id, { event: 'message:new', role: 'assistant', content: aiContent, id: aiMsgId });
 
-  res.json({ message: { id: aiMsgId, role: 'assistant', content: aiContent } });
+  res.json({
+    message: { id: aiMsgId, role: 'assistant', content: aiContent },
+    meta: {
+      queuedTaskId,
+      runStarted
+    }
+  });
 }));
 
 // GET /api/businesses/:id/deployments
@@ -1737,24 +2040,9 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
 
   const latestCycle = recentCycles[0] || null;
   const approvals = listApprovals(req.params.id, { limit: 25 });
-  let deployments = getDeployments(req.params.id, 10);
+  const deployments = getDeployments(req.params.id, 10);
   const integrations = getBusinessIntegrations(hydratedBusiness);
   const infrastructure = getInfrastructureSnapshot(hydratedBusiness, integrations);
-  if (!deployments.length) {
-    deployments = db.prepare(`
-      SELECT id,
-             business_id,
-             printf('activity-%s', substr(id, 1, 8)) AS version,
-             title AS description,
-             0 AS files_changed,
-             'live' AS status,
-             created_at
-      FROM activity
-      WHERE business_id = ? AND type = 'deploy'
-      ORDER BY created_at DESC
-      LIMIT 10
-    `).all(req.params.id);
-  }
   const specialists = getSpecialistSummary(db, req.params.id);
   const recentActivity = getRecentActivity(req.params.id, 8);
   const usage = getUserUsage(db, req.user.sub, user.plan);
@@ -1766,6 +2054,11 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
   const cadence = ensureBusinessCadence(req.params.id);
   const workspace = getWorkspaceSnapshot(req.params.id);
   const workspaceAutomation = getWorkspaceAutomationSnapshot(req.params.id);
+  const runtime = getRuntimeSnapshot(db, req.params.id);
+  const artifacts = listArtifacts(req.params.id, { limit: 18 })
+    .filter(item => item.kind !== 'site_file')
+    .map(compactArtifact);
+  const taskEvents = listTaskEvents(req.params.id, { limit: 40 });
 
   res.json({
     business: hydratedBusiness,
@@ -1788,6 +2081,9 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
     recoverySummary,
     workspace,
     workspaceAutomation,
+    runtime,
+    artifacts,
+    taskEvents,
     usage,
     economics,
     plan: serializePlan(user.plan)

@@ -12,6 +12,8 @@ import {
   normalizeWorkflowKey,
   persistExecutionIntelligence
 } from './execution-intelligence.js';
+import { createArtifact, listArtifacts } from './artifacts.js';
+import { logTaskEvent } from './task-events.js';
 import { getWorkspacePromptContext } from '../integrations/workspace-sync.js';
 
 const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
@@ -100,6 +102,8 @@ PRINCIPLES:
 7. Flag for review only when stakes are genuinely high (legal, >$100 financial commitment, PR risk).
 8. Your work will be verified after completion. Do not claim success without concrete evidence.
 9. Connect every action to the 90-day goal.
+10. You must work inside Ventura. Never tell the founder to hire a developer, use Carrd, use Framer, or do the work manually when Ventura has a tool that can perform or queue the work.
+11. If something cannot be completed because a provider credential or external dependency is missing, say exactly what is missing and still produce the best Ventura-native artifact possible.
 
 INVOLVEMENT: ${business.involvement === 'autopilot' ? 'Execute everything autonomously.' : business.involvement === 'review' ? 'Flag email sends and deployments for review.' : 'Flag major decisions for founder approval.'}
 
@@ -120,6 +124,14 @@ export async function runTask(task, business, cycleId = null) {
     workflowState
   });
   const pendingFiles = [];
+  const recentArtifacts = listArtifacts(business.id, { limit: 10 })
+    .filter(item => item.kind !== 'site_file')
+    .map(item => ({
+      kind: item.kind,
+      title: item.title,
+      summary: item.summary,
+      created_at: item.created_at
+    }));
 
   const messages = [{
     role: 'user',
@@ -131,6 +143,7 @@ export async function runTask(task, business, cycleId = null) {
         open_loops: workflowState.open_loops,
         evidence: workflowState.evidence
       }, null, 2)}` : '',
+      recentArtifacts.length ? `RECENT ARTIFACTS:\n${JSON.stringify(recentArtifacts, null, 2)}` : '',
       workspace ? `LIVE WORKSPACE DATA:\n${JSON.stringify(workspace, null, 2)}` : '',
       'Execute now.'
     ].filter(Boolean).join('\n\n')
@@ -160,14 +173,47 @@ export async function runTask(task, business, cycleId = null) {
         if (block.type !== 'tool_use') continue;
         let result;
         try {
-          result = await executeTool(block.name, block.input, task, business, memory, pendingFiles);
+          logTaskEvent({
+            businessId: business.id,
+            taskId: task.id,
+            cycleId,
+            phase: 'tool_started',
+            title: `${block.name} started`,
+            detail: block.input?.description || block.input?.title || block.input?.query || block.input?.subject || 'Ventura is executing a tool step.',
+            metadata: {
+              tool: block.name
+            }
+          });
+          result = await executeTool(block.name, block.input, task, business, memory, pendingFiles, cycleId);
           toolResults.push({ tool: block.name, result });
           if (block.name === 'task_complete') {
             finalSummary = block.input.summary;
             nextSteps = block.input.next_steps || [];
           }
+          logTaskEvent({
+            businessId: business.id,
+            taskId: task.id,
+            cycleId,
+            phase: 'tool_succeeded',
+            title: `${block.name} finished`,
+            detail: summarizeToolResult(block.name, result),
+            metadata: {
+              tool: block.name
+            }
+          });
         } catch (err) {
           result = { error: err.message };
+          logTaskEvent({
+            businessId: business.id,
+            taskId: task.id,
+            cycleId,
+            phase: 'tool_failed',
+            title: `${block.name} failed`,
+            detail: err.message,
+            metadata: {
+              tool: block.name
+            }
+          });
         }
         toolResultContent.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
       }
@@ -198,7 +244,7 @@ function requiresApproval(actionName, business) {
   return false;
 }
 
-async function executeTool(name, input, task, business, memory, pendingFiles) {
+async function executeTool(name, input, task, business, memory, pendingFiles, cycleId = null) {
   const db = getDb();
   const bump = (col) => db.prepare(`INSERT INTO metrics (id,business_id,date,${col}) VALUES (?,?,date('now'),1) ON CONFLICT(business_id,date) DO UPDATE SET ${col}=${col}+1`).run(`m${Date.now()}`, business.id);
 
@@ -208,12 +254,49 @@ async function executeTool(name, input, task, business, memory, pendingFiles) {
       const { webSearch } = await import('../integrations/search.js');
       const results = await webSearch(input.query, 8);
       await logActivity(business.id, { type: 'research', department: 'strategy', title: `Search: "${input.query}"`, detail: { results: results.slice(0,3) } });
+      createArtifact({
+        businessId: business.id,
+        taskId: task.id,
+        cycleId,
+        department: task.department,
+        kind: 'research',
+        title: `Research: ${input.query}`,
+        summary: `${results.length} live sources collected for this task.`,
+        content: results.map((item, index) => `${index + 1}. ${item.title}\n${item.url}\n${item.snippet || ''}`).join('\n\n'),
+        metadata: {
+          purpose: input.purpose || 'general',
+          query: input.query
+        }
+      });
       return { results, count: results.length };
     }
 
     case 'write_code': {
       pendingFiles.push({ path: input.file_path, content: input.content });
       await logActivity(business.id, { type: 'code', department: 'engineering', title: `Code staged: ${input.file_path}`, detail: { description: input.description } });
+      createArtifact({
+        businessId: business.id,
+        taskId: task.id,
+        cycleId,
+        department: 'engineering',
+        kind: 'site_file',
+        title: input.file_path,
+        summary: input.description || 'Draft file staged by Ventura.',
+        path: input.file_path,
+        content: input.content,
+        contentType: input.file_path.endsWith('.html')
+          ? 'text/html; charset=utf-8'
+          : input.file_path.endsWith('.css')
+            ? 'text/css; charset=utf-8'
+            : input.file_path.endsWith('.js')
+              ? 'application/javascript; charset=utf-8'
+              : 'text/plain; charset=utf-8',
+        status: 'draft',
+        metadata: {
+          staged: true,
+          description: input.description || ''
+        }
+      });
       return { staged: input.file_path, pending: pendingFiles.length };
     }
 
@@ -279,6 +362,22 @@ async function executeTool(name, input, task, business, memory, pendingFiles) {
       });
       bump('emails_sent');
       await logActivity(business.id, { type: 'email_sent', department: ['cold_outreach','follow_up'].includes(input.type) ? 'marketing' : 'operations', title: `Email → ${input.to}: "${input.subject}"`, detail: { type: input.type } });
+      createArtifact({
+        businessId: business.id,
+        taskId: task.id,
+        cycleId,
+        department: ['cold_outreach', 'follow_up'].includes(input.type) ? 'marketing' : 'operations',
+        kind: 'email',
+        title: input.subject,
+        summary: `Sent to ${input.to}`,
+        content: input.body,
+        contentType: 'text/html; charset=utf-8',
+        metadata: {
+          to: input.to,
+          from: business.email_address,
+          type: input.type
+        }
+      });
       return { success: true, replayed: !!replayed, operationId: operation?.id || null };
     }
 
@@ -319,6 +418,21 @@ async function executeTool(name, input, task, business, memory, pendingFiles) {
           return { success: true, results: r };
         }
       });
+      createArtifact({
+        businessId: business.id,
+        taskId: task.id,
+        cycleId,
+        department: 'marketing',
+        kind: 'social_post',
+        title: `Social post (${input.platform})`,
+        summary: input.thread ? 'Thread prepared/published by Ventura.' : 'Post prepared/published by Ventura.',
+        content: input.content,
+        metadata: {
+          platform: input.platform,
+          thread: !!input.thread,
+          operationId: operation?.id || null
+        }
+      });
       return { ...result, replayed: !!replayed, operationId: operation?.id || null };
     }
 
@@ -332,6 +446,20 @@ async function executeTool(name, input, task, business, memory, pendingFiles) {
 
     case 'create_content': {
       await logActivity(business.id, { type: 'content', department: 'marketing', title: `${input.type}: "${input.title}"`, detail: { chars: input.content.length, keyword: input.target_keyword } });
+      createArtifact({
+        businessId: business.id,
+        taskId: task.id,
+        cycleId,
+        department: task.department,
+        kind: 'content',
+        title: input.title,
+        summary: `${input.type} created by Ventura.`,
+        content: input.content,
+        metadata: {
+          type: input.type,
+          target_keyword: input.target_keyword || null
+        }
+      });
       return { success: true, type: input.type, chars: input.content.length };
     }
 
@@ -356,11 +484,43 @@ async function executeTool(name, input, task, business, memory, pendingFiles) {
     }
 
     case 'task_complete':
+      createArtifact({
+        businessId: business.id,
+        taskId: task.id,
+        cycleId,
+        department: task.department,
+        kind: 'task_summary',
+        title: task.title,
+        summary: input.summary,
+        content: [
+          `Summary: ${input.summary}`,
+          (input.next_steps || []).length ? `Next steps:\n- ${(input.next_steps || []).join('\n- ')}` : ''
+        ].filter(Boolean).join('\n\n'),
+        metadata: {
+          next_steps: input.next_steps || []
+        }
+      });
       return { success: true };
 
     default:
       return { error: `Unknown tool: ${name}` };
   }
+}
+
+function summarizeToolResult(name, result = {}) {
+  if (!result || typeof result !== 'object') return `${name} finished`;
+  if (result.error) return result.error;
+  if (name === 'web_search') return `${result.count || 0} live sources collected`;
+  if (name === 'write_code') return `${result.staged || 'File'} staged for deploy`;
+  if (name === 'deploy_website') return result.version ? `Published ${result.version}` : 'Deployment completed';
+  if (name === 'send_email') return 'Outbound email sent';
+  if (name === 'post_social') return 'Social content published';
+  if (name === 'add_lead') return 'Lead added to pipeline';
+  if (name === 'create_content') return `${result.type || 'Content'} created`;
+  if (name === 'update_memory') return 'Agent memory updated';
+  if (name === 'update_metrics') return 'Business metrics updated';
+  if (name === 'task_complete') return 'Task handed off as complete';
+  return `${name} finished`;
 }
 
 function splitThread(text, max = 270) {
