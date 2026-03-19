@@ -1519,9 +1519,9 @@ describe('Published sites', () => {
     assert.equal(res.status, 200);
     assert.ok(!body.includes('<!-- see staged file -->'));
     assert.ok(
-      body.includes('Live launch page')
-      || body.includes('See how it works')
-      || body.includes('Built to turn fundraising chaos into qualified conversations')
+      body.includes('What makes the page convert')
+      || body.includes('The page now moves like a product story')
+      || body.includes('What makes the promise feel credible?')
     );
   });
 });
