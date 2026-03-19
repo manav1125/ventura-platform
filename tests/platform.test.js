@@ -1518,7 +1518,11 @@ describe('Published sites', () => {
 
     assert.equal(res.status, 200);
     assert.ok(!body.includes('<!-- see staged file -->'));
-    assert.ok(body.includes('Ventura launch site') || body.includes('What Ventura Is Doing'));
+    assert.ok(
+      body.includes('Live launch page')
+      || body.includes('See how it works')
+      || body.includes('Built to turn fundraising chaos into qualified conversations')
+    );
   });
 });
 
