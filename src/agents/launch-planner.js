@@ -32,6 +32,9 @@ Business email: ${emailAddress}
 
 Return ONLY valid JSON with this shape:
 {
+  "brand_name": "string",
+  "brand_tagline": "string",
+  "visual_motif": "string",
   "hero_badge": "string",
   "headline": "string",
   "subheadline": "string",
@@ -63,6 +66,7 @@ Return ONLY valid JSON with this shape:
 
 Rules:
 - Make the plan specific to this business idea.
+- If the provided business name is generic or descriptive, create a sharper public-facing brand name and tagline.
 - Do not say the founder should hire a developer or use a no-code builder.
 - The first tasks must be executable by Ventura using its existing tools, integrations, and artifact system.
 - Include 5 to 7 tasks.
@@ -121,66 +125,58 @@ export function buildRenderableLaunchPlan(business = {}, artifact = null) {
 }
 
 export function renderLaunchSite(business, plan) {
-  const proof = (plan.proof_points || []).slice(0, 3);
   const narrativeSections = (plan.narrative_sections || []).slice(0, 3);
-  const faqItems = (plan.faq || []).slice(0, 3);
   const socialProofItems = (plan.social_proof_items || []).slice(0, 5);
   const primaryCta = plan.cta || `Talk to ${business.name}`;
   const primaryHref = buildPrimaryHref(business, primaryCta);
   const ctaMicrocopy = plan.cta_microcopy || 'Clear next step. No heavy setup. Fast path to the first conversation.';
   const heroBadge = plan.hero_badge || `${titleCase(business.type || 'business')} launch`;
-  const brandLabel = deriveSiteBrand(business.name, heroBadge);
   const audienceLabel = clean(business.target_customer) || 'Founders';
   const goalLabel = clean(business.goal_90d) || 'Reach the next stage of growth';
-  const heroSummary = narrativeSections[0]?.body || plan.launch_summary || plan.positioning || '';
-  const storyline = narrativeSections.map((section, index) => `
-    <article class="story-step ${index === 1 ? 'story-step-featured' : ''}">
-      <div class="story-index">0${index + 1}</div>
-      <div class="story-content">
-        ${section.kicker ? `<div class="story-kicker">${escapeHtml(section.kicker)}</div>` : ''}
-        <h3>${escapeHtml(section.title)}</h3>
-        <p>${escapeHtml(section.body)}</p>
+  const brand = resolveBrandIdentity(business, plan);
+  const benefitCards = buildBenefitCards(business, plan);
+  const journeySteps = buildJourneySteps(business, plan, narrativeSections);
+  const faqItems = buildCustomerFaq(business, plan);
+  const testimonial = normalizeTestimonial(plan.testimonial, {
+    name: business.name,
+    targetCustomer: business.target_customer,
+    goal90d: business.goal_90d
+  });
+  const socialProofMarkup = socialProofItems.map(item => `<span class="trust-chip">${escapeHtml(item)}</span>`).join('');
+  const benefitMarkup = benefitCards.map(card => `
+    <article class="benefit-card">
+      <div class="benefit-icon">${escapeHtml(card.icon)}</div>
+      <h3>${escapeHtml(card.title)}</h3>
+      <p>${escapeHtml(card.body)}</p>
+    </article>
+  `).join('');
+  const stepsMarkup = journeySteps.map((step, index) => `
+    <article class="step-card">
+      <div class="step-index">0${index + 1}</div>
+      <div class="step-content">
+        <h3>${escapeHtml(step.title)}</h3>
+        <p>${escapeHtml(step.body)}</p>
       </div>
     </article>
   `).join('');
-  const proofMarkup = proof.map((item, index) => `
-    <article class="value-card ${index === 1 ? 'value-card-accent' : ''}">
-      <div class="value-index">0${index + 1}</div>
-      <h3>${escapeHtml(item)}</h3>
-      <p>${escapeHtml(index === 0 ? plan.positioning : heroSummary)}</p>
-    </article>
-  `).join('');
-  const socialProofMarkup = socialProofItems.map(item => `<span class="trust-chip">${escapeHtml(item)}</span>`).join('');
   const faqMarkup = faqItems.map(item => `
     <article class="faq-item">
       <h3>${escapeHtml(item.question)}</h3>
       <p>${escapeHtml(item.answer)}</p>
     </article>
   `).join('');
-  const testimonial = plan.testimonial || {};
-  const focusCards = buildHeroFocusCards(business, plan);
-  const focusMarkup = focusCards.map(card => `
-    <div class="focus-card">
-      <div class="focus-card-top">
-        <span>${escapeHtml(card.label)}</span>
-        <strong>${escapeHtml(card.badge)}</strong>
-      </div>
-      <div class="focus-card-title">${escapeHtml(card.title)}</div>
-      <div class="focus-card-copy">${escapeHtml(card.copy)}</div>
-    </div>
-  `).join('');
-  const signalPills = buildSignalPills(business, plan).map(item => `<span class="signal-pill">${escapeHtml(item)}</span>`).join('');
   const footerCopy = business.email_address
-    ? `${plan.subheadline} Reach the team at ${business.email_address}.`
-    : `${plan.subheadline} Reply to the primary CTA and Ventura will route the next conversation.`;
+    ? `Questions before you apply? Reach the ${brand.name} team at ${business.email_address}.`
+    : `${brand.tagline} Reply to the primary CTA and Ventura will route the next conversation.`;
+  const heroArt = renderHeroArtwork(brand, business, plan);
 
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(business.name)}</title>
-  <meta name="description" content="${escapeHtml(plan.positioning || business.description)}">
+  <title>${escapeHtml(brand.name)}</title>
+  <meta name="description" content="${escapeHtml(brand.tagline || plan.positioning || business.description)}">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;700&display=swap');
     :root { color-scheme: light; }
@@ -241,15 +237,11 @@ export function renderLaunchSite(business, plan) {
     }
     .brand-lockup { display:flex; align-items:center; gap:14px; }
     .brand-mark {
-      width:46px;
-      height:46px;
-      border-radius:16px;
+      width:54px;
+      height:54px;
       display:grid;
       place-items:center;
-      background:linear-gradient(135deg, #ff6e3b, #ff9f56);
-      color:#fff6ef;
-      font-weight:700;
-      box-shadow:0 18px 40px rgba(255,110,59,.24);
+      filter:drop-shadow(0 18px 30px rgba(255,110,59,.18));
     }
     .brand-copy { display:grid; gap:2px; }
     .brand-name {
@@ -259,7 +251,7 @@ export function renderLaunchSite(business, plan) {
       color:#1b1613;
       font-weight:700;
     }
-    .brand-note { font-size:13px; color:rgba(23,19,18,.56); }
+    .brand-note { font-size:13px; color:rgba(23,19,18,.56); max-width:420px; }
     .nav-actions { display:flex; align-items:center; gap:12px; }
     .nav-pill {
       padding:10px 14px;
@@ -433,63 +425,27 @@ export function renderLaunchSite(business, plan) {
       bottom:-120px;
       background:radial-gradient(circle, rgba(65,126,255,.18), transparent 68%);
     }
-    .floating-card,
     .hero-dashboard,
-    .cta-card,
-    .value-card,
-    .story-step,
     .quote-panel,
     .faq-item,
-    .footer-card {
+    .footer-card,
+    .benefit-card,
+    .step-card {
       background:rgba(255,255,255,.66);
       border:1px solid rgba(23,19,18,.08);
       box-shadow:0 20px 60px rgba(71,47,25,.08);
       backdrop-filter:blur(16px);
     }
-    .floating-card {
-      position:absolute;
-      top:18px;
-      right:18px;
-      width:min(240px, 46%);
-      padding:16px;
-      border-radius:22px;
-      z-index:2;
-    }
-    .floating-label {
-      font-size:11px;
-      letter-spacing:.14em;
-      text-transform:uppercase;
-      color:rgba(23,19,18,.46);
-    }
-    .floating-title {
-      margin-top:10px;
-      font-size:18px;
-      line-height:1.25;
-      letter-spacing:-.03em;
-      color:#171312;
-    }
-    .floating-copy {
-      margin-top:8px;
-      color:rgba(23,19,18,.62);
-      line-height:1.55;
-      font-size:13px;
-    }
-    .signal-pill-row {
-      display:flex;
-      flex-wrap:wrap;
-      gap:8px;
-      margin-top:14px;
-    }
     .hero-dashboard {
       position:relative;
       z-index:1;
       border-radius:30px;
-      min-height:432px;
-      padding:22px;
+      min-height:470px;
+      padding:24px;
       display:grid;
       gap:16px;
       align-content:start;
-      margin-top:96px;
+      margin-top:16px;
     }
     .dashboard-top {
       display:flex;
@@ -497,59 +453,65 @@ export function renderLaunchSite(business, plan) {
       align-items:center;
       gap:12px;
     }
-    .dashboard-grid {
+    .hero-illustration {
+      position:absolute;
+      inset:22px 22px 180px 22px;
       display:grid;
-      grid-template-columns:repeat(2, minmax(0, 1fr));
-      gap:14px;
+      place-items:center;
+      overflow:hidden;
+      border-radius:26px;
+      background:linear-gradient(180deg, rgba(255,255,255,.65), rgba(255,255,255,.2));
+      border:1px solid rgba(23,19,18,.08);
     }
-    .metric-card {
-      padding:16px;
-      border-radius:20px;
-      background:rgba(249,245,238,.72);
-      border:1px solid rgba(23,19,18,.07);
+    .hero-illustration svg {
+      width:100%;
+      height:100%;
+      display:block;
     }
-    .metric-value {
-      margin-top:8px;
-      font-size:28px;
-      line-height:1;
-      letter-spacing:-.04em;
-      color:#191412;
-    }
-    .metric-copy {
-      margin-top:8px;
-      color:rgba(23,19,18,.58);
-      line-height:1.55;
-      font-size:13px;
-    }
-    .focus-stack {
-      display:grid;
-      gap:12px;
-    }
-    .focus-card {
-      padding:16px;
-      border-radius:20px;
-      background:rgba(247,241,231,.82);
-      border:1px solid rgba(23,19,18,.07);
-    }
-    .focus-card-top {
+    .visual-badges {
+      position:absolute;
+      left:26px;
+      right:26px;
+      top:26px;
       display:flex;
       justify-content:space-between;
       gap:12px;
-      color:rgba(23,19,18,.46);
+      z-index:2;
+    }
+    .visual-badge {
+      padding:10px 12px;
+      border-radius:999px;
+      border:1px solid rgba(23,19,18,.08);
+      background:rgba(255,255,255,.74);
       font-size:11px;
       letter-spacing:.12em;
       text-transform:uppercase;
+      color:rgba(23,19,18,.58);
+      box-shadow:0 14px 26px rgba(71,47,25,.06);
     }
-    .focus-card-title {
-      margin-top:12px;
+    .match-strip {
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:12px;
+    }
+    .match-card {
+      padding:16px;
+      border-radius:22px;
+      background:rgba(249,245,238,.84);
+      border:1px solid rgba(23,19,18,.07);
+    }
+    .match-card strong {
+      display:block;
+      margin-top:10px;
       font-size:19px;
+      line-height:1.1;
       letter-spacing:-.03em;
       color:#171312;
     }
-    .focus-card-copy {
-      margin-top:8px;
-      color:rgba(23,19,18,.6);
-      line-height:1.65;
+    .match-card p {
+      margin:8px 0 0;
+      color:rgba(23,19,18,.58);
+      line-height:1.6;
       font-size:13px;
     }
     .section-shell {
@@ -590,24 +552,21 @@ export function renderLaunchSite(business, plan) {
       line-height:1.7;
       margin:0;
     }
-    .value-grid,
-    .storyline,
+    .benefit-grid,
+    .steps-grid,
     .faq-grid {
       display:grid;
       grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
       gap:14px;
     }
-    .value-card,
-    .story-step,
+    .benefit-card,
+    .step-card,
     .faq-item {
       padding:22px;
       border-radius:26px;
     }
-    .value-card-accent {
-      background:linear-gradient(180deg, rgba(255,110,59,.14), rgba(255,255,255,.7));
-    }
-    .value-index,
-    .story-index {
+    .benefit-icon,
+    .step-index {
       display:inline-flex;
       align-items:center;
       justify-content:center;
@@ -620,8 +579,8 @@ export function renderLaunchSite(business, plan) {
       font-weight:700;
       box-shadow:inset 0 0 0 1px rgba(255,110,59,.14);
     }
-    .value-card h3,
-    .story-step h3,
+    .benefit-card h3,
+    .step-card h3,
     .faq-item h3 {
       margin:16px 0 12px;
       font-size:23px;
@@ -629,20 +588,14 @@ export function renderLaunchSite(business, plan) {
       line-height:1.1;
       color:#171312;
     }
-    .value-card p,
-    .story-step p,
+    .benefit-card p,
+    .step-card p,
     .faq-item p {
       margin:0;
       color:rgba(23,19,18,.62);
       line-height:1.7;
     }
-    .storyline {
-      grid-template-columns:1.1fr .95fr .95fr;
-    }
-    .story-step-featured {
-      background:linear-gradient(180deg, rgba(255,255,255,.84), rgba(255,110,59,.1));
-    }
-    .story-content { margin-top:18px; }
+    .step-content { margin-top:18px; }
     .quote-panel {
       margin-top:24px;
       padding:28px;
@@ -691,15 +644,20 @@ export function renderLaunchSite(business, plan) {
       .shell { padding:24px 18px 60px; }
       .hero-visual { min-height:unset; padding:0; }
       .visual-shell { min-height:unset; }
-      .floating-card {
+      .hero-illustration {
         position:relative;
         inset:auto;
-        width:100%;
+        min-height:260px;
         margin-bottom:14px;
       }
-      .hero-dashboard { margin-top:0; }
-      .dashboard-grid,
-      .storyline { grid-template-columns:1fr; }
+      .visual-badges {
+        position:relative;
+        inset:auto;
+        margin-bottom:14px;
+      }
+      .hero-dashboard { margin-top:0; min-height:unset; }
+      .match-strip,
+      .steps-grid { grid-template-columns:1fr; }
       .footer-card { flex-direction:column; align-items:flex-start; }
     }
   </style>
@@ -709,10 +667,10 @@ export function renderLaunchSite(business, plan) {
   <main class="shell">
     <div class="nav">
       <div class="brand-lockup">
-        <div class="brand-mark">${escapeHtml((brandLabel || 'V').slice(0, 1).toUpperCase())}</div>
+        <div class="brand-mark">${renderBrandLogoSvg(brand)}</div>
         <div class="brand-copy">
-          <div class="brand-name">${escapeHtml(brandLabel)}</div>
-          <div class="brand-note">${escapeHtml(plan.positioning)}</div>
+          <div class="brand-name">${escapeHtml(brand.name)}</div>
+          <div class="brand-note">${escapeHtml(brand.tagline)}</div>
         </div>
       </div>
       <div class="nav-actions">
@@ -727,82 +685,81 @@ export function renderLaunchSite(business, plan) {
         <p class="lede">${escapeHtml(plan.subheadline)}</p>
         <div class="cta-row">
           <a class="btn btn-primary" href="${escapeHtml(primaryHref)}">${escapeHtml(primaryCta)}</a>
-          <a class="btn btn-secondary" href="#momentum">See the flow</a>
+          <a class="btn btn-secondary" href="#how-it-works">How it works</a>
         </div>
         <div class="microcopy">${escapeHtml(ctaMicrocopy)}</div>
         <div class="hero-note">
-          <strong>${escapeHtml(plan.offer)}</strong>
+          <strong>${escapeHtml(brand.tagline)}</strong>
           <span>${escapeHtml(goalLabel)}</span>
         </div>
         ${socialProofItems.length ? `<div class="trust-row">${socialProofMarkup}</div>` : ''}
       </div>
       <aside class="hero-visual">
         <div class="visual-shell">
-          <div class="floating-card">
-            <div class="floating-label">First impression</div>
-            <div class="floating-title">${escapeHtml(plan.launch_summary)}</div>
-            <div class="floating-copy">${escapeHtml(heroSummary)}</div>
-            <div class="signal-pill-row">
-              ${signalPills}
-            </div>
+          <div class="visual-badges">
+            <div class="visual-badge">${escapeHtml(heroBadge)}</div>
+            <div class="visual-badge">${escapeHtml(brand.visual_motif || 'Curated warm intros')}</div>
           </div>
+          <div class="hero-illustration">${heroArt}</div>
           <div class="hero-dashboard">
             <div class="dashboard-top">
               <div>
-                <div class="floating-label">Investor-fit preview</div>
-                <div class="floating-title">${escapeHtml(plan.offer)}</div>
+                <div class="section-kicker">Why founders choose ${escapeHtml(brand.name)}</div>
+                <div class="brand-note">${escapeHtml(plan.offer)}</div>
               </div>
-              <div class="nav-pill">Live narrative</div>
+              <div class="nav-pill">${escapeHtml(goalLabel)}</div>
             </div>
-            <div class="dashboard-grid">
-              <div class="metric-card">
-                <div class="floating-label">Audience</div>
-                <div class="metric-value">${escapeHtml(audienceLabel)}</div>
-                <div class="metric-copy">Everything on the page is tuned to the exact buyer this business needs first.</div>
+            <div class="match-strip">
+              <div class="match-card">
+                <div class="section-kicker">For</div>
+                <strong>${escapeHtml(audienceLabel)}</strong>
+                <p>Built for founders who want high-signal investor conversations without the usual spreadsheet chaos.</p>
               </div>
-              <div class="metric-card">
-                <div class="floating-label">Goal</div>
-                <div class="metric-value">${escapeHtml(goalLabel)}</div>
-                <div class="metric-copy">The page keeps the story, CTA, and proof tightly aligned to the next business milestone.</div>
+              <div class="match-card">
+                <div class="section-kicker">Outcome</div>
+                <strong>${escapeHtml(benefitCards[0]?.title || plan.offer)}</strong>
+                <p>${escapeHtml(benefitCards[0]?.body || plan.positioning)}</p>
               </div>
-            </div>
-            <div class="focus-stack">
-              ${focusMarkup}
+              <div class="match-card">
+                <div class="section-kicker">Next step</div>
+                <strong>${escapeHtml(primaryCta)}</strong>
+                <p>${escapeHtml(ctaMicrocopy)}</p>
+              </div>
             </div>
           </div>
         </div>
       </aside>
     </section>
 
-    <section id="momentum" class="section-shell">
-      <div class="section-head">
-        <div>
-          <div class="section-kicker">What makes the page convert</div>
-          <h2>A cleaner promise, a tighter story, and proof that earns the click.</h2>
-        </div>
-        <p class="section-intro">${escapeHtml(plan.launch_summary)}</p>
-      </div>
-      <div class="value-grid">
-        ${proofMarkup}
-      </div>
-    </section>
-
     <section class="section-shell">
       <div class="section-head">
         <div>
-          <div class="section-kicker">From first glance to booked conversation</div>
-          <h2>The page now moves like a product story, not a checklist.</h2>
+          <div class="section-kicker">Why founders stay with it</div>
+          <h2>Everything is designed to help the right investor conversation happen sooner.</h2>
         </div>
         <p class="section-intro">${escapeHtml(plan.positioning)}</p>
       </div>
-      <div class="storyline">
-        ${storyline}
+      <div class="benefit-grid">
+        ${benefitMarkup}
+      </div>
+    </section>
+
+    <section id="how-it-works" class="section-shell">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">How it works</div>
+          <h2>${escapeHtml(brand.name)} turns founder context into investor-ready momentum.</h2>
+        </div>
+        <p class="section-intro">${escapeHtml(plan.launch_summary)}</p>
+      </div>
+      <div class="steps-grid">
+        ${stepsMarkup}
       </div>
     </section>
 
     ${testimonial.quote ? `
       <section class="quote-panel">
-        <div class="section-kicker">How it should feel</div>
+        <div class="section-kicker">Founder perspective</div>
         <div class="quote-text">“${renderQuoteMarkup(testimonial.quote)}”</div>
         <div class="quote-meta">${escapeHtml(testimonial.name || 'Founder')} · ${escapeHtml(testimonial.role || business.target_customer || 'Customer')}</div>
       </section>
@@ -812,10 +769,10 @@ export function renderLaunchSite(business, plan) {
       <section class="section-shell">
         <div class="section-head">
           <div>
-            <div class="section-kicker">Objections handled quietly</div>
-            <h2>The practical questions that usually stop the signup.</h2>
+            <div class="section-kicker">Questions founders ask</div>
+            <h2>Everything you would want to know before applying.</h2>
           </div>
-          <p class="section-intro">Ventura uses these answers across the landing page, outreach, and operator workflow so the story stays consistent everywhere.</p>
+          <p class="section-intro">${escapeHtml(brand.tagline)}</p>
         </div>
         <div class="faq-grid">
           ${faqMarkup}
@@ -825,7 +782,7 @@ export function renderLaunchSite(business, plan) {
 
     <section class="footer-card">
       <div>
-        <div class="section-kicker">Ready for the first conversation</div>
+        <div class="section-kicker">${escapeHtml(brand.name)}</div>
         <p>${escapeHtml(footerCopy)}</p>
       </div>
       <a class="btn btn-primary" href="${escapeHtml(primaryHref)}">${escapeHtml(primaryCta)}</a>
@@ -847,6 +804,9 @@ function normalizeLaunchPlan(plan, context) {
     : [];
 
   return {
+    brand_name: clean(plan.brand_name) || fallbackPlan.brand_name,
+    brand_tagline: clean(plan.brand_tagline) || fallbackPlan.brand_tagline,
+    visual_motif: clean(plan.visual_motif) || fallbackPlan.visual_motif,
     hero_badge: clean(plan.hero_badge) || `${titleCase(context.type || 'business')} launch`,
     headline: clean(plan.headline) || `${context.name} for ${context.targetCustomer}`,
     subheadline: clean(plan.subheadline) || context.description,
@@ -886,6 +846,9 @@ function buildFallbackLaunchPlan(context) {
   const audience = context.targetCustomer;
   const inferred = inferLaunchAngles(context);
   return {
+    brand_name: inferred.brand_name,
+    brand_tagline: inferred.brand_tagline,
+    visual_motif: inferred.visual_motif,
     hero_badge: inferred.hero_badge,
     headline: inferred.headline,
     subheadline: inferred.subheadline,
@@ -1062,6 +1025,9 @@ function inferLaunchAngles(context) {
 
   if (lower.includes('founder') && lower.includes('investor')) {
     return {
+      brand_name: 'SignalMatch',
+      brand_tagline: 'Curated investor introductions for ambitious founders.',
+      visual_motif: 'Founder profile to investor match flow',
       hero_badge: 'Founder fundraising match',
       headline: 'Meet investors who already make sense for your company',
       subheadline: `Skip the bloated spreadsheet and land on a cleaner fundraising path with qualified matches, sharper narrative positioning, and a first impression that actually earns the intro.`,
@@ -1086,6 +1052,9 @@ function inferLaunchAngles(context) {
   }
 
   return {
+    brand_name: deriveGeneratedBrandName(context),
+    brand_tagline: `A more compelling way for ${audience} to move toward ${goal.toLowerCase()}.`,
+    visual_motif: 'Modern product storytelling',
     hero_badge: `${titleCase(clean(context.type) || 'business')} launch`,
     headline: `${name} made clearer, sharper, and easier to say yes to`,
     subheadline: `A focused launch experience for ${audience} with stronger positioning, cleaner messaging, and a tighter path toward ${goal.toLowerCase()}.`,
@@ -1183,6 +1152,229 @@ function deriveSiteBrand(name, heroBadge) {
     return clean(heroBadge) || words.slice(0, 3).join(' ');
   }
   return cleanedName;
+}
+
+function resolveBrandIdentity(business, plan) {
+  const context = {
+    name: clean(business.name),
+    targetCustomer: clean(business.target_customer),
+    goal90d: clean(business.goal_90d),
+    type: clean(business.type)
+  };
+  const inferred = inferLaunchAngles(context);
+  const generic = isGenericBusinessName(context.name);
+  const fallbackName = generic ? inferred.brand_name : context.name || inferred.brand_name;
+  return {
+    name: clean(plan.brand_name) || fallbackName,
+    tagline: clean(plan.brand_tagline) || inferred.brand_tagline || clean(plan.positioning) || context.name,
+    visual_motif: clean(plan.visual_motif) || inferred.visual_motif || 'Modern product storytelling'
+  };
+}
+
+function deriveGeneratedBrandName(context) {
+  const name = clean(context.name);
+  const lower = name.toLowerCase();
+  if (!name) return 'Ventura Launch';
+  if (lower.includes('founder') && lower.includes('investor')) return 'SignalMatch';
+  const keywords = name
+    .replace(/\b(saas|company|platform|tool|that|for|and|with|the|to)\b/gi, ' ')
+    .split(/[^a-zA-Z0-9]+/)
+    .map(part => clean(part))
+    .filter(Boolean);
+  if (keywords.length >= 2) {
+    return `${titleCase(keywords[0])}${titleCase(keywords[1])}`;
+  }
+  return titleCase(keywords[0] || name.split(/\s+/)[0] || 'Ventura');
+}
+
+function isGenericBusinessName(name) {
+  const cleaned = clean(name).toLowerCase();
+  if (!cleaned) return true;
+  return cleaned.length > 28
+    || /^saas company\b/.test(cleaned)
+    || cleaned.includes('that connects')
+    || cleaned.includes('platform for')
+    || cleaned.includes('company that')
+    || cleaned.split(/\s+/).length >= 5;
+}
+
+function renderBrandLogoSvg(brand) {
+  const monogram = clean(brand.name).split(/\s+/).map(word => word[0]).join('').slice(0, 2).toUpperCase() || 'V';
+  return `
+    <svg width="54" height="54" viewBox="0 0 54 54" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="${escapeHtml(brand.name)} logo">
+      <rect width="54" height="54" rx="18" fill="url(#g)"/>
+      <circle cx="16" cy="18" r="4" fill="#FFF7F0"/>
+      <circle cx="38" cy="16" r="3.5" fill="#FFF7F0" fill-opacity=".85"/>
+      <circle cx="30" cy="35" r="4.5" fill="#FFF7F0" fill-opacity=".95"/>
+      <path d="M16 18L30 35L38 16" stroke="#FFF7F0" stroke-width="2.2" stroke-linecap="round"/>
+      <text x="27" y="47" text-anchor="middle" font-family="Space Grotesk, sans-serif" font-size="10" font-weight="700" fill="#FFF7F0">${escapeHtml(monogram)}</text>
+      <defs>
+        <linearGradient id="g" x1="4" y1="4" x2="50" y2="50" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#FF6E3B"/>
+          <stop offset="1" stop-color="#11574A"/>
+        </linearGradient>
+      </defs>
+    </svg>
+  `;
+}
+
+function buildBenefitCards(business, plan) {
+  const founderInvestor = clean(business.name).toLowerCase().includes('founder')
+    && clean(business.name).toLowerCase().includes('investor');
+
+  if (founderInvestor) {
+    return [
+      {
+        icon: '01',
+        title: 'Find investors that actually fit your stage and category',
+        body: 'Skip the bulk database approach and focus on a tighter shortlist built around your raise, market, and momentum.'
+      },
+      {
+        icon: '02',
+        title: 'Show up with a sharper story before the intro happens',
+        body: 'Your positioning, application, and first touch feel higher-signal from the moment an investor lands on the company.'
+      },
+      {
+        icon: '03',
+        title: 'Spend less time chasing and more time in real conversations',
+        body: 'The experience is designed to turn curiosity into warm replies, qualified calls, and a cleaner path to the next raise.'
+      }
+    ];
+  }
+
+  return (plan.proof_points || []).slice(0, 3).map((item, index) => ({
+    icon: `0${index + 1}`,
+    title: item,
+    body: index === 0 ? plan.positioning : plan.subheadline
+  }));
+}
+
+function buildJourneySteps(business, plan, narrativeSections = []) {
+  const founderInvestor = clean(business.name).toLowerCase().includes('founder')
+    && clean(business.name).toLowerCase().includes('investor');
+
+  if (founderInvestor) {
+    return [
+      {
+        title: 'Tell us what you are building and where you are in the raise',
+        body: 'Share the company story, traction, sector, and target round so the matching logic starts from the right signal.'
+      },
+      {
+        title: 'Get a curated shortlist and a sharper fundraising narrative',
+        body: 'Receive investor-fit guidance and a cleaner story that makes the company easier to understand in a single glance.'
+      },
+      {
+        title: 'Walk into warmer conversations with better context',
+        body: 'Use the shortlist, positioning, and intro-ready materials to spend more energy on meetings that make sense.'
+      }
+    ];
+  }
+
+  if (narrativeSections.length) {
+    return narrativeSections.map(section => ({
+      title: section.title,
+      body: section.body
+    }));
+  }
+
+  return [
+    { title: 'Start with the right audience', body: plan.positioning },
+    { title: 'Sharpen the story', body: plan.offer },
+    { title: 'Move into the next conversation', body: plan.launch_summary }
+  ];
+}
+
+function buildCustomerFaq(business, plan) {
+  const founderInvestor = clean(business.name).toLowerCase().includes('founder')
+    && clean(business.name).toLowerCase().includes('investor');
+
+  if (founderInvestor) {
+    return [
+      {
+        question: 'Who is this built for?',
+        answer: 'Founders raising pre-seed or seed rounds who want a tighter, more qualified path to the right investor conversations.'
+      },
+      {
+        question: 'What happens after I apply?',
+        answer: 'You share the company basics, the raise context, and the traction story so the matching process can focus on stage, sector, and fit.'
+      },
+      {
+        question: 'Why not just buy a list and send cold emails?',
+        answer: 'Because fit matters more than volume. A better-matched shortlist and a sharper story usually outperform more noise.'
+      }
+    ];
+  }
+
+  return (plan.faq || []).slice(0, 3);
+}
+
+function renderHeroArtwork(brand, business, plan) {
+  const founderInvestor = clean(business.name).toLowerCase().includes('founder')
+    && clean(business.name).toLowerCase().includes('investor');
+
+  if (founderInvestor) {
+    return `
+      <svg viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeHtml(brand.name)} match illustration">
+        <defs>
+          <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#FFF7F0"/>
+            <stop offset="100%" stop-color="#F5EFE5"/>
+          </linearGradient>
+          <linearGradient id="stroke" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#FF6E3B"/>
+            <stop offset="100%" stop-color="#11574A"/>
+          </linearGradient>
+        </defs>
+        <rect width="640" height="360" rx="28" fill="url(#panel)"/>
+        <circle cx="164" cy="168" r="56" fill="#FFF0E7"/>
+        <circle cx="164" cy="146" r="18" fill="#FF6E3B"/>
+        <rect x="126" y="174" width="76" height="42" rx="18" fill="#FF6E3B" fill-opacity=".88"/>
+        <rect x="96" y="236" width="136" height="68" rx="20" fill="#FFFFFF" stroke="#E8DCCE"/>
+        <text x="116" y="262" font-family="Space Grotesk, sans-serif" font-size="12" font-weight="700" fill="#1B1613">Founder profile</text>
+        <text x="116" y="284" font-family="Space Grotesk, sans-serif" font-size="11" fill="#6F655C">B2B SaaS · Seed round</text>
+        <path d="M220 166C278 122 340 122 396 164" stroke="url(#stroke)" stroke-width="4" stroke-linecap="round" stroke-dasharray="6 8"/>
+        <path d="M220 188C280 234 340 236 398 194" stroke="#11574A" stroke-opacity=".26" stroke-width="3" stroke-linecap="round"/>
+        <g transform="translate(420 86)">
+          <rect width="154" height="74" rx="20" fill="#FFFFFF" stroke="#E8DCCE"/>
+          <circle cx="26" cy="26" r="10" fill="#11574A"/>
+          <text x="46" y="29" font-family="Space Grotesk, sans-serif" font-size="12" font-weight="700" fill="#1B1613">Operator Fund</text>
+          <text x="20" y="52" font-family="Space Grotesk, sans-serif" font-size="11" fill="#6F655C">Seed · B2B SaaS · warm fit</text>
+        </g>
+        <g transform="translate(402 174)">
+          <rect width="170" height="74" rx="20" fill="#FFF4EC" stroke="#F4D5C1"/>
+          <circle cx="26" cy="26" r="10" fill="#FF6E3B"/>
+          <text x="46" y="29" font-family="Space Grotesk, sans-serif" font-size="12" font-weight="700" fill="#1B1613">Conviction Capital</text>
+          <text x="20" y="52" font-family="Space Grotesk, sans-serif" font-size="11" fill="#6F655C">Pre-seed · SaaS infra · active now</text>
+        </g>
+        <g transform="translate(426 262)">
+          <rect width="122" height="40" rx="18" fill="#FFFFFF" stroke="#E8DCCE"/>
+          <text x="22" y="25" font-family="Space Grotesk, sans-serif" font-size="11" font-weight="700" fill="#1B1613">Warm intros only</text>
+        </g>
+      </svg>
+    `;
+  }
+
+  return `
+    <svg viewBox="0 0 640 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeHtml(brand.name)} brand illustration">
+      <defs>
+        <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#FF6E3B"/>
+          <stop offset="100%" stop-color="#11574A"/>
+        </linearGradient>
+      </defs>
+      <rect width="640" height="360" rx="28" fill="#FFF8F2"/>
+      <path d="M90 250C160 160 248 126 346 136C422 144 486 188 548 252" stroke="url(#g1)" stroke-width="6" stroke-linecap="round" fill="none"/>
+      <circle cx="126" cy="248" r="16" fill="#FF6E3B"/>
+      <circle cx="284" cy="148" r="14" fill="#11574A"/>
+      <circle cx="510" cy="236" r="16" fill="#FF9D56"/>
+      <rect x="88" y="70" width="196" height="86" rx="24" fill="#FFFFFF" stroke="#E9DDD0"/>
+      <text x="112" y="103" font-family="Space Grotesk, sans-serif" font-size="14" font-weight="700" fill="#1B1613">${escapeHtml(brand.name)}</text>
+      <text x="112" y="129" font-family="Space Grotesk, sans-serif" font-size="12" fill="#6F655C">${escapeHtml(plan.offer)}</text>
+      <rect x="360" y="186" width="188" height="92" rx="24" fill="#FFFFFF" stroke="#E9DDD0"/>
+      <text x="384" y="220" font-family="Space Grotesk, sans-serif" font-size="13" font-weight="700" fill="#1B1613">${escapeHtml(clean(business.target_customer) || 'Audience')}</text>
+      <text x="384" y="246" font-family="Space Grotesk, sans-serif" font-size="12" fill="#6F655C">${escapeHtml(plan.positioning)}</text>
+    </svg>
+  `;
 }
 
 function buildHeroFocusCards(business, plan) {
