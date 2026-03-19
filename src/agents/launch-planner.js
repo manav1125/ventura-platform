@@ -94,7 +94,10 @@ export function buildRenderableLaunchPlan(business = {}, artifact = null) {
   };
 
   if (artifact?.metadata && typeof artifact.metadata === 'object' && Object.keys(artifact.metadata).length) {
-    return normalizeLaunchPlan(artifact.metadata, context);
+    const normalized = normalizeLaunchPlan(artifact.metadata, context);
+    return isWeakPublicLaunchPlan(normalized, context)
+      ? buildFallbackLaunchPlan(context)
+      : normalized;
   }
 
   return buildFallbackLaunchPlan(context);
@@ -478,6 +481,31 @@ function inferLaunchAngles(context) {
       'Run through Ventura’s live operator loop and launch workflow.'
     ]
   };
+}
+
+function isWeakPublicLaunchPlan(plan, context) {
+  const name = clean(context.name).toLowerCase();
+  const headline = clean(plan?.headline).toLowerCase();
+  const subheadline = clean(plan?.subheadline).toLowerCase();
+  const positioning = clean(plan?.positioning).toLowerCase();
+  const offer = clean(plan?.offer).toLowerCase();
+  const sections = Array.isArray(plan?.site_sections) ? plan.site_sections : [];
+
+  const genericHeadline = !headline
+    || headline === name
+    || headline.includes('a sharper answer for')
+    || headline.includes(`${name}:`);
+
+  const genericSubheadline = !subheadline || subheadline === name;
+  const genericPositioning = !positioning
+    || positioning === name
+    || positioning.includes('helps')
+      && positioning.includes('move toward');
+  const genericOffer = !offer || offer.startsWith('a focused ');
+  const genericSections = sections.length > 0
+    && sections.every(section => ['why this exists', 'who it is for', 'what happens next', 'why it is different'].includes(clean(section.heading).toLowerCase()));
+
+  return genericHeadline || genericSubheadline || genericPositioning || genericOffer || genericSections;
 }
 
 function clean(value) {
