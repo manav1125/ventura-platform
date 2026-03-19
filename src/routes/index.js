@@ -10,7 +10,7 @@ import {
   createEmailVerificationToken, verifyEmailToken,
   createPasswordResetToken, resetPasswordWithToken
 } from '../auth/auth.js';
-import { provisionBusiness } from '../provisioning/provision.js';
+import { provisionBusiness, regenerateBusinessFoundation } from '../provisioning/provision.js';
 import { startBusinessCycleIfIdle } from '../agents/runner.js';
 import {
   getLatestArtifactByKind,
@@ -1437,6 +1437,39 @@ router.patch('/businesses/:id', requireAuth, asyncHandler(async (req, res) => {
   }
 
   res.json({ success: true });
+}));
+
+// POST /api/businesses/:id/regenerate-launch — rebuild launch plan/site/queue for an existing business
+router.post('/businesses/:id/regenerate-launch', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const schema = z.object({
+    replaceQueuedTasks: z.boolean().optional(),
+    restartCycle: z.boolean().optional()
+  });
+  const body = validate(schema, req.body || {});
+
+  const result = await regenerateBusinessFoundation({
+    businessId: req.params.id,
+    replaceQueuedTasks: body.replaceQueuedTasks ?? true,
+    restartCycle: body.restartCycle ?? true,
+    triggeredBy: 'founder'
+  });
+
+  res.status(202).json({
+    success: true,
+    message: 'Ventura regenerated the launch foundation.',
+    regeneration: {
+      headline: result.launchPlan?.headline || null,
+      replacedQueuedTasks: result.replacedQueuedTasks,
+      queuedTasks: result.queuedTasks,
+      runningTasks: result.runningTasks,
+      cycleStarted: result.cycleStarted,
+      cycleId: result.cycleId || null
+    }
+  });
 }));
 
 // ─────────────────────────────────────────────────────────────────────────────

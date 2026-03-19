@@ -50,9 +50,12 @@ Return ONLY valid JSON with this shape:
 Rules:
 - Make the plan specific to this business idea.
 - Do not say the founder should hire a developer or use a no-code builder.
-- The first tasks must be executable by Ventura.
+- The first tasks must be executable by Ventura using its existing tools, integrations, and artifact system.
 - Include 5 to 7 tasks.
-- Site copy should feel launch-ready, not generic.`
+- Site copy should feel launch-ready, not generic.
+- Avoid placeholder/meta tasks like "write a full business plan", "define the MVP", or "build the complete app".
+- Prefer Ventura-native outputs like positioning briefs, live homepage copy, FAQ/proof assets, prospect lists, outreach sequences, inbox rules, deploys, and research reports.
+- Every task description must name the concrete deliverable that will exist when the task is done.`
         }]
       });
 
@@ -163,6 +166,16 @@ export function renderLaunchSite(business, plan) {
 }
 
 function normalizeLaunchPlan(plan, context) {
+  const fallbackPlan = buildFallbackLaunchPlan(context);
+  const candidateTasks = Array.isArray(plan.tasks) && plan.tasks.length
+    ? plan.tasks.map(task => ({
+        title: clean(task.title),
+        department: normalizeDepartment(task.department),
+        description: clean(task.description),
+        priority: clampPriority(task.priority)
+      })).filter(task => task.title && task.description && !isWeakLaunchTask(task))
+    : [];
+
   return {
     headline: clean(plan.headline) || `${context.name} for ${context.targetCustomer}`,
     subheadline: clean(plan.subheadline) || context.description,
@@ -176,14 +189,7 @@ function normalizeLaunchPlan(plan, context) {
     site_sections: Array.isArray(plan.site_sections) && plan.site_sections.length
       ? plan.site_sections.map(item => ({ heading: clean(item.heading), body: clean(item.body) })).filter(item => item.heading && item.body).slice(0, 4)
       : fallbackSections(context),
-    tasks: Array.isArray(plan.tasks) && plan.tasks.length
-      ? plan.tasks.map(task => ({
-          title: clean(task.title),
-          department: normalizeDepartment(task.department),
-          description: clean(task.description),
-          priority: clampPriority(task.priority)
-        })).filter(task => task.title && task.description)
-      : buildFallbackLaunchPlan(context).tasks
+    tasks: candidateTasks.length ? candidateTasks : fallbackPlan.tasks
   };
 }
 
@@ -204,34 +210,40 @@ function buildFallbackLaunchPlan(context) {
     site_sections: fallbackSections(context),
     tasks: [
       {
-        title: `Finalize launch narrative for ${context.name}`,
+        title: `Sharpen ${context.name} positioning for ${audience}`,
         department: 'strategy',
-        description: `Turn the founder brief into a crisp offer, pricing narrative, and 90-day execution roadmap for ${audience}.`,
+        description: `Create a founder-ready positioning brief with the offer, pricing angle, objections, and a 30-day operating focus for ${audience}.`,
         priority: 1
       },
       {
-        title: `Ship ${context.name} landing page`,
+        title: `Publish a conversion-focused homepage for ${context.name}`,
         department: 'engineering',
-        description: `Upgrade the live launch page into a higher-converting production site for ${audience}, using the current positioning and CTA.`,
+        description: `Ship updated homepage copy and structure for ${audience}, then deploy the live site with a clear CTA and proof section.`,
         priority: 1
       },
       {
-        title: `Build first outreach list for ${audience}`,
+        title: `Research the first 20 likely buyers for ${context.name}`,
         department: 'marketing',
-        description: `Identify early prospects, channels, and message angles that can create first traction toward ${context.goal90d}.`,
+        description: `Produce a prospect list with names, companies, hooks, and channel notes Ventura can use for first outreach toward ${context.goal90d}.`,
         priority: 2
       },
       {
-        title: `Set inbox and founder response rules`,
+        title: `Draft the first outbound sequence for ${context.name}`,
+        department: 'marketing',
+        description: `Write the first outbound email or message sequence, including CTA, follow-up angle, and objection handling for ${audience}.`,
+        priority: 2
+      },
+      {
+        title: `Set inbox and response rules for ${context.name}`,
         department: 'operations',
-        description: `Prepare the business inbox, routing logic, and response templates so Ventura can handle inbound interest cleanly.`,
+        description: `Create inbox triage rules, response templates, and operating notes so Ventura can handle inbound interest cleanly.`,
         priority: 3
       },
       {
-        title: `Create conversion copy and proof assets`,
-        department: 'marketing',
-        description: `Draft headline variants, supporting proof points, objection handling, and CTA copy for the site and outbound work.`,
-        priority: 2
+        title: `Create proof assets and FAQ copy for ${context.name}`,
+        department: 'strategy',
+        description: `Produce proof points, trust-building FAQ copy, and customer-facing answers Ventura can reuse across the site and outbound motion.`,
+        priority: 3
       }
     ]
   };
@@ -256,6 +268,20 @@ function fallbackSections(context) {
 
 function clean(value) {
   return String(value || '').trim();
+}
+
+function isWeakLaunchTask(task) {
+  const title = clean(task?.title).toLowerCase();
+  if (!title) return true;
+  return [
+    'write full business plan',
+    '90-day roadmap',
+    'define mvp feature set',
+    'build core mvp',
+    'build and deploy complete landing page',
+    'technical architecture',
+    'cornerstone content pieces'
+  ].some(fragment => title.includes(fragment));
 }
 
 function normalizeDepartment(value) {

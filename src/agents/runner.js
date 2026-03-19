@@ -10,6 +10,7 @@ import cron from 'node-cron';
 import { getDb } from '../db/migrate.js';
 import { runTask } from './brain.js';
 import { ensureBusinessCadence, isBusinessDue, markCycleRun } from './cadence.js';
+import { createArtifact, getLatestArtifactByKind, getPublishedSiteFile } from './artifacts.js';
 import { getQueuedTasks, startTask, completeTask, failTask, queueTask } from './tasks.js';
 import { logActivity } from './activity.js';
 import { openRecoveryCase, resolveRecoveryCasesForSource } from './recovery.js';
@@ -37,6 +38,183 @@ export function stopAgentScheduler() {
   schedulerTask.stop();
   if (typeof schedulerTask.destroy === 'function') schedulerTask.destroy();
   schedulerTask = null;
+}
+
+function cleanString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function clipText(value, max = 180) {
+  const cleaned = cleanString(value);
+  if (!cleaned) return '';
+  return cleaned.length > max ? `${cleaned.slice(0, max - 3)}...` : cleaned;
+}
+
+function safeParseJson(value, fallback = {}) {
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeDepartment(value) {
+  const department = cleanString(value).toLowerCase();
+  return ['engineering', 'marketing', 'operations', 'strategy', 'sales', 'finance'].includes(department)
+    ? department
+    : 'strategy';
+}
+
+function extractSiteHeadline(siteFile) {
+  const content = cleanString(siteFile?.content);
+  if (!content) return '';
+  const titleMatch = content.match(/<title>([^<]+)<\/title>/i);
+  if (titleMatch?.[1]) return cleanString(titleMatch[1]);
+  const h1Match = content.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  return cleanString((h1Match?.[1] || '').replace(/<[^>]+>/g, ' '));
+}
+
+function isWeakCycleTaskTitle(title) {
+  const normalized = cleanString(title).toLowerCase();
+  if (!normalized) return true;
+  return [
+    'write full business plan',
+    '90-day roadmap',
+    'define mvp feature set',
+    'build core mvp',
+    'build and deploy complete landing page',
+    'technical architecture'
+  ].some(fragment => normalized.includes(fragment));
+}
+
+function normalizeTaskCandidate(task, business) {
+  const title = cleanString(task?.title);
+  const description = cleanString(task?.description);
+  if (!title || !description || isWeakCycleTaskTitle(title)) return null;
+  return {
+    title: title.length > 140 ? `${title.slice(0, 137)}...` : title,
+    description: description.length > 360 ? `${description.slice(0, 357)}...` : description,
+    department: normalizeDepartment(task.department || task?.dept || 'strategy')
+  };
+}
+
+function buildFallbackCycleTasks({
+  business,
+  memory,
+  workspace,
+  latestPlan,
+  siteHeadline,
+  existingTitles = new Set()
+}) {
+  const audience = business.target_customer || 'target customers';
+  const goal = business.goal_90d || 'the 90-day goal';
+  const planOffer = cleanString(latestPlan?.metadata?.offer || memory?.launch_plan?.offer || '');
+  const priorities = Array.isArray(memory?.priorities) ? memory.priorities : [];
+  const tasks = [
+    {
+      title: `Tighten ${business.name} positioning for ${audience}`,
+      department: 'strategy',
+      description: `Produce a sharper positioning brief, offer framing, and CTA Ventura can reuse across the site and outreach while pushing toward ${goal}.`
+    },
+    {
+      title: `Refresh ${business.name} homepage around the core offer`,
+      department: 'engineering',
+      description: `Update and deploy the live homepage so it clearly sells ${planOffer || business.description} to ${audience}, with a stronger hero, proof, and CTA.`
+    },
+    {
+      title: `Research 15 high-fit prospects for ${business.name}`,
+      department: 'marketing',
+      description: `Create a prospect list with company, contact angle, and why-now notes so Ventura can start qualified outreach toward ${goal}.`
+    },
+    {
+      title: `Set inbound response rules for ${business.name}`,
+      department: 'operations',
+      description: `Document inbox triage rules, reply templates, and escalation notes so Ventura can handle inbound interest without founder confusion.`
+    }
+  ];
+
+  if ((workspace?.summary?.inbox_attention || 0) > 0) {
+    tasks.unshift({
+      title: `Clear urgent inbox work for ${business.name}`,
+      department: 'operations',
+      description: `Review the live inbox attention queue, draft replies, and leave a clean operating note for anything blocked on founder input.`
+    });
+  }
+
+  if (siteHeadline) {
+    tasks[1] = {
+      title: `Upgrade ${business.name} homepage messaging`,
+      department: 'engineering',
+      description: `Refine the current site headline "${siteHeadline}" into a sharper, higher-converting homepage for ${audience}, then redeploy the live page.`
+    };
+  }
+
+  if (priorities.length) {
+    tasks[0] = {
+      title: `Advance Ventura's top priority for ${business.name}`,
+      department: 'strategy',
+      description: `Take the current priority "${priorities[0]}" and turn it into a more specific founder-facing execution brief and next-step sequence tied to ${goal}.`
+    };
+  }
+
+  return tasks.filter(task => !existingTitles.has(cleanString(task.title).toLowerCase())).slice(0, 4);
+}
+
+function buildCycleSummaryFallback({
+  business,
+  tasksRun,
+  errors,
+  completedTasks,
+  failedTasks,
+  queuedTasks
+}) {
+  const completed = completedTasks
+    .map(task => clipText(task.result?.summary || task.title, 90))
+    .filter(Boolean)
+    .slice(0, 2);
+  const nextUp = queuedTasks
+    .map(task => task.title)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  if (!tasksRun && errors) {
+    return `Ventura hit ${errors} execution issue${errors === 1 ? '' : 's'} for ${business.name}; next queued work is ${nextUp[0] || 'waiting on a founder retry'}.`;
+  }
+
+  const headline = completed.length
+    ? `Ventura completed ${tasksRun} task${tasksRun === 1 ? '' : 's'} for ${business.name}: ${completed.join('; ')}.`
+    : `Ventura completed ${tasksRun} task${tasksRun === 1 ? '' : 's'} for ${business.name}.`;
+
+  if (failedTasks.length) {
+    return `${headline} ${failedTasks.length} task${failedTasks.length === 1 ? '' : 's'} still need recovery.`;
+  }
+  if (nextUp.length) {
+    return `${headline} Next up: ${nextUp.join('; ')}.`;
+  }
+  return headline;
+}
+
+function buildCycleReportContent({ triggeredBy, completedTasks, failedTasks, queuedTasks, summary }) {
+  return [
+    `Cycle trigger: ${triggeredBy}`,
+    '',
+    `Summary: ${summary}`,
+    '',
+    'Completed tasks:',
+    ...(completedTasks.length
+      ? completedTasks.map(task => `- [${task.department}] ${task.title}: ${clipText(task.result?.summary || task.description || 'Completed.', 220)}`)
+      : ['- None completed in this cycle.']),
+    '',
+    'Failed tasks:',
+    ...(failedTasks.length
+      ? failedTasks.map(task => `- [${task.department}] ${task.title}: ${clipText(task.error || 'Execution failed.', 220)}`)
+      : ['- None']),
+    '',
+    'Still queued:',
+    ...(queuedTasks.length
+      ? queuedTasks.map(task => `- [${task.department}] ${task.title}`)
+      : ['- No queued follow-up tasks.'])
+  ].join('\n');
 }
 
 // ─── Run all active businesses ────────────────────────────────────────────────
@@ -74,7 +252,7 @@ export async function runAllBusinesses(triggeredBy = 'cron') {
 export async function runBusinessCycle(business, triggeredBy = 'cron') {
   const db = getDb();
   const cycleId = uuid();
-  const isLaunchCycle = triggeredBy === 'launch';
+  const isLaunchCycle = ['launch', 'relaunch'].includes(triggeredBy);
 
   console.log(`\n▶ Starting cycle for: ${business.name} (${business.id})`);
 
@@ -226,7 +404,45 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
     const updatedBusiness = db.prepare('SELECT * FROM businesses WHERE id=?').get(business.id);
 
     // ── Generate cycle summary via AI ─────────────────────────────────────────
-    const summary = await generateCycleSummary(updatedBusiness, tasksRun, errors);
+    const summary = await generateCycleSummary(updatedBusiness, tasksRun, errors, cycleId, triggeredBy);
+
+    const cycleTasks = db.prepare(`
+      SELECT title, department, description, status, result, error
+      FROM tasks
+      WHERE business_id = ?
+        AND cycle_id = ?
+      ORDER BY created_at ASC
+    `).all(business.id, cycleId).map(task => ({
+      ...task,
+      result: safeParseJson(task.result, {})
+    }));
+    const completedCycleTasks = cycleTasks.filter(task => task.status === 'complete');
+    const failedCycleTasks = cycleTasks.filter(task => task.status === 'failed');
+    const queuedCycleTasks = getQueuedTasks(business.id, 8);
+
+    createArtifact({
+      businessId: business.id,
+      cycleId,
+      department: 'strategy',
+      kind: 'cycle_report',
+      title: `${isLaunchCycle ? 'Launch' : 'Daily'} cycle report`,
+      summary,
+      content: buildCycleReportContent({
+        triggeredBy,
+        completedTasks: completedCycleTasks,
+        failedTasks: failedCycleTasks,
+        queuedTasks: queuedCycleTasks,
+        summary
+      }),
+      metadata: {
+        triggered_by: triggeredBy,
+        tasks_run: tasksRun,
+        errors,
+        completed_tasks: completedCycleTasks.length,
+        failed_tasks: failedCycleTasks.length,
+        queued_tasks: queuedCycleTasks.length
+      }
+    });
 
     // ── Complete cycle record ─────────────────────────────────────────────────
     db.prepare(`
@@ -334,19 +550,44 @@ async function generateCycleTasks(business) {
   const db = getDb();
   const memory = JSON.parse(business.agent_memory || '{}');
   const { getWorkspacePromptContext } = await import('../integrations/workspace-sync.js');
+  const latestPlan = getLatestArtifactByKind(business.id, 'launch_plan');
+  const siteFile = getPublishedSiteFile(business.id, 'index.html');
+  const siteHeadline = extractSiteHeadline(siteFile);
   const recentActivity = db.prepare(`
     SELECT type, department, title FROM activity
     WHERE business_id = ? ORDER BY created_at DESC LIMIT 20
+  `).all(business.id);
+  const recentTasks = db.prepare(`
+    SELECT title
+    FROM tasks
+    WHERE business_id = ?
+    ORDER BY created_at DESC
+    LIMIT 16
   `).all(business.id);
 
   const recentMetrics = db.prepare(`
     SELECT * FROM metrics WHERE business_id = ? ORDER BY date DESC LIMIT 7
   `).all(business.id);
   const workspace = getWorkspacePromptContext(business.id);
+  const existingTitles = new Set(
+    [
+      ...getQueuedTasks(business.id, 20).map(task => task.title),
+      ...recentTasks.map(task => task.title)
+    ].map(title => cleanString(title).toLowerCase()).filter(Boolean)
+  );
+  const fallbackTasks = buildFallbackCycleTasks({
+    business,
+    memory,
+    workspace,
+    latestPlan,
+    siteHeadline,
+    existingTitles
+  });
 
   // Use a fast, focused call to decide what to work on
   const Anthropic = (await import('@anthropic-ai/sdk')).default;
   const { ANTHROPIC_API_KEY, AGENT_MODEL } = await import('../config.js');
+  if (!ANTHROPIC_API_KEY) return fallbackTasks;
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
   const prompt = `You are deciding what tasks to execute for ${business.name} today.
@@ -356,13 +597,19 @@ Day: ${business.day_count}
 Current MRR: $${(business.mrr_cents / 100).toFixed(2)}
 Business memory: ${JSON.stringify(memory, null, 2)}
 Workspace snapshot: ${JSON.stringify(workspace, null, 2)}
+Latest launch plan: ${JSON.stringify(latestPlan?.metadata || {}, null, 2)}
+Current site headline: ${siteHeadline || 'No live headline yet'}
 
 Recent activity: ${JSON.stringify(recentActivity, null, 2)}
 Recent metrics: ${JSON.stringify(recentMetrics, null, 2)}
+Existing queued/recent task titles: ${JSON.stringify([...existingTitles], null, 2)}
 
 Return a JSON array of 3-5 tasks to execute today. Each task: { title, description, department }.
 Departments: engineering | marketing | operations | strategy | sales | finance
 Focus on highest-impact actions toward the 90-day goal. Use the inbox, calendar, and accounting context where relevant. Vary departments each cycle.
+Every task must be specific to ${business.name}, mention a concrete deliverable, and be something Ventura can actually execute this cycle.
+Do not output placeholder/meta tasks like "write the business plan", "define the MVP", or "build the full app".
+Do not repeat existing queued or recently completed work unless the task explicitly says it is a revision or retry.
 
 IMPORTANT: Return ONLY a JSON array, no other text.`;
 
@@ -375,39 +622,93 @@ IMPORTANT: Return ONLY a JSON array, no other text.`;
 
     const text = response.content[0].text.trim();
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    return JSON.parse(cleaned);
+    const parsed = JSON.parse(cleaned);
+    const normalized = Array.isArray(parsed)
+      ? parsed
+        .map(task => normalizeTaskCandidate(task, business))
+        .filter(Boolean)
+        .filter(task => !existingTitles.has(cleanString(task.title).toLowerCase()))
+      : [];
+    return normalized.length ? normalized.slice(0, 5) : fallbackTasks;
   } catch (err) {
     // Fallback tasks if AI generation fails
     console.error('Task generation failed, using fallback tasks:', err.message);
-    return [
-      { title: 'Review and improve website conversion rate', department: 'engineering', description: 'Analyse the current website and make improvements to increase visitor-to-lead conversion.' },
-      { title: 'Send weekly progress email to leads', department: 'marketing', description: 'Write and send a value-adding email to all leads in the pipeline.' },
-      { title: 'Handle inbox and respond to any outstanding messages', department: 'operations', description: 'Review the business inbox and respond to any messages that require attention.' },
-    ];
+    return fallbackTasks;
   }
 }
 
 // ─── Cycle summary generator ──────────────────────────────────────────────────
 
-async function generateCycleSummary(business, tasksRun, errors) {
-  if (!AGENT_MODEL) return `Completed ${tasksRun} tasks.`;
+async function generateCycleSummary(business, tasksRun, errors, cycleId, triggeredBy = 'cron') {
+  const db = getDb();
+  const cycleTasks = db.prepare(`
+    SELECT title, department, description, status, result, error
+    FROM tasks
+    WHERE business_id = ?
+      AND cycle_id = ?
+    ORDER BY created_at ASC
+  `).all(business.id, cycleId).map(task => ({
+    ...task,
+    result: safeParseJson(task.result, {})
+  }));
+  const completedTasks = cycleTasks.filter(task => task.status === 'complete');
+  const failedTasks = cycleTasks.filter(task => task.status === 'failed');
+  const queuedTasks = getQueuedTasks(business.id, 6);
+  const fallback = buildCycleSummaryFallback({
+    business,
+    tasksRun,
+    errors,
+    completedTasks,
+    failedTasks,
+    queuedTasks
+  });
+
+  if (!AGENT_MODEL) return fallback;
 
   try {
     const Anthropic = (await import('@anthropic-ai/sdk')).default;
     const { ANTHROPIC_API_KEY, AGENT_MODEL } = await import('../config.js');
+    if (!ANTHROPIC_API_KEY) return fallback;
     const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
     const response = await client.messages.create({
       model: AGENT_MODEL,
-      max_tokens: 200,
+      max_tokens: 220,
       messages: [{
         role: 'user',
-        content: `Write a 1-sentence summary for the founder of ${business.name}. Today's agent ran ${tasksRun} tasks (${errors} errors). MRR: $${(business.mrr_cents / 100).toFixed(2)}, day ${business.day_count}. Be specific and action-oriented, mention the most impactful thing done.`
+        content: `Write a single founder-facing cycle summary sentence for ${business.name}.
+
+Business goal: ${business.goal_90d}
+Cycle trigger: ${triggeredBy}
+Tasks run: ${tasksRun}
+Errors: ${errors}
+Completed tasks: ${JSON.stringify(completedTasks.map(task => ({
+  title: task.title,
+  department: task.department,
+  summary: clipText(task.result?.summary || task.description, 140)
+})), null, 2)}
+Failed tasks: ${JSON.stringify(failedTasks.map(task => ({
+  title: task.title,
+  department: task.department,
+  error: clipText(task.error, 140)
+})), null, 2)}
+Next queued: ${JSON.stringify(queuedTasks.slice(0, 3).map(task => task.title), null, 2)}
+
+Rules:
+- Be specific about what Ventura actually completed.
+- Mention the next most important queued step if one exists.
+- Do not ask the founder for more information.
+- Do not mention hiring a developer or doing the work manually.
+- Keep it under 38 words.`
       }]
     });
 
-    return response.content[0].text.trim();
+    const summary = cleanString(response.content[0].text);
+    if (!summary || /\?/.test(summary) || /(hire a developer|build it yourself|use carrd|use framer|manually do)/i.test(summary)) {
+      return fallback;
+    }
+    return summary;
   } catch {
-    return `Completed ${tasksRun} tasks across engineering, marketing, and operations.`;
+    return fallback;
   }
 }

@@ -48,6 +48,18 @@ const POST   = (p, b, t) => req('POST',  p, b, t);
 const PATCH  = (p, b, t) => req('PATCH', p, b, t);
 const DELETE = (p, t)    => req('DELETE', p, null, t);
 
+async function waitForNoRunningCycle(businessId, token, timeoutMs = 4000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { status, body } = await GET(`/api/businesses/${businessId}/cycles`, token);
+    assert.equal(status, 200);
+    const running = (body.cycles || []).find(cycle => cycle.status === 'running');
+    if (!running) return;
+    await new Promise(resolve => setTimeout(resolve, 75));
+  }
+  throw new Error(`Timed out waiting for business ${businessId} to become idle`);
+}
+
 async function withFetchMocks(routes, fn) {
   global.fetch = async (input, init = {}) => {
     const url = typeof input === 'string' ? input : input.url;
@@ -490,6 +502,30 @@ describe('Control center', () => {
     assert.ok(body.economics);
     assert.ok(body.economics.monthly_subscription_cents >= 0);
     assert.equal(body.business.monthly_subscription_cents, body.economics.monthly_subscription_cents);
+  });
+
+  it('regenerates the launch foundation for an existing business', async () => {
+    await waitForNoRunningCycle(bizId, tokens.access);
+
+    const { status, body } = await POST(`/api/businesses/${bizId}/regenerate-launch`, {
+      replaceQueuedTasks: true,
+      restartCycle: false
+    }, tokens.access);
+
+    assert.equal(status, 202);
+    assert.equal(body.success, true);
+    assert.ok(body.regeneration.headline);
+    assert.ok(body.regeneration.queuedTasks >= 1);
+
+    const tasksRes = await GET(`/api/businesses/${bizId}/tasks`, tokens.access);
+    assert.equal(tasksRes.status, 200);
+    const autonomousQueued = tasksRes.body.tasks.filter(task => task.status === 'queued' && task.triggered_by !== 'user');
+    assert.ok(autonomousQueued.length >= 1);
+    assert.ok(autonomousQueued.every(task => !/write full business plan|define mvp feature set|build core mvp/i.test(task.title)));
+
+    const artifactsRes = await GET(`/api/businesses/${bizId}/artifacts`, tokens.access);
+    assert.equal(artifactsRes.status, 200);
+    assert.ok(artifactsRes.body.artifacts.some(item => item.kind === 'launch_refresh'));
   });
 
   it('lists deployment history', async () => {

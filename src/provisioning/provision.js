@@ -21,6 +21,91 @@ import { getPlanEconomics } from '../billing/plans.js';
 import { syncInfrastructureAssets } from '../infrastructure/assets.js';
 import { syncWorkspaceData } from '../integrations/workspace-sync.js';
 
+function safeParse(value, fallback = {}) {
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function uniqueStrings(values = [], limit = 12) {
+  const seen = new Set();
+  const result = [];
+  for (const value of values) {
+    const cleaned = String(value || '').trim();
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(cleaned);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+function buildLaunchContextFromBusiness(business) {
+  return {
+    businessId: business.id,
+    name: business.name,
+    type: business.type,
+    description: business.description,
+    targetCustomer: business.target_customer,
+    goal90d: business.goal_90d,
+    involvement: business.involvement,
+    webUrl: business.web_url,
+    emailAddress: business.email_address
+  };
+}
+
+function buildAgentMemory(context, launchPlan = null, existingMemory = null) {
+  const previous = safeParse(existingMemory, {});
+  return {
+    ...previous,
+    business: context,
+    history: Array.isArray(previous.history) ? previous.history.slice(-9) : [],
+    last_cycle: previous.last_cycle || null,
+    learnings: uniqueStrings([
+      ...(launchPlan?.proof_points || []),
+      ...(previous.learnings || [])
+    ]),
+    priorities: uniqueStrings([
+      ...((launchPlan?.tasks || []).slice(0, 6).map(task => task.title)),
+      ...(previous.priorities || [])
+    ]),
+    leads: Array.isArray(previous.leads) ? previous.leads : [],
+    notes: uniqueStrings([
+      launchPlan?.launch_summary,
+      launchPlan?.positioning,
+      launchPlan?.offer,
+      launchPlan?.cta ? `CTA: ${launchPlan.cta}` : '',
+      ...(previous.notes || [])
+    ]),
+    customer_insights: uniqueStrings([
+      ...(launchPlan?.proof_points || []),
+      ...(previous.customer_insights || [])
+    ]),
+    launch_plan: launchPlan ? {
+      headline: launchPlan.headline,
+      subheadline: launchPlan.subheadline,
+      offer: launchPlan.offer
+    } : previous.launch_plan || null
+  };
+}
+
+function cancelQueuedAutonomousTasks(businessId) {
+  const db = getDb();
+  const result = db.prepare(`
+    UPDATE tasks
+    SET status = 'cancelled',
+        error = COALESCE(error, 'Replaced by a regenerated launch foundation.')
+    WHERE business_id = ?
+      AND status = 'queued'
+      AND triggered_by != 'user'
+  `).run(businessId);
+  return result.changes || 0;
+}
+
 // ─── Slug generator ───────────────────────────────────────────────────────────
 
 function toSlug(name) {
@@ -254,27 +339,12 @@ function notifyProvisioningComplete(businessId, userId) {
   emitToUser(userId, { event: 'provisioning:complete', businessId });
 }
 
-async function stepSeedAgentMemory(businessId, context, launchPlan = null) {
+async function stepSeedAgentMemory(businessId, context, launchPlan = null, options = {}) {
   const db = getDb();
-  const memory = {
-    business: context,
-    history: [],
-    last_cycle: null,
-    learnings: launchPlan?.proof_points || [],
-    priorities: (launchPlan?.tasks || []).slice(0, 5).map(task => task.title),
-    leads: [],
-    notes: launchPlan ? [
-      launchPlan.launch_summary,
-      launchPlan.positioning,
-      `CTA: ${launchPlan.cta}`
-    ].filter(Boolean) : [],
-    customer_insights: launchPlan?.proof_points || [],
-    launch_plan: launchPlan ? {
-      headline: launchPlan.headline,
-      subheadline: launchPlan.subheadline,
-      offer: launchPlan.offer
-    } : null
-  };
+  const existingMemory = options.preserveExisting
+    ? db.prepare('SELECT agent_memory FROM businesses WHERE id = ?').get(businessId)?.agent_memory
+    : null;
+  const memory = buildAgentMemory(context, launchPlan, existingMemory);
   db.prepare(`UPDATE businesses SET agent_memory=? WHERE id=?`)
     .run(JSON.stringify(memory), businessId);
 }
@@ -345,6 +415,108 @@ async function stepQueueInitialTasks(businessId, type, launchPlan = null) {
       priority: task.priority || 5
     });
   }
+}
+
+export async function regenerateBusinessFoundation({
+  businessId,
+  replaceQueuedTasks = true,
+  restartCycle = true,
+  triggeredBy = 'founder'
+}) {
+  const db = getDb();
+  const business = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
+  if (!business) throw new Error('Business not found');
+
+  const runningCycle = db.prepare(`
+    SELECT id
+    FROM agent_cycles
+    WHERE business_id = ?
+      AND status = 'running'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(businessId);
+
+  if (runningCycle) {
+    throw new Error('A cycle is already running for this business.');
+  }
+
+  const context = buildLaunchContextFromBusiness(business);
+  const launchPlan = await stepGenerateLaunchPlan(context);
+  await stepSeedAgentMemory(businessId, context, launchPlan, { preserveExisting: true });
+  await stepPublishInitialSite(businessId, launchPlan);
+
+  const replacedQueuedTasks = replaceQueuedTasks ? cancelQueuedAutonomousTasks(businessId) : 0;
+  await stepQueueInitialTasks(businessId, business.type, launchPlan);
+
+  const queueSummary = db.prepare(`
+    SELECT
+      SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
+      SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running
+    FROM tasks
+    WHERE business_id = ?
+  `).get(businessId);
+
+  const refreshedBusiness = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
+  let cycleStarted = false;
+  let cycleId = null;
+  if (restartCycle && refreshedBusiness?.status === 'active') {
+    const cycle = startBusinessCycleIfIdle(refreshedBusiness, 'relaunch');
+    cycleStarted = cycle.started;
+    cycleId = cycle.cycleId || null;
+    if (cycle.started) {
+      cycle.promise
+        .catch(err => console.error(`Relaunch cycle failed for ${businessId}: ${err.message}`));
+    }
+  }
+
+  const artifact = createArtifact({
+    businessId,
+    department: 'strategy',
+    kind: 'launch_refresh',
+    title: `${business.name} launch foundation refreshed`,
+    summary: `Ventura regenerated the launch plan, republished the site, and refreshed ${queueSummary?.queued || 0} queued task${(queueSummary?.queued || 0) === 1 ? '' : 's'}.`,
+    content: [
+      `Triggered by: ${triggeredBy}`,
+      `Headline: ${launchPlan.headline}`,
+      `Replaced queued autonomous tasks: ${replacedQueuedTasks}`,
+      `Queued now: ${queueSummary?.queued || 0}`,
+      `Running now: ${queueSummary?.running || 0}`,
+      `Cycle started immediately: ${cycleStarted ? 'yes' : 'no'}`,
+      '',
+      'Fresh launch tasks:',
+      ...(launchPlan.tasks || []).map(task => `- [${task.department}] ${task.title}: ${task.description}`)
+    ].join('\n'),
+    metadata: {
+      triggered_by: triggeredBy,
+      replaced_queued_tasks: replacedQueuedTasks,
+      queued_tasks: queueSummary?.queued || 0,
+      running_tasks: queueSummary?.running || 0,
+      cycle_started: cycleStarted
+    }
+  });
+
+  await logActivity(businessId, {
+    type: 'system',
+    department: 'strategy',
+    title: 'Launch foundation regenerated',
+    detail: {
+      triggered_by: triggeredBy,
+      replaced_queued_tasks: replacedQueuedTasks,
+      queued_tasks: queueSummary?.queued || 0,
+      cycle_started: cycleStarted,
+      headline: launchPlan.headline
+    }
+  });
+
+  return {
+    launchPlan,
+    artifact,
+    replacedQueuedTasks,
+    queuedTasks: queueSummary?.queued || 0,
+    runningTasks: queueSummary?.running || 0,
+    cycleStarted,
+    cycleId
+  };
 }
 
 async function stepSendWelcomeEmail(userId, businessName, webUrl, emailAddress, slug) {

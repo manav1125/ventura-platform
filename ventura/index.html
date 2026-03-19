@@ -3498,10 +3498,11 @@ function renderArtifacts(artifacts) {
 }
 
 function renderTaskRows(tasks, limit = 8) {
-  if (!(tasks || []).length) {
+  const visibleTasks = (tasks || []).filter(task => task.status !== 'cancelled');
+  if (!visibleTasks.length) {
     return `<div style="font-size:13px;color:rgba(255,255,255,0.55);padding:16px 0;line-height:1.6;">No tasks are queued yet. Ask Ventura to plan the launch or queue work from chat.</div>`;
   }
-  return (tasks || []).slice(0, limit).map(t => `
+  return visibleTasks.slice(0, limit).map(t => `
     <div class="task-item ${t.status==='complete'?'done':''}">
       <div class="task-check">${t.status==='complete'?'✓':''}</div>
       <div>
@@ -3521,9 +3522,10 @@ function renderOverviewTasks(tasks) {
 function renderTasks(tasks) {
   const el = document.getElementById('tasks-list');
   if (!el) return;
-  el.innerHTML = renderTaskRows(tasks, 8);
-  const running = tasks?.filter(task => task.status === 'running').length || 0;
-  const queued = tasks?.filter(task => task.status === 'queued').length || 0;
+  const visibleTasks = (tasks || []).filter(task => task.status !== 'cancelled');
+  el.innerHTML = renderTaskRows(visibleTasks, 8);
+  const running = visibleTasks.filter(task => task.status === 'running').length || 0;
+  const queued = visibleTasks.filter(task => task.status === 'queued').length || 0;
   setEl('tasks-panel-title', `Task queue — ${running} running · ${queued} queued`);
   setEl('sidebar-task-badge', running ? `${running} live` : queued ? `${queued} queued` : 'idle');
 }
@@ -4307,6 +4309,7 @@ function renderFounderControl(data) {
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
           <button class="icon-btn" onclick="toggleBusinessStatus()">${biz.status === 'paused' ? 'Resume loop' : 'Pause loop'}</button>
           <button class="icon-btn" onclick="syncIntegrations()">Sync stack</button>
+          <button class="icon-btn" onclick="regenerateLaunchFoundation()">Regenerate launch</button>
           <button class="icon-btn" onclick="showPage('settings',null)">Tune controls</button>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
@@ -4571,6 +4574,7 @@ function renderSettings(data, operating = null, billing = null) {
           <button class="icon-btn" onclick="syncIntegrations()">Sync integrations</button>
           <button class="icon-btn" onclick="syncWorkspaceContext()">Sync workspace</button>
           <button class="icon-btn" onclick="runWorkspaceAutomationNow()">Run workspace automation</button>
+          <button class="icon-btn" onclick="regenerateLaunchFoundation()">Regenerate launch</button>
           <button class="icon-btn" onclick="openBillingPortal()">Billing portal</button>
         </div>
         <div style="padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px;">
@@ -5359,6 +5363,27 @@ async function syncIntegrations() {
     await loadDashboard();
   } catch (err) {
     showToast(`Sync failed: ${err.message}`);
+  }
+}
+
+async function regenerateLaunchFoundation() {
+  if (!state.activeBiz) return;
+  const confirmed = confirm(`Regenerate the launch foundation for ${state.activeBiz.name}? Ventura will republish the site and replace the current autonomous queued tasks with a fresh launch plan.`);
+  if (!confirmed) return;
+
+  try {
+    const response = await POST(`/businesses/${state.activeBiz.id}/regenerate-launch`, {
+      replaceQueuedTasks: true,
+      restartCycle: true
+    });
+    const regen = response.regeneration || {};
+    showToast(regen.cycleStarted
+      ? 'Launch foundation refreshed and relaunch cycle started'
+      : 'Launch foundation refreshed');
+    await loadDashboard();
+    activateDashboardPage('overview');
+  } catch (err) {
+    showToast(`Regeneration failed: ${err.message}`);
   }
 }
 
