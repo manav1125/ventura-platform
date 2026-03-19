@@ -142,6 +142,7 @@ export function renderLaunchSite(business, plan) {
     targetCustomer: business.target_customer,
     goal90d: business.goal_90d
   });
+  const customerSummary = buildCustomerSummary(business, plan, brand);
   const socialProofMarkup = socialProofItems.map(item => `<span class="trust-chip">${escapeHtml(item)}</span>`).join('');
   const benefitMarkup = benefitCards.map(card => `
     <article class="benefit-card">
@@ -737,7 +738,7 @@ export function renderLaunchSite(business, plan) {
           <div class="section-kicker">Why founders stay with it</div>
           <h2>Everything is designed to help the right investor conversation happen sooner.</h2>
         </div>
-        <p class="section-intro">${escapeHtml(plan.positioning)}</p>
+        <p class="section-intro">${escapeHtml(customerSummary)}</p>
       </div>
       <div class="benefit-grid">
         ${benefitMarkup}
@@ -750,7 +751,7 @@ export function renderLaunchSite(business, plan) {
           <div class="section-kicker">How it works</div>
           <h2>${escapeHtml(brand.name)} turns founder context into investor-ready momentum.</h2>
         </div>
-        <p class="section-intro">${escapeHtml(plan.launch_summary)}</p>
+        <p class="section-intro">${escapeHtml(customerSummary)}</p>
       </div>
       <div class="steps-grid">
         ${stepsMarkup}
@@ -1047,7 +1048,7 @@ function inferLaunchAngles(context) {
         'Premium first impression',
         'Clear CTA, lower hesitation'
       ],
-      launch_summary: 'A fundraising landing page that feels high-signal, polished, and built to convert the right founders.'
+      launch_summary: 'A faster, founder-first path to qualified investor conversations.'
     };
   }
 
@@ -1073,7 +1074,7 @@ function inferLaunchAngles(context) {
       'Clear value proposition and CTA.',
       'Lower-friction launch experience.'
     ],
-    launch_summary: 'A polished first-touch page designed to feel focused, trustworthy, and ready for real customer conversations.'
+    launch_summary: 'A polished first-touch experience designed to feel focused, trustworthy, and ready for real customer conversations.'
   };
 }
 
@@ -1306,6 +1307,17 @@ function buildCustomerFaq(business, plan) {
   }
 
   return (plan.faq || []).slice(0, 3);
+}
+
+function buildCustomerSummary(business, plan, brand) {
+  const founderInvestor = clean(business.name).toLowerCase().includes('founder')
+    && clean(business.name).toLowerCase().includes('investor');
+
+  if (founderInvestor) {
+    return `${brand.name} helps founders replace cold fundraising chaos with curated investor fit, sharper positioning, and warmer conversations.`;
+  }
+
+  return clean(plan.positioning) || clean(brand.tagline) || clean(plan.subheadline);
 }
 
 function renderHeroArtwork(brand, business, plan) {
