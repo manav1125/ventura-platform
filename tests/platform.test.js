@@ -1493,6 +1493,35 @@ describe('Agent runtime', () => {
   });
 });
 
+describe('Published sites', () => {
+
+  it('rejects placeholder website deploys', async () => {
+    const { deployFiles } = await import('../src/integrations/deploy.js');
+
+    await assert.rejects(
+      () => deployFiles(bizId, [{ path: 'index.html', content: '<!-- see staged file -->' }], 'Broken placeholder deploy'),
+      /Website deploy rejected/
+    );
+  });
+
+  it('falls back to a generated public site when the latest published file is placeholder content', async () => {
+    const { publishSiteFiles } = await import('../src/agents/artifacts.js');
+
+    publishSiteFiles({
+      businessId: bizId,
+      files: [{ path: 'index.html', content: '<!-- see staged file -->' }],
+      summary: 'Injected invalid placeholder file'
+    });
+
+    const res = await fetch(`${BASE}/sites/test-saas`);
+    const body = await res.text();
+
+    assert.equal(res.status, 200);
+    assert.ok(!body.includes('<!-- see staged file -->'));
+    assert.ok(body.includes('Ventura launch site') || body.includes('What Ventura Is Doing'));
+  });
+});
+
 // ─── BILLING ─────────────────────────────────────────────────────────────────
 describe('Billing', () => {
 

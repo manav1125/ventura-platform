@@ -1967,6 +1967,9 @@
       <a class="nav-item" onclick="showPage('analytics',this)">
         <span class="nav-item-icon">▲</span> Analytics
       </a>
+      <a class="nav-item" onclick="showPage('assets',this)">
+        <span class="nav-item-icon">▣</span> Asset Hub
+      </a>
       <a class="nav-item" onclick="showPage('settings',this)">
         <span class="nav-item-icon">⊞</span> Settings
       </a>
@@ -2289,6 +2292,42 @@
         </div>
       </div>
 
+      <!-- ASSET HUB PAGE -->
+      <div class="dash-page" id="page-assets">
+        <div class="dash-header">
+          <div><div class="dash-title">Asset Hub</div><div class="dash-subtitle">Everything Ventura has created, shipped, or staged for this business</div></div>
+          <button class="btn-run" onclick="regenerateLaunchFoundation()">↻ Refresh launch foundation</button>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Published surfaces</span></div>
+            <div class="panel-body" id="asset-surface-panel">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Loading live site URLs, deployment targets, and published web outputs...</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Asset summary</span></div>
+            <div class="panel-body" id="asset-summary-panel">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Loading artifact counts and output categories...</div>
+            </div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Deliverables</span></div>
+            <div class="panel-body" id="asset-library-list" style="padding:0 20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;line-height:1.6;">Ventura artifacts will appear here.</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Published website files</span></div>
+            <div class="panel-body" id="asset-site-files" style="padding:0 20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;line-height:1.6;">Published site files will appear here once Ventura deploys them.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- SETTINGS PAGE -->
       <div class="dash-page" id="page-settings">
         <div class="dash-header">
@@ -2580,6 +2619,7 @@ let state = {
   activeBiz:    null,
   control:      null,
   operating:    null,
+  assetLibrary: null,
   portfolio:    null,
   billing:      null,
   authResetToken: null,
@@ -2682,7 +2722,7 @@ async function doRegister(email, name, password) {
 
 function logout() {
   clearAuth();
-  state.businesses = []; state.activeBiz = null; state.control = null; state.operating = null; state.portfolio = null; state.billing = null;
+  state.businesses = []; state.activeBiz = null; state.control = null; state.operating = null; state.assetLibrary = null; state.portfolio = null; state.billing = null;
   // Update nav to show login button
   updateNavForAuth(false);
   showLanding();
@@ -3230,17 +3270,19 @@ function setActiveBusiness(biz) {
 async function loadDashboard() {
   if (!state.activeBiz) return;
   try {
-    const [mData, tData, aData, cData, oData, pData, bData] = await Promise.all([
+    const [mData, tData, aData, cData, oData, pData, bData, libraryData] = await Promise.all([
       GET(`/businesses/${state.activeBiz.id}/metrics`),
       GET(`/businesses/${state.activeBiz.id}/tasks`),
       GET(`/businesses/${state.activeBiz.id}/activity?limit=40`),
       GET(`/businesses/${state.activeBiz.id}/control-center`),
       GET(`/businesses/${state.activeBiz.id}/operating-system`),
       GET('/portfolio/overview'),
-      GET('/billing/plans')
+      GET('/billing/plans'),
+      GET(`/businesses/${state.activeBiz.id}/artifacts?limit=120`)
     ]);
     state.control = cData;
     state.operating = oData;
+    state.assetLibrary = libraryData;
     state.portfolio = pData;
     state.billing = bData;
     renderAccountStatusBanner();
@@ -3254,6 +3296,7 @@ async function loadDashboard() {
     renderPortfolioPulse(pData);
     renderControlCenter(cData);
     renderOperatingSystem(oData);
+    renderAssetHub(cData, oData, libraryData, tData.tasks);
     renderTaskEvents(cData.taskEvents || oData.taskEvents || []);
     renderArtifacts(cData.artifacts || oData.artifacts || []);
   } catch (err) { console.error('loadDashboard:', err); }
@@ -3473,6 +3516,123 @@ function renderTaskEvents(taskEvents) {
       <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.35);margin-top:8px;">${esc((item.phase || 'event').replace(/_/g, ' '))}</div>
     </div>
   `).join('');
+}
+
+function getBusinessSiteUrl(business = {}) {
+  return business.live_site_url || business.published_site_url || business.web_url || '';
+}
+
+function renderAssetHub(controlData, operatingData, libraryData, tasks) {
+  const surfaceEl = document.getElementById('asset-surface-panel');
+  const summaryEl = document.getElementById('asset-summary-panel');
+  const listEl = document.getElementById('asset-library-list');
+  const filesEl = document.getElementById('asset-site-files');
+  if (!surfaceEl || !summaryEl || !listEl || !filesEl) return;
+
+  const business = controlData?.business || operatingData?.business || state.activeBiz || {};
+  const artifacts = libraryData?.artifacts || [];
+  const deliverables = artifacts.filter(item => item.kind !== 'site_file');
+  const siteFiles = artifacts.filter(item => item.kind === 'site_file');
+  const liveSiteUrl = getBusinessSiteUrl(business);
+  const publishedSiteUrl = business.published_site_url || '';
+  const externalSiteUrl = business.web_url || '';
+  const deployments = controlData?.deployments || [];
+  const completedTasks = (tasks || []).filter(task => task.status === 'complete' && task.result);
+  const counts = deliverables.reduce((acc, item) => {
+    acc[item.kind] = (acc[item.kind] || 0) + 1;
+    return acc;
+  }, {});
+
+  surfaceEl.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;margin-bottom:6px;">LIVE SITE</div>
+        ${liveSiteUrl ? `<a href="${esc(liveSiteUrl)}" target="_blank" rel="noopener" style="font-size:16px;color:#e0ddd5;text-decoration:none;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:8px;display:inline-block;">${esc(liveSiteUrl)} ↗</a>` : `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No published site URL yet.</div>`}
+        <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.6;margin-top:10px;">Ventura’s published route is what founders should use if a vanity/custom domain is stale or not wired yet.</div>
+      </div>
+      ${publishedSiteUrl && publishedSiteUrl !== liveSiteUrl ? `
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">PUBLISHED VENTURA ROUTE</div>
+          <a href="${esc(publishedSiteUrl)}" target="_blank" rel="noopener" style="font-size:14px;color:#e0ddd5;text-decoration:none;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:8px;display:inline-block;">${esc(publishedSiteUrl)} ↗</a>
+        </div>
+      ` : ''}
+      ${externalSiteUrl && externalSiteUrl !== liveSiteUrl ? `
+        <div style="padding:14px;background:rgba(200,168,75,0.08);border:1px solid rgba(200,168,75,0.14);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--gold);margin-bottom:6px;">LEGACY / EXTERNAL URL</div>
+          <div style="font-size:13px;color:#e0ddd5;">${esc(externalSiteUrl)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.6;margin-top:8px;">This URL may be a legacy or vanity address. Ventura is currently publishing the business to the live route above.</div>
+        </div>
+      ` : ''}
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">DEPLOYMENTS</div>
+        <div style="font-size:20px;color:#e0ddd5;">${deployments.length}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:1.6;margin-top:8px;">${deployments[0] ? `Latest release ${esc(deployments[0].version || 'unknown')} · ${timeAgo(deployments[0].created_at)}` : 'No tracked deployment releases yet.'}</div>
+      </div>
+    </div>
+  `;
+
+  summaryEl.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;">
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">DELIVERABLES</div>
+        <div style="font-size:24px;color:#e0ddd5;">${deliverables.length}</div>
+      </div>
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">SITE FILES</div>
+        <div style="font-size:24px;color:#e0ddd5;">${siteFiles.length}</div>
+      </div>
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">TASK RESULTS</div>
+        <div style="font-size:24px;color:#e0ddd5;">${completedTasks.length}</div>
+      </div>
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">TOP KINDS</div>
+        <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${Object.entries(counts).slice(0, 4).map(([kind, count]) => `${titleCase(kind)} ${count}`).join(' · ') || 'No artifact categories yet'}</div>
+      </div>
+    </div>
+  `;
+
+  if (!deliverables.length && !siteFiles.length) {
+    listEl.innerHTML = `
+      <div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;">
+        This business does not have a persisted artifact trail yet. Use <strong>Regenerate launch</strong> to rebuild the launch foundation and start storing site, content, and planning outputs in Ventura’s library.
+      </div>
+    `;
+    filesEl.innerHTML = `
+      <div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;">
+        No published site files are attached to this business yet.
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = deliverables.length ? deliverables.slice(0, 24).map(item => `
+    <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;">
+        <div>
+          <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(item.title)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:1.55;">${esc(titleCase(item.kind || 'artifact'))} · ${displayDepartment(item.department) || 'System'} · ${timeAgo(item.created_at)}</div>
+        </div>
+        <span class="tag">${esc((item.status || 'published').toUpperCase())}</span>
+      </div>
+      ${item.summary ? `<div style="font-size:12px;color:rgba(255,255,255,0.7);line-height:1.65;margin-top:8px;">${esc(item.summary)}</div>` : ''}
+      ${item.content_preview ? `<pre style="margin:10px 0 0;padding:12px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;color:rgba(255,255,255,0.72);font-size:11px;font-family:'DM Mono',monospace;white-space:pre-wrap;line-height:1.6;">${esc(item.content_preview)}</pre>` : ''}
+    </div>
+  `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;">No non-site artifacts yet.</div>`;
+
+  filesEl.innerHTML = siteFiles.length ? siteFiles.slice(0, 24).map(item => `
+    <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;">
+        <div>
+          <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(item.path || item.title)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:1.55;">${esc(item.content_type || 'text/html')} · ${timeAgo(item.created_at)}</div>
+        </div>
+        <span class="tag">${esc((item.status || 'published').toUpperCase())}</span>
+      </div>
+      ${item.summary ? `<div style="font-size:12px;color:rgba(255,255,255,0.7);line-height:1.65;margin-top:8px;">${esc(item.summary)}</div>` : ''}
+      ${item.content_preview ? `<pre style="margin:10px 0 0;padding:12px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;color:rgba(255,255,255,0.72);font-size:11px;font-family:'DM Mono',monospace;white-space:pre-wrap;line-height:1.6;">${esc(item.content_preview)}</pre>` : ''}
+    </div>
+  `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;">No site file artifacts yet.</div>`;
 }
 
 function renderArtifacts(artifacts) {
@@ -3968,6 +4128,8 @@ function renderBusinessEnginePanel(data) {
   const el = document.getElementById('settings-business-engine');
   if (!el) return;
   const biz = data.business || {};
+  const liveSiteUrl = getBusinessSiteUrl(biz);
+  const externalSiteUrl = biz.web_url || '';
   const stripe = data.billing?.stripe || {};
   const economics = data.billing?.economics || {};
   const availablePlans = state.billing?.plans || [];
@@ -3979,7 +4141,8 @@ function renderBusinessEnginePanel(data) {
     <div style="display:flex;flex-direction:column;gap:16px;">
       <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
         <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">WEBSITE</div>
-        ${biz.web_url ? `<a href="${esc(biz.web_url)}" target="_blank" rel="noopener" style="font-size:16px;color:#e0ddd5;text-decoration:none;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:8px;display:inline-block;">${esc(biz.web_url)} ↗</a>` : `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No website URL assigned yet.</div>`}
+        ${liveSiteUrl ? `<a href="${esc(liveSiteUrl)}" target="_blank" rel="noopener" style="font-size:16px;color:#e0ddd5;text-decoration:none;border-bottom:1px solid rgba(255,255,255,0.12);padding-bottom:8px;display:inline-block;">${esc(liveSiteUrl)} ↗</a>` : `<div style="font-size:13px;color:rgba(255,255,255,0.55);">No website URL assigned yet.</div>`}
+        ${externalSiteUrl && externalSiteUrl !== liveSiteUrl ? `<div style="font-size:11px;color:rgba(255,255,255,0.42);margin-top:8px;font-family:'DM Mono',monospace;">Legacy/custom URL: ${esc(externalSiteUrl)}</div>` : ''}
         <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-top:10px;">Business inbox: ${esc(biz.email_address || 'Not assigned')}</div>
       </div>
       <div style="padding:14px;background:${stripe.connected ? 'rgba(40,202,65,0.05)' : 'rgba(200,168,75,0.08)'};border:1px solid ${stripe.connected ? 'rgba(40,202,65,0.1)' : 'rgba(200,168,75,0.12)'};border-radius:3px;">
@@ -4172,7 +4335,7 @@ function renderLiveBusinessDetail(data) {
         <div style="font-size:16px;color:rgba(255,255,255,0.72);line-height:1.7;max-width:720px;">${esc(biz.description || 'No public description available yet.')}</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;min-width:220px;">
-        ${biz.web_url ? `<a href="${esc(biz.web_url)}" target="_blank" rel="noopener" class="btn-primary" style="text-align:center;">Visit website ↗</a>` : ''}
+        ${getBusinessSiteUrl(biz) ? `<a href="${esc(getBusinessSiteUrl(biz))}" target="_blank" rel="noopener" class="btn-primary" style="text-align:center;">Visit website ↗</a>` : ''}
         <button class="btn-secondary" onclick="showDashboard(event)">Open founder dashboard</button>
       </div>
     </div>
@@ -4698,7 +4861,7 @@ function renderSettings(data, operating = null, billing = null) {
         : 'SMTP is configured. Send a mailbox test to confirm delivery and founder alerts.')
       : 'Mailbox delivery is still in preview mode. Add SMTP credentials on Render to make verification, reset, and outreach emails deliver live.';
     const deploymentSummary = deploymentAsset.checks?.last_smoke_status === 'success'
-      ? `Latest smoke check passed against ${deploymentAsset.checks?.last_smoke_url || deploymentAsset.config?.target_url || biz.web_url || 'the live deployment target'}.`
+      ? `Latest smoke check passed against ${deploymentAsset.checks?.last_smoke_url || deploymentAsset.config?.target_url || getBusinessSiteUrl(biz) || 'the live deployment target'}.`
       : deploymentAsset.checks?.last_release_at
         ? `Latest release ${deploymentAsset.checks?.last_release_version || ''} was logged ${timeAgo(deploymentAsset.checks.last_release_at)}. Run a smoke check to confirm the current target is healthy.`
         : 'Configure the deployment target and release channel so Ventura can validate the live company surface after each ship.';
@@ -4782,7 +4945,7 @@ function renderSettings(data, operating = null, billing = null) {
             </div>
             <div class="form-field" style="margin:0 0 10px;">
               <label style="color:rgba(255,255,255,0.3)">Target URL</label>
-              <input id="settings-deployment-target-url" value="${esc(deploymentAsset.config?.target_url || biz.web_url || '')}" placeholder="https://app.yourdomain.com" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
+              <input id="settings-deployment-target-url" value="${esc(deploymentAsset.config?.target_url || getBusinessSiteUrl(biz) || '')}" placeholder="https://app.yourdomain.com" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;">
             </div>
             <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px;">
               <div class="form-field" style="margin:0;">

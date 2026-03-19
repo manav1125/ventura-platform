@@ -84,7 +84,7 @@ import {
   verifyDomainAsset
 } from '../infrastructure/assets.js';
 import Anthropic from '@anthropic-ai/sdk';
-import { ANTHROPIC_API_KEY, AGENT_MODEL, STRIPE_SECRET_KEY, FRONTEND_URL } from '../config.js';
+import { ANTHROPIC_API_KEY, AGENT_MODEL, STRIPE_SECRET_KEY, FRONTEND_URL, BASE_URL } from '../config.js';
 import { sendPasswordReset, sendEmailVerification } from '../integrations/email.js';
 
 const router = express.Router();
@@ -106,6 +106,24 @@ function asyncHandler(fn) {
 
 function cleanString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildPublishedSiteUrl(slug) {
+  if (!slug) return null;
+  return `${BASE_URL.replace(/\/$/, '')}/sites/${slug}`;
+}
+
+function resolveBusinessUrls(row) {
+  const rawWebUrl = cleanString(row?.web_url);
+  const publishedSiteUrl = buildPublishedSiteUrl(row?.slug);
+  const usesLegacyVenturaDomain = /\.ventura\.ai(?=\/|$)/i.test(rawWebUrl);
+  return {
+    web_url: rawWebUrl || publishedSiteUrl || null,
+    published_site_url: publishedSiteUrl,
+    live_site_url: usesLegacyVenturaDomain
+      ? (publishedSiteUrl || rawWebUrl || null)
+      : (rawWebUrl || publishedSiteUrl || null)
+  };
 }
 
 function relativeTime(value) {
@@ -664,7 +682,7 @@ function getPortfolioOverview(db, userId, plan) {
       running_cycles,
       alerts_14d
     },
-    businesses,
+    businesses: businesses.map(item => ({ ...item, ...resolveBusinessUrls(item) })),
     usage: getUserUsage(db, userId, plan),
     plan: serializePlan(plan)
   };
@@ -848,7 +866,7 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       target_customer: business.target_customer,
       goal_90d: business.goal_90d,
       day_count: business.day_count,
-      web_url: business.web_url,
+      ...resolveBusinessUrls(business),
       email_address: business.email_address,
       involvement: business.involvement,
       status: business.status,
@@ -911,7 +929,9 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       tasks: engineeringTasks.slice(0, 12),
       activity: engineeringActivity.slice(0, 12),
       preview: {
-        url: business.web_url,
+        url: resolveBusinessUrls(business).live_site_url,
+        published_site_url: resolveBusinessUrls(business).published_site_url,
+        external_url: cleanString(business.web_url) || null,
         email: business.email_address
       }
     },
@@ -1077,6 +1097,7 @@ function sanitizePublicInfrastructureAsset(asset = {}) {
 }
 
 function serializePublicBusiness(row, fallbackPlan = 'trial') {
+  const urls = resolveBusinessUrls(row);
   return {
     id: row.id,
     name: row.name,
@@ -1085,7 +1106,9 @@ function serializePublicBusiness(row, fallbackPlan = 'trial') {
     status: row.status,
     involvement: row.involvement,
     day_count: row.day_count,
-    web_url: row.web_url,
+    web_url: urls.web_url,
+    published_site_url: urls.published_site_url,
+    live_site_url: urls.live_site_url,
     description: row.description,
     target_customer: row.target_customer,
     goal_90d: row.goal_90d,
@@ -1329,7 +1352,10 @@ router.get('/businesses', requireAuth, asyncHandler(async (req, res) => {
     SELECT id, name, slug, type, status, involvement, day_count, web_url, email_address,
            mrr_cents, total_revenue_cents, monthly_subscription_cents, revenue_share_pct, created_at
     FROM businesses WHERE user_id = ? ORDER BY created_at DESC
-  `).all(req.user.sub);
+  `).all(req.user.sub).map(business => ({
+    ...business,
+    ...resolveBusinessUrls(business)
+  }));
   res.json({ businesses });
 }));
 
@@ -1370,7 +1396,7 @@ router.get('/businesses/:id', requireAuth, asyncHandler(async (req, res) => {
 
   // Parse JSON field
   business.agent_memory = JSON.parse(business.agent_memory || '{}');
-  res.json({ business });
+  res.json({ business: { ...business, ...resolveBusinessUrls(business) } });
 }));
 
 // PATCH /api/businesses/:id — update business settings
@@ -2161,7 +2187,10 @@ router.get('/businesses/:id/control-center', requireAuth, asyncHandler(async (re
   const taskEvents = listTaskEvents(req.params.id, { limit: 40 });
 
   res.json({
-    business: hydratedBusiness,
+    business: {
+      ...hydratedBusiness,
+      ...resolveBusinessUrls(hydratedBusiness)
+    },
     cadence,
     latestCycle,
     recentCycles,

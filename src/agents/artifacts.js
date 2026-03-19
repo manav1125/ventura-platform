@@ -22,6 +22,47 @@ function inferContentType(pathValue, fallback = 'text/markdown') {
   return fallback;
 }
 
+function stripHtmlComments(content = '') {
+  return String(content || '').replace(/<!--[\s\S]*?-->/g, ' ').trim();
+}
+
+function stripTags(content = '') {
+  return String(content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function looksLikePlaceholder(content = '') {
+  const normalized = String(content || '').trim().toLowerCase();
+  if (!normalized) return true;
+  return [
+    '<!-- see staged file -->',
+    'see staged file',
+    '<!-- placeholder -->',
+    'placeholder',
+    'todo',
+    'tbd'
+  ].includes(normalized);
+}
+
+export function isMeaningfulSiteContent(content = '', pathValue = 'index.html') {
+  const normalizedPath = normalizePath(pathValue);
+  const raw = String(content || '').trim();
+  if (!raw || looksLikePlaceholder(raw)) return false;
+
+  if (normalizedPath.endsWith('.html')) {
+    const withoutComments = stripHtmlComments(raw);
+    const textContent = stripTags(withoutComments);
+    const hasPageStructure = /<(html|body|main|section|div|header|footer)\b/i.test(withoutComments);
+    const hasMeaningfulText = textContent.length >= 80;
+    return withoutComments.length >= 120 && hasPageStructure && hasMeaningfulText;
+  }
+
+  if (normalizedPath.endsWith('.css') || normalizedPath.endsWith('.js')) {
+    return raw.length >= 24 && !looksLikePlaceholder(raw);
+  }
+
+  return raw.length >= 16 && !looksLikePlaceholder(raw);
+}
+
 function hydrateArtifact(row) {
   if (!row) return null;
   return {
@@ -164,7 +205,7 @@ export function publishSiteFiles({
 
 export function getPublishedSiteFile(businessId, pathValue = 'index.html') {
   const db = getDb();
-  return hydrateArtifact(db.prepare(`
+  const rows = db.prepare(`
     SELECT *
     FROM artifacts
     WHERE business_id = ?
@@ -172,6 +213,8 @@ export function getPublishedSiteFile(businessId, pathValue = 'index.html') {
       AND path = ?
       AND status = 'published'
     ORDER BY created_at DESC
-    LIMIT 1
-  `).get(businessId, normalizePath(pathValue)));
+    LIMIT 5
+  `).all(businessId, normalizePath(pathValue)).map(hydrateArtifact);
+
+  return rows.find(row => isMeaningfulSiteContent(row?.content, row?.path || pathValue)) || null;
 }

@@ -9,9 +9,36 @@
 import { getDb } from '../db/migrate.js';
 import { BASE_URL, VERCEL_TOKEN, VERCEL_TEAM_ID, PLATFORM_DOMAIN } from '../config.js';
 import { logActivity } from '../agents/activity.js';
-import { createArtifact, publishSiteFiles } from '../agents/artifacts.js';
+import { createArtifact, isMeaningfulSiteContent, publishSiteFiles } from '../agents/artifacts.js';
 
 const VERCEL_API = 'https://api.vercel.com';
+
+function validateDeployableFiles(files = []) {
+  const normalizedFiles = Array.isArray(files)
+    ? files
+        .map(file => ({
+          path: String(file?.path || 'index.html').trim() || 'index.html',
+          content: String(file?.content || '')
+        }))
+        .filter(file => file.path)
+    : [];
+
+  if (!normalizedFiles.length) {
+    throw new Error('Website deploy rejected: no files were provided.');
+  }
+
+  const htmlFiles = normalizedFiles.filter(file => file.path.toLowerCase().endsWith('.html'));
+  if (!htmlFiles.length) {
+    throw new Error('Website deploy rejected: no HTML page was provided.');
+  }
+
+  const invalidHtml = htmlFiles.find(file => !isMeaningfulSiteContent(file.content, file.path));
+  if (invalidHtml) {
+    throw new Error(`Website deploy rejected: ${invalidHtml.path} is empty or placeholder content.`);
+  }
+
+  return normalizedFiles;
+}
 
 // ─── Bootstrap a Vercel project for a new business ───────────────────────────
 
@@ -64,9 +91,10 @@ export async function deployFiles(businessId, files, versionNote) {
   const db = getDb();
   const biz = db.prepare('SELECT * FROM businesses WHERE id=?').get(businessId);
   if (!biz) throw new Error('Business not found');
+  const validatedFiles = validateDeployableFiles(files);
 
   if (!VERCEL_TOKEN) {
-    return internalDeploy(businessId, biz.slug, files, versionNote);
+    return internalDeploy(businessId, biz.slug, validatedFiles, versionNote);
   }
 
   const headers = {
@@ -75,7 +103,7 @@ export async function deployFiles(businessId, files, versionNote) {
   };
 
   // Build Vercel deployment payload
-  const deploymentFiles = files.map(f => ({
+  const deploymentFiles = validatedFiles.map(f => ({
     file: f.path,
     data: f.content,
     encoding: 'utf-8'
@@ -100,12 +128,12 @@ export async function deployFiles(businessId, files, versionNote) {
   db.prepare(`
     INSERT INTO deployments (id, business_id, version, description, files_changed, status)
     VALUES (?, ?, ?, ?, ?, 'live')
-  `).run(`dep_${Date.now()}`, businessId, version, versionNote, files.length);
+  `).run(`dep_${Date.now()}`, businessId, version, versionNote, validatedFiles.length);
   publishSiteFiles({
     businessId,
     taskId: null,
-    files,
-    summary: versionNote || `Published ${files.length} files`
+    files: validatedFiles,
+    summary: versionNote || `Published ${validatedFiles.length} files`
   });
   createArtifact({
     businessId,
@@ -113,9 +141,9 @@ export async function deployFiles(businessId, files, versionNote) {
     kind: 'deployment_release',
     title: version,
     summary: versionNote,
-    content: files.map(file => `- ${file.path}`).join('\n'),
+    content: validatedFiles.map(file => `- ${file.path}`).join('\n'),
     metadata: {
-      files_changed: files.length,
+      files_changed: validatedFiles.length,
       provider: 'vercel',
       live_url: biz.web_url
     }
@@ -125,7 +153,7 @@ export async function deployFiles(businessId, files, versionNote) {
     type: 'deploy',
     department: 'engineering',
     title: `Deployed ${version}: ${versionNote}`,
-    detail: { version, files: files.map(f => f.path), vercel_url: deployment.url }
+    detail: { version, files: validatedFiles.map(f => f.path), vercel_url: deployment.url }
   });
 
   return { version, url: biz.web_url, deploymentId: deployment.id };
@@ -137,16 +165,17 @@ async function internalDeploy(businessId, slug, files, versionNote) {
   const version = `v${Date.now()}`;
   const db = getDb();
   const liveUrl = `${BASE_URL.replace(/\/$/, '')}/sites/${slug}`;
+  const validatedFiles = validateDeployableFiles(files);
   db.prepare('UPDATE businesses SET web_url=? WHERE id=?').run(liveUrl, businessId);
   db.prepare(`
     INSERT INTO deployments (id, business_id, version, description, files_changed, status)
     VALUES (?, ?, ?, ?, ?, 'live')
-  `).run(`dep_${Date.now()}`, businessId, version, versionNote, files.length);
+  `).run(`dep_${Date.now()}`, businessId, version, versionNote, validatedFiles.length);
 
   publishSiteFiles({
     businessId,
-    files,
-    summary: versionNote || `Published ${files.length} files`
+    files: validatedFiles,
+    summary: versionNote || `Published ${validatedFiles.length} files`
   });
   createArtifact({
     businessId,
@@ -154,20 +183,20 @@ async function internalDeploy(businessId, slug, files, versionNote) {
     kind: 'deployment_release',
     title: version,
     summary: versionNote || 'Ventura internal deploy',
-    content: files.map(file => `- ${file.path}`).join('\n'),
+    content: validatedFiles.map(file => `- ${file.path}`).join('\n'),
     metadata: {
-      files_changed: files.length,
+      files_changed: validatedFiles.length,
       provider: 'ventura-hosted',
       live_url: liveUrl
     }
   });
 
-  console.log(`[Deploy] Ventura hosted deploy for ${slug}: ${files.length} files → ${liveUrl}`);
+  console.log(`[Deploy] Ventura hosted deploy for ${slug}: ${validatedFiles.length} files → ${liveUrl}`);
   await logActivity(businessId, {
     type: 'deploy',
     department: 'engineering',
     title: `Deployed ${version}: ${versionNote}`,
-    detail: { version, files: files.map(f => f.path), hosted_by: 'ventura' }
+    detail: { version, files: validatedFiles.map(f => f.path), hosted_by: 'ventura' }
   });
   return { version, url: liveUrl, internal: true };
 }
