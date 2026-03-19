@@ -32,13 +32,27 @@ Business email: ${emailAddress}
 
 Return ONLY valid JSON with this shape:
 {
+  "hero_badge": "string",
   "headline": "string",
   "subheadline": "string",
   "cta": "string",
+  "cta_microcopy": "string",
   "positioning": "string",
   "offer": "string",
   "proof_points": ["string", "string", "string"],
+  "social_proof_items": ["string", "string", "string"],
   "launch_summary": "string",
+  "narrative_sections": [
+    {"kicker":"string","title":"string","body":"string"}
+  ],
+  "faq": [
+    {"question":"string","answer":"string"}
+  ],
+  "testimonial": {
+    "quote": "string",
+    "name": "string",
+    "role": "string"
+  },
   "site_sections": [
     {"heading":"string","body":"string"}
   ],
@@ -52,7 +66,10 @@ Rules:
 - Do not say the founder should hire a developer or use a no-code builder.
 - The first tasks must be executable by Ventura using its existing tools, integrations, and artifact system.
 - Include 5 to 7 tasks.
-- Site copy should feel launch-ready, not generic.
+- Site copy should feel like a modern customer-facing SaaS landing page, not an internal plan.
+- Create a sharp narrative around the biggest customer pain point.
+- Use a single primary CTA and supporting microcopy that reduces hesitation.
+- Weave in specific, credible social proof or trust cues throughout the page.
 - Avoid placeholder/meta tasks like "write a full business plan", "define the MVP", or "build the complete app".
 - Prefer Ventura-native outputs like positioning briefs, live homepage copy, FAQ/proof assets, prospect lists, outreach sequences, inbox rules, deploys, and research reports.
 - Every task description must name the concrete deliverable that will exist when the task is done.`
@@ -105,20 +122,31 @@ export function buildRenderableLaunchPlan(business = {}, artifact = null) {
 
 export function renderLaunchSite(business, plan) {
   const proof = (plan.proof_points || []).slice(0, 3);
-  const sections = (plan.site_sections || []).slice(0, 4);
+  const narrativeSections = (plan.narrative_sections || []).slice(0, 3);
+  const faqItems = (plan.faq || []).slice(0, 3);
+  const socialProofItems = (plan.social_proof_items || []).slice(0, 5);
   const primaryCta = plan.cta || `Talk to ${business.name}`;
+  const ctaMicrocopy = plan.cta_microcopy || 'Clear next step. No heavy setup. Fast path to the first conversation.';
+  const heroBadge = plan.hero_badge || `${titleCase(business.type || 'business')} launch`;
+  const testimonial = plan.testimonial || {};
   const proofMarkup = proof.map(item => `
     <div class="proof-card">
-      <div class="proof-kicker">Why it converts</div>
       <h3>${escapeHtml(item)}</h3>
       <p>${escapeHtml(plan.launch_summary)}</p>
     </div>
   `).join('');
-  const sectionMarkup = sections.map((section, index) => `
+  const sectionMarkup = narrativeSections.map((section, index) => `
     <div class="story-card">
-      <div class="story-step">0${index + 1}</div>
-      <h3>${escapeHtml(section.heading)}</h3>
+      ${section.kicker ? `<div class="story-kicker">${escapeHtml(section.kicker)}</div>` : ''}
+      <h3>${escapeHtml(section.title)}</h3>
       <p>${escapeHtml(section.body)}</p>
+    </div>
+  `).join('');
+  const socialProofMarkup = socialProofItems.map(item => `<span class="proof-chip">${escapeHtml(item)}</span>`).join('');
+  const faqMarkup = faqItems.map(item => `
+    <div class="faq-item">
+      <h3>${escapeHtml(item.question)}</h3>
+      <p>${escapeHtml(item.answer)}</p>
     </div>
   `).join('');
 
@@ -210,16 +238,26 @@ export function renderLaunchSite(business, plan) {
     }
     .btn-primary { background:#ff5d22; color:#111; }
     .btn-secondary { border:1px solid rgba(255,255,255,.14); color:#f5f2eb; background:rgba(255,255,255,.02); }
-    .hero-meta-label,
     .section-kicker,
-    .proof-kicker,
-    .story-step {
+    .story-kicker {
       font-size:11px;
       letter-spacing:.14em;
       text-transform:uppercase;
       color:rgba(245,242,235,.42);
     }
-    .hero-meta-value { font-size:16px; line-height:1.65; color:#f5f2eb; }
+    .hero-panel-title { font-size:28px; line-height:1.1; letter-spacing:-.03em; }
+    .hero-panel-copy { font-size:15px; line-height:1.7; color:rgba(245,242,235,.74); }
+    .proof-chip-row { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+    .proof-chip {
+      display:inline-flex;
+      padding:10px 14px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.08);
+      background:rgba(255,255,255,.03);
+      font-size:12px;
+      color:#f5f2eb;
+    }
+    .microcopy { margin-top:12px; font-size:13px; color:rgba(245,242,235,.52); line-height:1.6; }
     .section-shell { margin-top:22px; padding:24px; }
     .section-shell h2 { margin:0 0 10px; font-size:30px; letter-spacing:-.03em; }
     .section-intro { max-width:760px; color:rgba(245,242,235,.7); line-height:1.7; margin-bottom:18px; }
@@ -239,6 +277,42 @@ export function renderLaunchSite(business, plan) {
     .signal-stat { padding:18px; border:1px solid rgba(255,255,255,.08); border-radius:18px; background:rgba(255,255,255,.025); }
     .signal-number { font-size:28px; color:#f5f2eb; margin-top:8px; }
     .signal-copy { margin-top:8px; color:rgba(245,242,235,.6); line-height:1.55; font-size:14px; }
+    .testimonial-card {
+      padding:26px;
+      border-radius:24px;
+      border:1px solid rgba(255,255,255,.08);
+      background:linear-gradient(180deg, rgba(255,93,34,.12), rgba(255,255,255,.03));
+      margin-top:22px;
+    }
+    .testimonial-quote {
+      font-size:28px;
+      line-height:1.35;
+      letter-spacing:-.03em;
+      max-width:880px;
+    }
+    .testimonial-meta { margin-top:14px; color:rgba(245,242,235,.6); font-size:14px; }
+    .faq-grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));
+      gap:14px;
+      margin-top:18px;
+    }
+    .faq-item {
+      padding:18px;
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:18px;
+      background:rgba(255,255,255,.025);
+    }
+    .faq-item h3 {
+      margin:0 0 10px;
+      font-size:18px;
+      letter-spacing:-.02em;
+    }
+    .faq-item p {
+      margin:0;
+      color:rgba(245,242,235,.66);
+      line-height:1.65;
+    }
     .footer-card { margin-top:22px; padding:22px; display:flex; justify-content:space-between; gap:18px; align-items:center; flex-wrap:wrap; }
     .footer-card p { margin:0; color:rgba(245,242,235,.64); line-height:1.65; max-width:720px; }
     @media (max-width: 860px) {
@@ -256,32 +330,31 @@ export function renderLaunchSite(business, plan) {
     </div>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow">${escapeHtml(titleCase(business.type || 'business'))} launch</div>
+        <div class="eyebrow">${escapeHtml(heroBadge)}</div>
         <h1>${escapeHtml(plan.headline)}</h1>
         <p class="lede">${escapeHtml(plan.subheadline)}</p>
         <div class="cta-row">
           <a class="btn btn-primary" href="mailto:${escapeHtml(business.email_address || '')}?subject=${encodeURIComponent(primaryCta)}">${escapeHtml(primaryCta)}</a>
-          <a class="btn btn-secondary" href="#how-it-works">See how it works</a>
+          <a class="btn btn-secondary" href="#story">How it works</a>
         </div>
+        <div class="microcopy">${escapeHtml(ctaMicrocopy)}</div>
+        ${socialProofItems.length ? `<div class="proof-chip-row">${socialProofMarkup}</div>` : ''}
       </div>
       <aside class="hero-panel">
         <div>
-          <div class="hero-meta-label">Positioning</div>
-          <div class="hero-meta-value">${escapeHtml(plan.positioning)}</div>
+          <div class="hero-panel-title">${escapeHtml(plan.offer)}</div>
+          <div class="hero-panel-copy">${escapeHtml(plan.positioning)}</div>
         </div>
         <div>
-          <div class="hero-meta-label">Offer</div>
-          <div class="hero-meta-value">${escapeHtml(plan.offer)}</div>
-        </div>
-        <div>
-          <div class="hero-meta-label">90-day goal</div>
-          <div class="hero-meta-value">${escapeHtml(business.goal_90d || '')}</div>
+          <div class="proof-chip-row">
+            ${proof.slice(0, 3).map(item => `<span class="proof-chip">${escapeHtml(item)}</span>`).join('')}
+          </div>
         </div>
       </aside>
     </section>
 
     <section class="section-shell">
-      <div class="section-kicker">Why founders use it</div>
+      <div class="section-kicker">Why it lands</div>
       <h2>Built to turn fundraising chaos into qualified conversations</h2>
       <p class="section-intro">${escapeHtml(plan.launch_summary)}</p>
       <div class="proof-grid">
@@ -290,40 +363,58 @@ export function renderLaunchSite(business, plan) {
     </section>
 
     <section class="section-shell">
-      <div class="section-kicker">What you get</div>
-      <h2>A simpler fundraising workflow for the right stage and sector</h2>
+      <div class="section-kicker">Why it matters</div>
+      <h2>A sharper path from scattered outreach to the right investor conversations</h2>
       <div class="signal-grid">
         <div class="signal-stat">
-          <div class="hero-meta-label">Target founders</div>
+          <div class="section-kicker">For</div>
           <div class="signal-number">${escapeHtml(business.target_customer || 'Founders')}</div>
           <div class="signal-copy">Ventura keeps this launch page tightly aligned to the buyer the business is trying to reach first.</div>
         </div>
         <div class="signal-stat">
-          <div class="hero-meta-label">Primary outcome</div>
+          <div class="section-kicker">Outcome</div>
           <div class="signal-number">${escapeHtml(plan.offer)}</div>
           <div class="signal-copy">Clear value proposition, clear CTA, and a page that can actually convert traffic instead of functioning like an internal memo.</div>
         </div>
         <div class="signal-stat">
-          <div class="hero-meta-label">Next milestone</div>
+          <div class="section-kicker">Goal</div>
           <div class="signal-number">${escapeHtml(business.goal_90d || 'Growth')}</div>
           <div class="signal-copy">Everything on the page is optimized around the next meaningful business milestone Ventura is targeting.</div>
         </div>
       </div>
     </section>
 
-    <section id="how-it-works" class="section-shell">
-      <div class="section-kicker">How it works</div>
-      <h2>Designed like a real launch site, not a briefing document</h2>
-      <p class="section-intro">Ventura uses the stored launch plan to keep a customer-facing homepage live, even while the deeper engineering work continues behind the scenes.</p>
+    <section id="story" class="section-shell">
+      <div class="section-kicker">Story</div>
+      <h2>Designed to read like a compelling launch page, not a planning doc</h2>
+      <p class="section-intro">Ventura uses the launch narrative, proof, and objections to keep the public site persuasive while the deeper execution engine keeps shipping behind the scenes.</p>
       <div class="story-grid">
         ${sectionMarkup}
       </div>
     </section>
 
+    ${testimonial.quote ? `
+      <section class="testimonial-card">
+        <div class="section-kicker">Founder voice</div>
+        <div class="testimonial-quote">“${escapeHtml(testimonial.quote)}”</div>
+        <div class="testimonial-meta">${escapeHtml(testimonial.name || 'Founder')} · ${escapeHtml(testimonial.role || business.target_customer || 'Customer')}</div>
+      </section>
+    ` : ''}
+
+    ${faqItems.length ? `
+      <section class="section-shell">
+        <div class="section-kicker">Questions</div>
+        <h2>The final objections handled before the click</h2>
+        <div class="faq-grid">
+          ${faqMarkup}
+        </div>
+      </section>
+    ` : ''}
+
     <section class="footer-card">
       <div>
-        <div class="section-kicker">Contact</div>
-        <p>Ventura is actively operating ${escapeHtml(business.name)} and publishing the current launch surface from live business artifacts. Reach the team at <a href="mailto:${escapeHtml(business.email_address || '')}">${escapeHtml(business.email_address || '')}</a>.</p>
+        <div class="section-kicker">Ready</div>
+        <p>${escapeHtml(plan.subheadline)} Reach the team at <a href="mailto:${escapeHtml(business.email_address || '')}">${escapeHtml(business.email_address || '')}</a>.</p>
       </div>
       <a class="btn btn-primary" href="mailto:${escapeHtml(business.email_address || '')}?subject=${encodeURIComponent(primaryCta)}">${escapeHtml(primaryCta)}</a>
     </section>
@@ -344,15 +435,34 @@ function normalizeLaunchPlan(plan, context) {
     : [];
 
   return {
+    hero_badge: clean(plan.hero_badge) || `${titleCase(context.type || 'business')} launch`,
     headline: clean(plan.headline) || `${context.name} for ${context.targetCustomer}`,
     subheadline: clean(plan.subheadline) || context.description,
     cta: clean(plan.cta) || 'Request a launch walkthrough',
+    cta_microcopy: clean(plan.cta_microcopy) || 'No credit-card maze, no bloated setup, just a clear next step.',
     positioning: clean(plan.positioning) || context.description,
     offer: clean(plan.offer) || `A focused ${context.type} offer for ${context.targetCustomer}`,
     proof_points: Array.isArray(plan.proof_points) && plan.proof_points.length
       ? plan.proof_points.map(clean).filter(Boolean).slice(0, 3)
       : [`Built for ${context.targetCustomer}`, `Focused on ${context.goal90d}`, 'Ventura-owned execution loop'],
+    social_proof_items: Array.isArray(plan.social_proof_items) && plan.social_proof_items.length
+      ? plan.social_proof_items.map(clean).filter(Boolean).slice(0, 5)
+      : fallbackSocialProof(context),
     launch_summary: clean(plan.launch_summary) || `Ventura launched ${context.name} with a focused positioning and a concrete first execution plan.`,
+    narrative_sections: Array.isArray(plan.narrative_sections) && plan.narrative_sections.length
+      ? plan.narrative_sections.map(item => ({
+          kicker: clean(item.kicker),
+          title: clean(item.title),
+          body: clean(item.body)
+        })).filter(item => item.title && item.body).slice(0, 3)
+      : fallbackNarrativeSections(context),
+    faq: Array.isArray(plan.faq) && plan.faq.length
+      ? plan.faq.map(item => ({
+          question: clean(item.question),
+          answer: clean(item.answer)
+        })).filter(item => item.question && item.answer).slice(0, 3)
+      : fallbackFaq(context),
+    testimonial: normalizeTestimonial(plan.testimonial, context),
     site_sections: Array.isArray(plan.site_sections) && plan.site_sections.length
       ? plan.site_sections.map(item => ({ heading: clean(item.heading), body: clean(item.body) })).filter(item => item.heading && item.body).slice(0, 4)
       : fallbackSections(context),
@@ -364,13 +474,19 @@ function buildFallbackLaunchPlan(context) {
   const audience = context.targetCustomer;
   const inferred = inferLaunchAngles(context);
   return {
+    hero_badge: inferred.hero_badge,
     headline: inferred.headline,
     subheadline: inferred.subheadline,
     cta: inferred.cta,
+    cta_microcopy: inferred.cta_microcopy,
     positioning: inferred.positioning,
     offer: inferred.offer,
     proof_points: inferred.proof_points,
+    social_proof_items: inferred.social_proof_items,
     launch_summary: `Ventura created a launch foundation for ${context.name} with positioning, a live landing page, and the first execution queue.`,
+    narrative_sections: fallbackNarrativeSections(context),
+    faq: fallbackFaq(context),
+    testimonial: fallbackTestimonial(context),
     site_sections: fallbackSections(context),
     tasks: [
       {
@@ -435,6 +551,84 @@ function fallbackSections(context) {
   ];
 }
 
+function fallbackNarrativeSections(context) {
+  const inferred = inferLaunchAngles(context);
+  return [
+    {
+      kicker: 'The problem',
+      title: 'Most fundraising starts with noise, not fit',
+      body: inferred.positioning
+    },
+    {
+      kicker: 'The shift',
+      title: 'A cleaner story and tighter targeting creates better conversations',
+      body: inferred.offer
+    },
+    {
+      kicker: 'The result',
+      title: `Built to move toward ${clean(context.goal90d || 'real traction').toLowerCase()}`,
+      body: `Ventura keeps the page, messaging, and first customer journey aligned around a single high-value next step instead of scattered asks.`
+    }
+  ];
+}
+
+function fallbackFaq(context) {
+  const inferred = inferLaunchAngles(context);
+  return [
+    {
+      question: 'Why would a founder trust this over cold outreach?',
+      answer: inferred.proof_points[0] || inferred.positioning
+    },
+    {
+      question: 'What happens after the first click?',
+      answer: `The CTA routes the visitor into a direct response path so Ventura can continue the conversation toward ${clean(context.goal90d || 'the next milestone').toLowerCase()}.`
+    },
+    {
+      question: 'What makes this feel credible?',
+      answer: inferred.proof_points[1] || inferred.offer
+    }
+  ];
+}
+
+function fallbackSocialProof(context) {
+  const inferred = inferLaunchAngles(context);
+  return [
+    inferred.proof_points[0],
+    inferred.proof_points[1],
+    inferred.proof_points[2]
+  ].filter(Boolean);
+}
+
+function normalizeTestimonial(testimonial, context) {
+  const fallback = fallbackTestimonial(context);
+  if (!testimonial || typeof testimonial !== 'object') return fallback;
+  const normalized = {
+    quote: clean(testimonial.quote),
+    name: clean(testimonial.name),
+    role: clean(testimonial.role)
+  };
+  return normalized.quote ? {
+    quote: normalized.quote,
+    name: normalized.name || fallback.name,
+    role: normalized.role || fallback.role
+  } : fallback;
+}
+
+function fallbackTestimonial(context) {
+  if (clean(context.name).toLowerCase().includes('founder') && clean(context.name).toLowerCase().includes('investor')) {
+    return {
+      quote: 'We stopped sending unfocused investor outreach and finally had a page that explained why our startup mattered before the first call.',
+      name: 'Early-stage founder',
+      role: 'Pre-seed SaaS'
+    };
+  }
+  return {
+    quote: `${clean(context.name)} makes the first customer conversation feel clearer, sharper, and easier to act on.`,
+    name: 'Launch customer',
+    role: clean(context.targetCustomer) || 'Customer'
+  };
+}
+
 function deriveBusinessDescription(context) {
   const rawDescription = clean(context.description);
   const rawName = clean(context.name);
@@ -456,29 +650,46 @@ function inferLaunchAngles(context) {
 
   if (lower.includes('founder') && lower.includes('investor')) {
     return {
+      hero_badge: 'Founder fundraising match',
       headline: 'Get matched with the right investors without spamming your network',
       subheadline: `${name} helps ${audience} surface qualified investor matches, tighten their fundraising story, and move from cold outreach to real conversations faster.`,
       cta: 'Apply for a match',
+      cta_microcopy: 'Built for pre-seed and seed founders. Clear next step, no messy cold outreach workflow.',
       positioning: `${name} gives founders a faster path to qualified investor introductions, clearer fundraising positioning, and a better first impression before the next raise.`,
       offer: 'Qualified investor matches, clearer fundraising positioning, and a launch workflow built for pre-seed and seed teams.',
       proof_points: [
         'Targeted around stage, sector, and investor-fit instead of generic fundraising lists.',
         'Built to reduce cold outreach overhead and help founders focus on real meetings.',
         `Structured to move founders toward ${goal.toLowerCase()} with a clear launch surface and outreach system.`
+      ],
+      social_proof_items: [
+        'Founder-first fundraising narrative',
+        'Investor-fit over bulk lists',
+        'Designed for pre-seed and seed teams',
+        'Clear CTA with lower hesitation',
+        'Better first impression before the intro'
       ]
     };
   }
 
   return {
+    hero_badge: `${titleCase(clean(context.type) || 'business')} launch`,
     headline: `${name} for ${audience}`,
     subheadline: `${name} helps ${audience} move toward ${goal.toLowerCase()} with a clearer offer, sharper positioning, and a cleaner first-touch experience.`,
     cta: `Talk to ${name}`,
+    cta_microcopy: 'A clear next step, less friction, and a sharper first impression.',
     positioning: `${name} helps ${audience} move toward ${goal.toLowerCase()}.`,
     offer: `A focused ${clean(context.type) || 'business'} offer designed for ${audience}.`,
     proof_points: [
       `Built around ${audience}.`,
       `Focused on ${goal.toLowerCase()}.`,
       'Run through Ventura’s live operator loop and launch workflow.'
+    ],
+    social_proof_items: [
+      `Built around ${audience}.`,
+      `Focused on ${goal.toLowerCase()}.`,
+      'Clear value proposition and CTA.',
+      'Lower-friction launch experience.'
     ]
   };
 }
