@@ -3683,7 +3683,8 @@ function renderAssetHub(controlData, operatingData, libraryData, tasks) {
   const deliverables = artifacts.filter(item => item.kind !== 'site_file');
   const siteFiles = artifacts.filter(item => item.kind === 'site_file');
   const operatingDocs = deliverables.filter(item => ['blueprint', 'training_manual', 'playbook'].includes(item.kind));
-  const shippedOutputs = deliverables.filter(item => !['blueprint', 'training_manual', 'playbook'].includes(item.kind));
+  const marketplaceOutputs = deliverables.filter(item => String(item.kind || '').startsWith('marketplace_'));
+  const shippedOutputs = deliverables.filter(item => !['blueprint', 'training_manual', 'playbook'].includes(item.kind) && !String(item.kind || '').startsWith('marketplace_'));
   const liveSiteUrl = getBusinessSiteUrl(business);
   const publishedSiteUrl = business.published_site_url || '';
   const externalSiteUrl = business.web_url || '';
@@ -3741,6 +3742,10 @@ function renderAssetHub(controlData, operatingData, libraryData, tasks) {
         <div style="font-size:24px;color:#e0ddd5;">${operatingDocs.length}</div>
       </div>
       <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">MARKETPLACE PACKS</div>
+        <div style="font-size:24px;color:#e0ddd5;">${marketplaceOutputs.length}</div>
+      </div>
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
         <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">TOP KINDS</div>
         <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${Object.entries(counts).slice(0, 4).map(([kind, count]) => `${titleCase(kind)} ${count}`).join(' · ') || 'No artifact categories yet'}</div>
       </div>
@@ -3780,6 +3785,10 @@ function renderAssetHub(controlData, operatingData, libraryData, tasks) {
     ${operatingDocs.length
       ? renderAssetRows(operatingDocs)
       : `<div style="padding:10px 0 18px;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;">Blueprint, training manual, and department playbooks will appear here.</div>`}
+    <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin:18px 0 8px;">MARKETPLACE PACKS</div>
+    ${marketplaceOutputs.length
+      ? renderAssetRows(marketplaceOutputs)
+      : `<div style="padding:10px 0 18px;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;">Founder briefs, investor briefs, match memos, and intro drafts will appear here once Ventura starts operating the marketplace.</div>`}
     <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin:18px 0 8px;">SHIPPED OUTPUTS</div>
     ${shippedOutputs.length
       ? renderAssetRows(shippedOutputs)

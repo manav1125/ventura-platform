@@ -122,6 +122,20 @@ function serializeConversation(row) {
   };
 }
 
+function moneyLabel(cents) {
+  const value = Number(cents || 0);
+  if (!value) return 'Not specified';
+  return `$${(value / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+}
+
+function titleCaseWords(value) {
+  return clean(value)
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
 export function createFounderProfile(db, businessId, payload) {
   const id = uuid();
   db.prepare(`
@@ -213,6 +227,190 @@ export function createMarketplaceMatch(db, businessId, payload) {
     JSON.stringify(payload.metadata || {})
   );
   return serializeMatch(db.prepare(`SELECT * FROM marketplace_matches WHERE id = ?`).get(id));
+}
+
+export function getFounderProfile(db, businessId, founderProfileId) {
+  return serializeFounder(db.prepare(`
+    SELECT *
+    FROM marketplace_founder_profiles
+    WHERE business_id = ? AND id = ?
+  `).get(businessId, founderProfileId));
+}
+
+export function getInvestorProfile(db, businessId, investorProfileId) {
+  return serializeInvestor(db.prepare(`
+    SELECT *
+    FROM marketplace_investor_profiles
+    WHERE business_id = ? AND id = ?
+  `).get(businessId, investorProfileId));
+}
+
+export function getMarketplaceMatchDetail(db, businessId, matchId) {
+  const row = db.prepare(`
+    SELECT
+      m.*,
+      f.founder_name,
+      f.founder_email,
+      f.company_name,
+      f.company_url,
+      f.stage,
+      f.sectors,
+      f.geography,
+      f.traction_summary,
+      f.raise_summary,
+      f.raise_target_cents,
+      i.name AS investor_name,
+      i.email AS investor_email,
+      i.firm,
+      i.title AS investor_title,
+      i.stage_focus,
+      i.sector_focus,
+      i.geography_focus,
+      i.check_size_min_cents,
+      i.check_size_max_cents,
+      i.thesis
+    FROM marketplace_matches m
+    JOIN marketplace_founder_profiles f ON f.id = m.founder_profile_id
+    JOIN marketplace_investor_profiles i ON i.id = m.investor_profile_id
+    WHERE m.business_id = ?
+      AND m.id = ?
+  `).get(businessId, matchId);
+  if (!row) return null;
+  return {
+    ...serializeMatch(row),
+    sectors: parseJson(row.sectors, []),
+    stage_focus: parseJson(row.stage_focus, []),
+    sector_focus: parseJson(row.sector_focus, []),
+    geography_focus: parseJson(row.geography_focus, [])
+  };
+}
+
+export function renderFounderBrief(founder, businessName = 'Ventura marketplace') {
+  const sectors = splitList(founder?.sectors).join(', ') || 'Not specified';
+  return [
+    `# Founder application brief`,
+    ``,
+    `Business: ${businessName}`,
+    `Founder: ${founder?.founder_name || 'Unknown founder'}`,
+    `Company: ${founder?.company_name || 'Unnamed company'}`,
+    `Status: ${titleCaseWords(founder?.status || 'applied')}`,
+    ``,
+    `## Snapshot`,
+    `- Stage: ${founder?.stage || 'Not specified'}`,
+    `- Geography: ${founder?.geography || 'Not specified'}`,
+    `- Sectors: ${sectors}`,
+    `- Raise target: ${moneyLabel(founder?.raise_target_cents)}`,
+    `- Contact: ${founder?.founder_email || 'Not provided'}`,
+    `${founder?.company_url ? `- URL: ${founder.company_url}` : '- URL: Not provided'}`,
+    ``,
+    `## Traction`,
+    founder?.traction_summary || 'No traction summary was provided yet.',
+    ``,
+    `## Raise context`,
+    founder?.raise_summary || 'No raise summary was provided yet.',
+    ``,
+    `## Ventura operator note`,
+    `This founder profile is now part of the active marketplace pipeline and should be reviewed against investor fit, thesis alignment, and intro readiness.`
+  ].join('\n');
+}
+
+export function renderInvestorBrief(investor, businessName = 'Ventura marketplace') {
+  const stageFocus = splitList(investor?.stage_focus).join(', ') || 'Not specified';
+  const sectorFocus = splitList(investor?.sector_focus).join(', ') || 'Not specified';
+  const geographyFocus = splitList(investor?.geography_focus).join(', ') || 'Not specified';
+  return [
+    `# Investor profile brief`,
+    ``,
+    `Business: ${businessName}`,
+    `Investor: ${investor?.name || 'Unknown investor'}`,
+    `Firm: ${investor?.firm || 'Independent / not specified'}`,
+    `Status: ${titleCaseWords(investor?.status || 'active')}`,
+    ``,
+    `## Fit bands`,
+    `- Stage focus: ${stageFocus}`,
+    `- Sector focus: ${sectorFocus}`,
+    `- Geography focus: ${geographyFocus}`,
+    `- Check size: ${moneyLabel(investor?.check_size_min_cents)} to ${moneyLabel(investor?.check_size_max_cents)}`,
+    `- Contact: ${investor?.email || 'Not provided'}`,
+    `${investor?.investor_title || investor?.title ? `- Title: ${investor.investor_title || investor.title}` : '- Title: Not provided'}`,
+    ``,
+    `## Thesis`,
+    investor?.thesis || 'No written thesis has been captured yet.',
+    ``,
+    `## Ventura operator note`,
+    `This investor profile is live in the roster and should be used for thesis matching, shortlisting, and intro readiness decisions.`
+  ].join('\n');
+}
+
+export function renderMatchMemo(detail, businessName = 'Ventura marketplace') {
+  const sectors = splitList(detail?.sectors).join(', ') || 'Not specified';
+  const stageFocus = splitList(detail?.stage_focus).join(', ') || 'Not specified';
+  const sectorFocus = splitList(detail?.sector_focus).join(', ') || 'Not specified';
+  return [
+    `# Match memo`,
+    ``,
+    `Business: ${businessName}`,
+    `Status: ${titleCaseWords(detail?.status || 'candidate')}`,
+    `Score: ${Math.round(Number(detail?.score || 0) * 100)}%`,
+    ``,
+    `## Founder`,
+    `- ${detail?.company_name || 'Unnamed company'} · ${detail?.founder_name || 'Unknown founder'}`,
+    `- Stage: ${detail?.stage || 'Not specified'}`,
+    `- Sectors: ${sectors}`,
+    `- Geography: ${detail?.geography || 'Not specified'}`,
+    `- Raise target: ${moneyLabel(detail?.raise_target_cents)}`,
+    ``,
+    `## Investor`,
+    `- ${detail?.investor_name || 'Unknown investor'}${detail?.firm ? ` · ${detail.firm}` : ''}`,
+    `- Stage focus: ${stageFocus}`,
+    `- Sector focus: ${sectorFocus}`,
+    `- Geography focus: ${splitList(detail?.geography_focus).join(', ') || 'Not specified'}`,
+    `- Check size: ${moneyLabel(detail?.check_size_min_cents)} to ${moneyLabel(detail?.check_size_max_cents)}`,
+    ``,
+    `## Ventura rationale`,
+    detail?.rationale || 'Ventura has not stored a written rationale for this match yet.',
+    ``,
+    `## Founder summary`,
+    detail?.founder_summary || detail?.traction_summary || 'No founder summary yet.',
+    ``,
+    `## Investor summary`,
+    detail?.investor_summary || detail?.thesis || 'No investor summary yet.'
+  ].join('\n');
+}
+
+export function renderIntroDraft(detail, businessName = 'Ventura marketplace') {
+  const intro = clean(detail?.intro_draft);
+  if (intro) return intro;
+  return [
+    `Subject: Intro — ${detail?.company_name || 'Founder'} x ${detail?.investor_name || 'Investor'}`,
+    ``,
+    `Hi ${detail?.investor_name || 'there'},`,
+    ``,
+    `I’d like to introduce ${detail?.founder_name || 'a founder'} from ${detail?.company_name || 'an early-stage company'}.`,
+    `${detail?.company_name || 'The company'} is building in ${splitList(detail?.sectors).join(', ') || 'its target sector'} at the ${detail?.stage || 'early'} stage${detail?.geography ? ` with traction in ${detail.geography}` : ''}.`,
+    ``,
+    `${detail?.investor_name || 'You'} look like a fit because ${detail?.rationale || 'Ventura scored a strong match across thesis, stage, and sector focus.'}`,
+    ``,
+    `If helpful, I can share a short one-pager and coordinate a first call.`,
+    ``,
+    `Best,`,
+    `${businessName}`
+  ].join('\n');
+}
+
+export function renderConversationLog(detail, conversation, note = '') {
+  return [
+    `# Intro conversation log`,
+    ``,
+    `Match: ${detail?.company_name || 'Founder'} → ${detail?.investor_name || 'Investor'}`,
+    `Channel: ${titleCaseWords(conversation?.channel || 'email')}`,
+    `Status: ${titleCaseWords(conversation?.status || 'open')}`,
+    `${conversation?.thread_subject ? `Thread: ${conversation.thread_subject}` : 'Thread: Not specified'}`,
+    `${conversation?.last_message_at ? `Last message: ${conversation.last_message_at}` : 'Last message: Not recorded'}`,
+    ``,
+    `## Operator note`,
+    clean(note) || 'No additional note recorded.'
+  ].join('\n');
 }
 
 export function updateFounderProfileStatus(db, businessId, founderProfileId, payload = {}) {

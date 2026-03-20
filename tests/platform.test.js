@@ -528,6 +528,50 @@ describe('Blueprints and marketplace runtime', () => {
     assert.ok(overview.body.marketplace.reviews.some(item => item.subject_type === 'investor_profile'));
     assert.ok(overview.body.marketplace.reviews.some(item => item.subject_type === 'match'));
     assert.ok(overview.body.marketplace.conversations.some(item => item.match_id === matchRes.body.match.id));
+
+    const artifacts = await GET(`/api/businesses/${marketplaceBizId}/artifacts?limit=50`, otherTokens.access);
+    assert.equal(artifacts.status, 200);
+    const kinds = artifacts.body.artifacts.map(item => item.kind);
+    assert.ok(kinds.includes('marketplace_founder_brief'));
+    assert.ok(kinds.includes('marketplace_investor_brief'));
+    assert.ok(kinds.includes('marketplace_match_memo'));
+    assert.ok(kinds.includes('marketplace_intro_draft'));
+    assert.ok(kinds.includes('marketplace_match_update'));
+    assert.ok(kinds.includes('marketplace_conversation_log'));
+  });
+
+  it('accepts public founder and investor intake on marketplace sites', async () => {
+    const founderRes = await POST('/sites/founder-investor-connect/apply/founder', {
+      founderName: 'Avery Chen',
+      founderEmail: 'avery@relay.test',
+      companyName: 'Relay Stack',
+      companyUrl: 'https://relay.test',
+      stage: 'pre-seed',
+      sectors: ['B2B SaaS', 'Developer tools'],
+      geography: 'Singapore',
+      tractionSummary: '12 design partners and 3 paid pilots.',
+      raiseSummary: '$750k pre-seed round opening next quarter.'
+    });
+    assert.equal(founderRes.status, 201);
+    assert.equal(founderRes.body.ok, true);
+
+    const investorRes = await POST('/sites/founder-investor-connect/join/investor', {
+      name: 'Jamie Park',
+      email: 'jamie@signal.test',
+      firm: 'Signal Ridge',
+      title: 'Partner',
+      stageFocus: ['pre-seed', 'seed'],
+      sectorFocus: ['B2B SaaS'],
+      geographyFocus: ['Singapore', 'APAC'],
+      thesis: 'Product-led infrastructure and developer tooling in APAC.'
+    });
+    assert.equal(investorRes.status, 201);
+    assert.equal(investorRes.body.ok, true);
+
+    const overview = await GET(`/api/businesses/${marketplaceBizId}/marketplace/overview`, otherTokens.access);
+    assert.equal(overview.status, 200);
+    assert.ok(overview.body.marketplace.founders.some(item => item.company_name === 'Relay Stack'));
+    assert.ok(overview.body.marketplace.investors.some(item => item.name === 'Jamie Park'));
   });
 });
 

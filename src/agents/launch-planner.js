@@ -128,6 +128,7 @@ export function renderLaunchSite(business, plan) {
   const narrativeSections = (plan.narrative_sections || []).slice(0, 3);
   const socialProofItems = (plan.social_proof_items || []).slice(0, 5);
   const primaryCta = plan.cta || `Talk to ${business.name}`;
+  const showMarketplaceIntake = isFounderInvestorOffer(business);
   const primaryHref = buildPrimaryHref(business, primaryCta);
   const ctaMicrocopy = plan.cta_microcopy || 'Clear next step. No heavy setup. Fast path to the first conversation.';
   const heroBadge = plan.hero_badge || `${titleCase(business.type || 'business')} launch`;
@@ -596,6 +597,77 @@ export function renderLaunchSite(business, plan) {
       color:rgba(23,19,18,.62);
       line-height:1.7;
     }
+    .intake-grid {
+      display:grid;
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+      gap:18px;
+    }
+    .intake-card {
+      padding:24px;
+      border-radius:28px;
+      background:rgba(255,255,255,.62);
+      border:1px solid rgba(23,19,18,.08);
+      box-shadow:0 20px 72px rgba(83,56,29,.08);
+    }
+    .intake-card h3 {
+      margin:10px 0 8px;
+      font-size:24px;
+      letter-spacing:-.03em;
+      line-height:1.06;
+      color:#171312;
+    }
+    .intake-card p {
+      margin:0 0 18px;
+      color:rgba(23,19,18,.62);
+      line-height:1.72;
+    }
+    .intake-form {
+      display:grid;
+      gap:12px;
+    }
+    .intake-form label {
+      display:grid;
+      gap:6px;
+      font-size:11px;
+      letter-spacing:.14em;
+      text-transform:uppercase;
+      color:rgba(23,19,18,.48);
+    }
+    .intake-form input,
+    .intake-form textarea {
+      width:100%;
+      border:1px solid rgba(23,19,18,.1);
+      border-radius:16px;
+      background:rgba(255,255,255,.88);
+      padding:14px 15px;
+      font:inherit;
+      color:#171312;
+      outline:none;
+      transition:border-color .2s ease, box-shadow .2s ease;
+    }
+    .intake-form input:focus,
+    .intake-form textarea:focus {
+      border-color:rgba(255,110,59,.55);
+      box-shadow:0 0 0 4px rgba(255,110,59,.1);
+    }
+    .intake-form textarea {
+      min-height:108px;
+      resize:vertical;
+    }
+    .form-status {
+      min-height:22px;
+      font-size:13px;
+      color:#11574A;
+    }
+    .form-status.error {
+      color:#aa4127;
+    }
+    .intake-meta {
+      margin-top:16px;
+      font-size:12px;
+      color:rgba(23,19,18,.56);
+      line-height:1.7;
+    }
     .step-content { margin-top:18px; }
     .quote-panel {
       margin-top:24px;
@@ -658,6 +730,7 @@ export function renderLaunchSite(business, plan) {
       }
       .hero-dashboard { margin-top:0; min-height:unset; }
       .match-strip,
+      .intake-grid,
       .steps-grid { grid-template-columns:1fr; }
       .footer-card { flex-direction:column; align-items:flex-start; }
     }
@@ -781,6 +854,56 @@ export function renderLaunchSite(business, plan) {
       </section>
     ` : ''}
 
+    ${showMarketplaceIntake ? `
+      <section id="apply" class="section-shell">
+        <div class="section-head">
+          <div>
+            <div class="section-kicker">Apply or join</div>
+            <h2>Founders can apply in minutes. Investors can join the live roster.</h2>
+          </div>
+          <p class="section-intro">Each submission becomes a structured profile inside Ventura’s marketplace runtime, ready for matching, briefs, and intros.</p>
+        </div>
+        <div class="intake-grid">
+          <article class="intake-card">
+            <div class="section-kicker">Founder application</div>
+            <h3>Share the company and the raise context.</h3>
+            <p>Ventura turns the submission into a founder profile, a brief, and a scored operating record for the match engine.</p>
+            <form class="intake-form" id="founder-intake-form">
+              <label>Founder name<input name="founderName" placeholder="Jane Founder" required></label>
+              <label>Email<input type="email" name="founderEmail" placeholder="jane@startup.com" required></label>
+              <label>Company<input name="companyName" placeholder="Signal Labs" required></label>
+              <label>Website<input name="companyUrl" placeholder="https://signal.dev"></label>
+              <label>Stage<input name="stage" placeholder="Pre-seed"></label>
+              <label>Sectors<input name="sectors" placeholder="B2B SaaS, fintech"></label>
+              <label>Geography<input name="geography" placeholder="Singapore"></label>
+              <label>Traction summary<textarea name="tractionSummary" placeholder="Customers, pilots, revenue, product momentum..."></textarea></label>
+              <label>Raise summary<textarea name="raiseSummary" placeholder="Round size, timing, use of funds..."></textarea></label>
+              <button class="btn btn-primary" type="submit">Apply as founder</button>
+              <div class="form-status" id="founder-form-status"></div>
+            </form>
+          </article>
+          <article class="intake-card">
+            <div class="section-kicker">Investor roster</div>
+            <h3>Tell us what you actively want to back.</h3>
+            <p>Ventura uses this to normalize thesis, stage, and geography fit before it prepares intros.</p>
+            <form class="intake-form" id="investor-intake-form">
+              <label>Name<input name="name" placeholder="Alex Investor" required></label>
+              <label>Email<input type="email" name="email" placeholder="alex@fund.com" required></label>
+              <label>Firm<input name="firm" placeholder="North Star Ventures"></label>
+              <label>Title<input name="title" placeholder="Partner"></label>
+              <label>Stage focus<input name="stageFocus" placeholder="Pre-seed, Seed"></label>
+              <label>Sector focus<input name="sectorFocus" placeholder="B2B SaaS, AI tools"></label>
+              <label>Geography focus<input name="geographyFocus" placeholder="US, Southeast Asia"></label>
+              <label>Thesis<textarea name="thesis" placeholder="Where do you have the strongest conviction?"></textarea></label>
+              <button class="btn btn-primary" type="submit">Join as investor</button>
+              <div class="form-status" id="investor-form-status"></div>
+            </form>
+          </article>
+        </div>
+        <div class="intake-meta">These forms write directly into the marketplace system Ventura is operating, not a separate lead bucket.</div>
+      </section>
+    ` : ''}
+
     <section class="footer-card">
       <div>
         <div class="section-kicker">${escapeHtml(brand.name)}</div>
@@ -789,6 +912,62 @@ export function renderLaunchSite(business, plan) {
       <a class="btn btn-primary" href="${escapeHtml(primaryHref)}">${escapeHtml(primaryCta)}</a>
     </section>
   </main>
+  ${showMarketplaceIntake ? `
+    <script>
+      const slug = ${JSON.stringify(business.slug || '')};
+      function splitCsv(value) {
+        return String(value || '').split(/[,\n|]/).map(item => item.trim()).filter(Boolean);
+      }
+      async function submitMarketplaceForm(formId, endpoint, statusId, transform) {
+        const form = document.getElementById(formId);
+        const status = document.getElementById(statusId);
+        if (!form || !status) return;
+        status.classList.remove('error');
+        status.textContent = 'Submitting...';
+        const payload = transform(Object.fromEntries(new FormData(form).entries()));
+        const response = await fetch('/sites/' + slug + endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          status.classList.add('error');
+          status.textContent = data.error || 'Submission failed. Please try again.';
+          return;
+        }
+        form.reset();
+        status.textContent = data.message || 'Submitted successfully.';
+      }
+      document.getElementById('founder-intake-form')?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        submitMarketplaceForm('founder-intake-form', '/apply/founder', 'founder-form-status', (raw) => ({
+          founderName: raw.founderName,
+          founderEmail: raw.founderEmail,
+          companyName: raw.companyName,
+          companyUrl: raw.companyUrl,
+          stage: raw.stage,
+          sectors: splitCsv(raw.sectors),
+          geography: raw.geography,
+          tractionSummary: raw.tractionSummary,
+          raiseSummary: raw.raiseSummary
+        }));
+      });
+      document.getElementById('investor-intake-form')?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        submitMarketplaceForm('investor-intake-form', '/join/investor', 'investor-form-status', (raw) => ({
+          name: raw.name,
+          email: raw.email,
+          firm: raw.firm,
+          title: raw.title,
+          stageFocus: splitCsv(raw.stageFocus),
+          sectorFocus: splitCsv(raw.sectorFocus),
+          geographyFocus: splitCsv(raw.geographyFocus),
+          thesis: raw.thesis
+        }));
+      });
+    </script>
+  ` : ''}
 </body>
 </html>`;
 }
@@ -1139,10 +1318,23 @@ function titleCase(value) {
 }
 
 function buildPrimaryHref(business, cta) {
+  if (isFounderInvestorOffer(business)) return '#apply';
   if (clean(business.email_address)) {
     return `mailto:${clean(business.email_address)}?subject=${encodeURIComponent(clean(cta) || `Talk to ${clean(business.name)}`)}`;
   }
   return '#momentum';
+}
+
+function isFounderInvestorOffer(business = {}) {
+  const haystack = [
+    clean(business.name),
+    clean(business.description),
+    clean(business.target_customer),
+    clean(business.goal_90d),
+    clean(business.blueprint_key)
+  ].join(' ').toLowerCase();
+  return (haystack.includes('founder') && haystack.includes('investor'))
+    || haystack.includes('founder_investor_marketplace');
 }
 
 function deriveSiteBrand(name, heroBadge) {

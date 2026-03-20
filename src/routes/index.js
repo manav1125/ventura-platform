@@ -13,6 +13,7 @@ import {
 import { provisionBusiness, regenerateBusinessFoundation } from '../provisioning/provision.js';
 import { startBusinessCycleIfIdle } from '../agents/runner.js';
 import {
+  createArtifact,
   getLatestArtifactByKind,
   listArtifacts
 } from '../agents/artifacts.js';
@@ -80,11 +81,17 @@ import {
   createInvestorProfile,
   createMarketplaceMatch,
   getMarketplaceOverview,
+  getMarketplaceMatchDetail,
   updateFounderProfileStatus,
   updateInvestorProfileStatus,
   updateMarketplaceMatch,
   upsertMarketplaceReview,
-  upsertMarketplaceConversation
+  upsertMarketplaceConversation,
+  renderConversationLog,
+  renderFounderBrief,
+  renderIntroDraft,
+  renderInvestorBrief,
+  renderMatchMemo
 } from '../business/marketplace.js';
 import { getBusinessTrainingPack } from '../business/training.js';
 import { dispatchSpecialistTask } from '../business/specialists.js';
@@ -2626,6 +2633,20 @@ router.post('/businesses/:id/marketplace/founders', requireAuth, asyncHandler(as
   const body = validate(schema, req.body || {});
   const founder = createFounderProfile(db, business.id, body);
 
+  createArtifact({
+    businessId: business.id,
+    department: 'operations',
+    kind: 'marketplace_founder_brief',
+    title: `Founder brief — ${founder.company_name}`,
+    summary: `${founder.company_name} entered the founder pipeline at ${founder.stage || 'an unspecified'} stage.`,
+    content: renderFounderBrief(founder, business.name),
+    metadata: {
+      founder_profile_id: founder.id,
+      stage: founder.stage || null,
+      geography: founder.geography || null
+    }
+  });
+
   await logActivity(business.id, {
     type: 'lead',
     department: 'operations',
@@ -2669,6 +2690,19 @@ router.post('/businesses/:id/marketplace/investors', requireAuth, asyncHandler(a
   const body = validate(schema, req.body || {});
   const investor = createInvestorProfile(db, business.id, body);
 
+  createArtifact({
+    businessId: business.id,
+    department: 'operations',
+    kind: 'marketplace_investor_brief',
+    title: `Investor brief — ${investor.name}`,
+    summary: `${investor.name}${investor.firm ? ` from ${investor.firm}` : ''} is now in the investor roster.`,
+    content: renderInvestorBrief(investor, business.name),
+    metadata: {
+      investor_profile_id: investor.id,
+      firm: investor.firm || null
+    }
+  });
+
   await logActivity(business.id, {
     type: 'lead',
     department: 'operations',
@@ -2705,6 +2739,38 @@ router.post('/businesses/:id/marketplace/matches', requireAuth, asyncHandler(asy
   });
   const body = validate(schema, req.body || {});
   const match = createMarketplaceMatch(db, business.id, body);
+  const matchDetail = getMarketplaceMatchDetail(db, business.id, match.id);
+
+  if (matchDetail) {
+    createArtifact({
+      businessId: business.id,
+      department: 'operations',
+      kind: 'marketplace_match_memo',
+      title: `Match memo — ${matchDetail.company_name} × ${matchDetail.investor_name}`,
+      summary: `${matchDetail.company_name} was paired with ${matchDetail.investor_name} at a ${Math.round(Number(matchDetail.score || 0) * 100)}% fit score.`,
+      content: renderMatchMemo(matchDetail, business.name),
+      metadata: {
+        match_id: match.id,
+        founder_profile_id: matchDetail.founder_profile_id,
+        investor_profile_id: matchDetail.investor_profile_id,
+        score: matchDetail.score
+      }
+    });
+
+    createArtifact({
+      businessId: business.id,
+      department: 'operations',
+      kind: 'marketplace_intro_draft',
+      title: `Intro draft — ${matchDetail.company_name} × ${matchDetail.investor_name}`,
+      summary: `Ventura prepared a first intro draft for ${matchDetail.company_name} and ${matchDetail.investor_name}.`,
+      content: renderIntroDraft(matchDetail, business.name),
+      metadata: {
+        match_id: match.id,
+        founder_profile_id: matchDetail.founder_profile_id,
+        investor_profile_id: matchDetail.investor_profile_id
+      }
+    });
+  }
 
   await logActivity(business.id, {
     type: 'system',
@@ -2832,6 +2898,32 @@ router.patch('/businesses/:id/marketplace/matches/:matchId', requireAuth, asyncH
   });
   const body = validate(schema, req.body || {});
   const match = updateMarketplaceMatch(db, business.id, req.params.matchId, body);
+  const matchDetail = getMarketplaceMatchDetail(db, business.id, match.id);
+
+  if (matchDetail) {
+    createArtifact({
+      businessId: business.id,
+      department: 'operations',
+      kind: 'marketplace_match_update',
+      title: `Match update — ${matchDetail.company_name} × ${matchDetail.investor_name}`,
+      summary: `Match moved to ${match.status}.`,
+      content: [
+        `# Match update`,
+        ``,
+        `Match: ${matchDetail.company_name} × ${matchDetail.investor_name}`,
+        `Status: ${match.status}`,
+        body.rationale ? `Rationale: ${body.rationale}` : `Rationale: ${matchDetail.rationale || 'No rationale update provided.'}`,
+        body.notes ? `Notes: ${body.notes}` : `Notes: No operator note attached.`,
+        ``,
+        `## Intro draft`,
+        renderIntroDraft(matchDetail, business.name)
+      ].join('\n'),
+      metadata: {
+        match_id: match.id,
+        status: match.status
+      }
+    });
+  }
 
   if (body.status && body.status !== 'candidate') {
     upsertMarketplaceReview(db, business.id, 'match', match.id, {
@@ -2877,6 +2969,24 @@ router.post('/businesses/:id/marketplace/matches/:matchId/conversations', requir
   });
   const body = validate(schema, req.body || {});
   const conversation = upsertMarketplaceConversation(db, business.id, req.params.matchId, body);
+  const matchDetail = getMarketplaceMatchDetail(db, business.id, req.params.matchId);
+
+  if (matchDetail) {
+    createArtifact({
+      businessId: business.id,
+      department: 'operations',
+      kind: 'marketplace_conversation_log',
+      title: `Conversation log — ${matchDetail.company_name} × ${matchDetail.investor_name}`,
+      summary: `Conversation moved to ${conversation.status} over ${conversation.channel}.`,
+      content: renderConversationLog(matchDetail, conversation, body.note),
+      metadata: {
+        match_id: req.params.matchId,
+        conversation_id: conversation.id,
+        status: conversation.status,
+        channel: conversation.channel
+      }
+    });
+  }
 
   await logActivity(business.id, {
     type: 'system',
