@@ -458,6 +458,77 @@ describe('Blueprints and marketplace runtime', () => {
     assert.equal(overview.body.marketplace.counts.investors, 1);
     assert.equal(overview.body.marketplace.counts.matches, 1);
   });
+
+  it('progresses marketplace review, match, and conversation state', async () => {
+    const founderRes = await POST(`/api/businesses/${marketplaceBizId}/marketplace/founders`, {
+      founderName: 'Morgan Lee',
+      founderEmail: 'morgan@forge.test',
+      companyName: 'Forge Cloud',
+      stage: 'seed',
+      sectors: ['Developer tools', 'B2B SaaS'],
+      geography: 'Singapore'
+    }, otherTokens.access);
+    assert.equal(founderRes.status, 201);
+
+    const investorRes = await POST(`/api/businesses/${marketplaceBizId}/marketplace/investors`, {
+      name: 'Taylor Reed',
+      email: 'taylor@horizon.test',
+      firm: 'Horizon Capital',
+      stageFocus: ['seed'],
+      sectorFocus: ['Developer tools', 'B2B SaaS'],
+      geographyFocus: ['Singapore', 'APAC'],
+      thesis: 'Backs product-led SaaS teams scaling from seed to Series A.'
+    }, otherTokens.access);
+    assert.equal(investorRes.status, 201);
+
+    const founderUpdate = await PATCH(`/api/businesses/${marketplaceBizId}/marketplace/founders/${founderRes.body.founder.id}`, {
+      status: 'approved',
+      notes: 'Founder profile cleared first review.'
+    }, otherTokens.access);
+    assert.equal(founderUpdate.status, 200);
+    assert.equal(founderUpdate.body.founder.status, 'approved');
+    assert.equal(founderUpdate.body.review.decision, 'approved');
+
+    const investorUpdate = await PATCH(`/api/businesses/${marketplaceBizId}/marketplace/investors/${investorRes.body.investor.id}`, {
+      status: 'active',
+      notes: 'Investor is ready for live matching.'
+    }, otherTokens.access);
+    assert.equal(investorUpdate.status, 200);
+    assert.equal(investorUpdate.body.investor.status, 'active');
+    assert.equal(investorUpdate.body.review.decision, 'approved');
+
+    const matchRes = await POST(`/api/businesses/${marketplaceBizId}/marketplace/matches`, {
+      founderProfileId: founderRes.body.founder.id,
+      investorProfileId: investorRes.body.investor.id
+    }, otherTokens.access);
+    assert.equal(matchRes.status, 201);
+
+    const matchUpdate = await PATCH(`/api/businesses/${marketplaceBizId}/marketplace/matches/${matchRes.body.match.id}`, {
+      status: 'queued_intro',
+      introDraft: 'Intro draft ready for both sides.',
+      notes: 'Queue this intro for next ops pass.'
+    }, otherTokens.access);
+    assert.equal(matchUpdate.status, 200);
+    assert.equal(matchUpdate.body.match.status, 'queued_intro');
+
+    const conversationRes = await POST(`/api/businesses/${marketplaceBizId}/marketplace/matches/${matchRes.body.match.id}/conversations`, {
+      status: 'replied',
+      channel: 'email',
+      threadSubject: 'Intro: Forge Cloud × Horizon Capital',
+      note: 'Investor replied and requested a call next week.'
+    }, otherTokens.access);
+    assert.equal(conversationRes.status, 201);
+    assert.equal(conversationRes.body.conversation.status, 'replied');
+
+    const overview = await GET(`/api/businesses/${marketplaceBizId}/marketplace/overview`, otherTokens.access);
+    assert.equal(overview.status, 200);
+    assert.ok(overview.body.marketplace.counts.intros_sent >= 1);
+    assert.ok(overview.body.marketplace.counts.open_conversations >= 1);
+    assert.ok(overview.body.marketplace.reviews.some(item => item.subject_type === 'founder_profile'));
+    assert.ok(overview.body.marketplace.reviews.some(item => item.subject_type === 'investor_profile'));
+    assert.ok(overview.body.marketplace.reviews.some(item => item.subject_type === 'match'));
+    assert.ok(overview.body.marketplace.conversations.some(item => item.match_id === matchRes.body.match.id));
+  });
 });
 
 // ─── TASKS ────────────────────────────────────────────────────────────────────

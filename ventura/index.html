@@ -2340,6 +2340,20 @@
             </div>
           </div>
         </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Review queue</span></div>
+            <div class="panel-body" id="marketplace-reviews-list" style="padding:0 20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;line-height:1.6;">No review actions yet.</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Intro conversations</span></div>
+            <div class="panel-body" id="marketplace-conversations-list" style="padding:0 20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;line-height:1.6;">No conversations tracked yet.</div>
+            </div>
+          </div>
+        </div>
         <div class="grid-3">
           <div class="panel">
             <div class="panel-header"><span class="panel-title">Add founder</span></div>
@@ -2375,6 +2389,27 @@
               <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Override rationale</label><textarea id="marketplace-match-rationale" placeholder="Optional: why this match should move now..." style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;min-height:88px;"></textarea></div>
               <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-bottom:12px;font-family:'DM Mono',monospace;">Ventura will still score the match and persist the rationale for review.</div>
               <button class="btn-run" onclick="createMarketplaceMatch()">Create match</button>
+            </div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Progress a match</span></div>
+            <div class="panel-body">
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Match</label><select id="marketplace-progress-match" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option value="">Choose match</option></select></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Status</label><select id="marketplace-progress-status" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option value="queued_intro">Queued intro</option><option value="sent">Sent</option><option value="accepted">Accepted</option><option value="declined">Declined</option><option value="archived">Archived</option></select></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Intro draft / note</label><textarea id="marketplace-progress-intro" placeholder="Short intro draft or operator note..." style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;min-height:88px;"></textarea></div>
+              <button class="btn-run" onclick="progressMarketplaceMatch()">Update match</button>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Log a conversation update</span></div>
+            <div class="panel-body">
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Match</label><select id="marketplace-conversation-match" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option value="">Choose match</option></select></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Channel</label><select id="marketplace-conversation-channel" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option value="email">Email</option><option value="call">Call</option><option value="meeting">Meeting</option><option value="slack">Slack</option></select></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Conversation state</label><select id="marketplace-conversation-status" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option value="open">Open</option><option value="waiting">Waiting</option><option value="replied">Replied</option><option value="closed">Closed</option></select></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Subject / note</label><textarea id="marketplace-conversation-note" placeholder="Intro sent to both sides, waiting on investor reply..." style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;min-height:88px;"></textarea></div>
+              <button class="btn-run" onclick="logMarketplaceConversation()">Log conversation</button>
             </div>
           </div>
         </div>
@@ -3795,7 +3830,9 @@ function renderMarketplaceWorkspace(operatingData, libraryData) {
   const foundersEl = document.getElementById('marketplace-founders-list');
   const investorsEl = document.getElementById('marketplace-investors-list');
   const matchesEl = document.getElementById('marketplace-matches-list');
-  if (!runtimeEl || !trainingEl || !foundersEl || !investorsEl || !matchesEl) return;
+  const reviewsEl = document.getElementById('marketplace-reviews-list');
+  const conversationsEl = document.getElementById('marketplace-conversations-list');
+  if (!runtimeEl || !trainingEl || !foundersEl || !investorsEl || !matchesEl || !reviewsEl || !conversationsEl) return;
 
   const blueprint = operatingData?.business?.blueprint || operatingData?.blueprint || null;
   const marketplace = operatingData?.marketplace || null;
@@ -3808,6 +3845,8 @@ function renderMarketplaceWorkspace(operatingData, libraryData) {
     foundersEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No marketplace runtime for this business.</div>`;
     investorsEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No marketplace runtime for this business.</div>`;
     matchesEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No marketplace runtime for this business.</div>`;
+    reviewsEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No marketplace runtime for this business.</div>`;
+    conversationsEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No marketplace runtime for this business.</div>`;
     setEl('marketplace-founders-count', '0');
     setEl('marketplace-investors-count', '0');
     setEl('marketplace-matches-count', '0');
@@ -3882,10 +3921,15 @@ function renderMarketplaceWorkspace(operatingData, libraryData) {
 
   const founderOptions = (marketplace.founders || []).map(item => `<option value="${esc(item.id)}">${esc(item.company_name)} · ${esc(item.founder_name)}</option>`).join('');
   const investorOptions = (marketplace.investors || []).map(item => `<option value="${esc(item.id)}">${esc(item.name)}${item.firm ? ` · ${esc(item.firm)}` : ''}</option>`).join('');
+  const matchOptions = (marketplace.matches || []).map(item => `<option value="${esc(item.id)}">${esc(item.company_name)} → ${esc(item.investor_name)}</option>`).join('');
   const founderSelect = document.getElementById('marketplace-match-founder');
   const investorSelect = document.getElementById('marketplace-match-investor');
+  const progressMatchSelect = document.getElementById('marketplace-progress-match');
+  const conversationMatchSelect = document.getElementById('marketplace-conversation-match');
   if (founderSelect) founderSelect.innerHTML = `<option value="">Choose founder</option>${founderOptions}`;
   if (investorSelect) investorSelect.innerHTML = `<option value="">Choose investor</option>${investorOptions}`;
+  if (progressMatchSelect) progressMatchSelect.innerHTML = `<option value="">Choose match</option>${matchOptions}`;
+  if (conversationMatchSelect) conversationMatchSelect.innerHTML = `<option value="">Choose match</option>${matchOptions}`;
 
   foundersEl.innerHTML = (marketplace.founders || []).length ? marketplace.founders.map(item => `
     <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
@@ -3896,6 +3940,11 @@ function renderMarketplaceWorkspace(operatingData, libraryData) {
           <div style="font-size:12px;color:rgba(255,255,255,0.58);line-height:1.55;margin-top:6px;">${esc(item.stage || 'Stage pending')}${item.geography ? ` · ${esc(item.geography)}` : ''}</div>
         </div>
         <span class="tag">${esc((item.status || 'applied').toUpperCase())}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
+        <button class="icon-btn" onclick="updateMarketplaceFounderStatus('${esc(item.id)}','reviewing')">Review</button>
+        <button class="icon-btn" onclick="updateMarketplaceFounderStatus('${esc(item.id)}','approved')">Approve</button>
+        <button class="icon-btn" onclick="updateMarketplaceFounderStatus('${esc(item.id)}','rejected')">Reject</button>
       </div>
     </div>
   `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No founder applications yet. Add the first founder profile here or let Ventura capture one from the intake flow.</div>`;
@@ -3908,6 +3957,11 @@ function renderMarketplaceWorkspace(operatingData, libraryData) {
           <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.55;">${esc(item.firm || 'Independent investor')}${item.title ? ` · ${esc(item.title)}` : ''}</div>
         </div>
         <span class="tag">${esc((item.status || 'active').toUpperCase())}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
+        <button class="icon-btn" onclick="updateMarketplaceInvestorStatus('${esc(item.id)}','active')">Activate</button>
+        <button class="icon-btn" onclick="updateMarketplaceInvestorStatus('${esc(item.id)}','paused')">Pause</button>
+        <button class="icon-btn" onclick="updateMarketplaceInvestorStatus('${esc(item.id)}','archived')">Archive</button>
       </div>
     </div>
   `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No investor profiles yet. Add the first investor so Ventura can start scoring fit.</div>`;
@@ -3927,6 +3981,32 @@ function renderMarketplaceWorkspace(operatingData, libraryData) {
       </div>
     </div>
   `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No matches yet. Once Ventura has founder and investor profiles, it should start leaving scored candidates here with a rationale.</div>`;
+
+  reviewsEl.innerHTML = (marketplace.reviews || []).length ? marketplace.reviews.map(item => `
+    <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+        <div>
+          <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(titleCase(item.subject_type || 'review'))}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.55;">${esc(item.notes || 'No review note captured')}</div>
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-top:8px;">${item.decided_at ? timeAgo(item.decided_at) : timeAgo(item.updated_at)}</div>
+        </div>
+        <span class="tag">${esc((item.decision || 'pending').toUpperCase())}</span>
+      </div>
+    </div>
+  `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No review decisions have been recorded yet.</div>`;
+
+  conversationsEl.innerHTML = (marketplace.conversations || []).length ? marketplace.conversations.map(item => `
+    <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+        <div>
+          <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(item.company_name)} → ${esc(item.investor_name)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.55;">${esc(item.thread_subject || titleCase(item.channel || 'email'))}</div>
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-top:8px;">${item.last_message_at ? timeAgo(item.last_message_at) : timeAgo(item.updated_at)}</div>
+        </div>
+        <span class="tag">${esc((item.status || 'open').toUpperCase())}</span>
+      </div>
+    </div>
+  `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No intro conversations have been logged yet.</div>`;
 }
 
 function renderTaskRows(tasks, limit = 8) {
@@ -5924,6 +6004,90 @@ async function createMarketplaceMatch() {
     activateDashboardPage('marketplace');
   } catch (err) {
     showToast(`Match create failed: ${err.message}`);
+  }
+}
+
+async function updateMarketplaceFounderStatus(founderId, status) {
+  if (!state.activeBiz || !founderId) return;
+  const notes = prompt(`Optional note for founder status ${status}:`) || '';
+  try {
+    await PATCH(`/businesses/${state.activeBiz.id}/marketplace/founders/${founderId}`, {
+      status,
+      notes: notes || undefined
+    });
+    showToast(`Founder moved to ${status}`);
+    await loadDashboard();
+    activateDashboardPage('marketplace');
+  } catch (err) {
+    showToast(`Founder update failed: ${err.message}`);
+  }
+}
+
+async function updateMarketplaceInvestorStatus(investorId, status) {
+  if (!state.activeBiz || !investorId) return;
+  const notes = prompt(`Optional note for investor status ${status}:`) || '';
+  try {
+    await PATCH(`/businesses/${state.activeBiz.id}/marketplace/investors/${investorId}`, {
+      status,
+      notes: notes || undefined
+    });
+    showToast(`Investor moved to ${status}`);
+    await loadDashboard();
+    activateDashboardPage('marketplace');
+  } catch (err) {
+    showToast(`Investor update failed: ${err.message}`);
+  }
+}
+
+async function progressMarketplaceMatch() {
+  if (!state.activeBiz) return;
+  const matchId = document.getElementById('marketplace-progress-match')?.value || '';
+  const status = document.getElementById('marketplace-progress-status')?.value || '';
+  const introDraft = document.getElementById('marketplace-progress-intro')?.value?.trim() || '';
+  if (!matchId || !status) {
+    showToast('Choose a match and status');
+    return;
+  }
+  try {
+    await PATCH(`/businesses/${state.activeBiz.id}/marketplace/matches/${matchId}`, {
+      status,
+      introDraft: introDraft || undefined,
+      notes: introDraft || undefined
+    });
+    const introEl = document.getElementById('marketplace-progress-intro');
+    if (introEl) introEl.value = '';
+    showToast(`Match moved to ${status}`);
+    await loadDashboard();
+    activateDashboardPage('marketplace');
+  } catch (err) {
+    showToast(`Match update failed: ${err.message}`);
+  }
+}
+
+async function logMarketplaceConversation() {
+  if (!state.activeBiz) return;
+  const matchId = document.getElementById('marketplace-conversation-match')?.value || '';
+  const channel = document.getElementById('marketplace-conversation-channel')?.value || 'email';
+  const status = document.getElementById('marketplace-conversation-status')?.value || 'open';
+  const note = document.getElementById('marketplace-conversation-note')?.value?.trim() || '';
+  if (!matchId) {
+    showToast('Choose a match to log the conversation');
+    return;
+  }
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/marketplace/matches/${matchId}/conversations`, {
+      channel,
+      status,
+      threadSubject: note ? note.slice(0, 180) : undefined,
+      note: note || undefined
+    });
+    const noteEl = document.getElementById('marketplace-conversation-note');
+    if (noteEl) noteEl.value = '';
+    showToast('Conversation update logged');
+    await loadDashboard();
+    activateDashboardPage('marketplace');
+  } catch (err) {
+    showToast(`Conversation log failed: ${err.message}`);
   }
 }
 

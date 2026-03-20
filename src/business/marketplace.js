@@ -108,6 +108,20 @@ function serializeMatch(row) {
   };
 }
 
+function serializeReview(row) {
+  if (!row) return null;
+  return {
+    ...row
+  };
+}
+
+function serializeConversation(row) {
+  if (!row) return null;
+  return {
+    ...row
+  };
+}
+
 export function createFounderProfile(db, businessId, payload) {
   const id = uuid();
   db.prepare(`
@@ -201,6 +215,154 @@ export function createMarketplaceMatch(db, businessId, payload) {
   return serializeMatch(db.prepare(`SELECT * FROM marketplace_matches WHERE id = ?`).get(id));
 }
 
+export function updateFounderProfileStatus(db, businessId, founderProfileId, payload = {}) {
+  db.prepare(`
+    UPDATE marketplace_founder_profiles
+    SET status = ?,
+        updated_at = datetime('now')
+    WHERE business_id = ? AND id = ?
+  `).run(clean(payload.status) || 'reviewing', businessId, founderProfileId);
+  return serializeFounder(db.prepare(`
+    SELECT *
+    FROM marketplace_founder_profiles
+    WHERE business_id = ? AND id = ?
+  `).get(businessId, founderProfileId));
+}
+
+export function updateInvestorProfileStatus(db, businessId, investorProfileId, payload = {}) {
+  db.prepare(`
+    UPDATE marketplace_investor_profiles
+    SET status = ?,
+        updated_at = datetime('now')
+    WHERE business_id = ? AND id = ?
+  `).run(clean(payload.status) || 'active', businessId, investorProfileId);
+  return serializeInvestor(db.prepare(`
+    SELECT *
+    FROM marketplace_investor_profiles
+    WHERE business_id = ? AND id = ?
+  `).get(businessId, investorProfileId));
+}
+
+export function updateMarketplaceMatch(db, businessId, matchId, payload = {}) {
+  const existing = db.prepare(`
+    SELECT *
+    FROM marketplace_matches
+    WHERE business_id = ? AND id = ?
+  `).get(businessId, matchId);
+  if (!existing) throw new Error('Marketplace match not found for this business.');
+
+  const nextStatus = clean(payload.status) || existing.status;
+  const nextIntroDraft = clean(payload.introDraft) || existing.intro_draft || null;
+  const nextRationale = clean(payload.rationale) || existing.rationale || null;
+  const metadata = {
+    ...parseJson(existing.metadata, {}),
+    ...(payload.metadata || {})
+  };
+
+  db.prepare(`
+    UPDATE marketplace_matches
+    SET status = ?,
+        rationale = ?,
+        intro_draft = ?,
+        metadata = ?,
+        updated_at = datetime('now')
+    WHERE business_id = ? AND id = ?
+  `).run(
+    nextStatus,
+    nextRationale,
+    nextIntroDraft,
+    JSON.stringify(metadata),
+    businessId,
+    matchId
+  );
+
+  if (['queued_intro', 'sent', 'accepted', 'declined'].includes(nextStatus)) {
+    db.prepare(`
+      UPDATE marketplace_founder_profiles
+      SET status = CASE WHEN ? IN ('accepted', 'sent', 'queued_intro') THEN 'matched' ELSE status END,
+          updated_at = datetime('now')
+      WHERE id = (SELECT founder_profile_id FROM marketplace_matches WHERE id = ?)
+    `).run(nextStatus, matchId);
+  }
+
+  return serializeMatch(db.prepare(`
+    SELECT *
+    FROM marketplace_matches
+    WHERE business_id = ? AND id = ?
+  `).get(businessId, matchId));
+}
+
+export function upsertMarketplaceReview(db, businessId, subjectType, subjectId, payload = {}) {
+  const existing = db.prepare(`
+    SELECT *
+    FROM marketplace_reviews
+    WHERE business_id = ? AND subject_type = ? AND subject_id = ?
+  `).get(businessId, subjectType, subjectId);
+  const decision = clean(payload.decision) || 'pending';
+  const notes = clean(payload.notes) || null;
+  const decidedBy = clean(payload.decidedBy) || null;
+
+  if (existing) {
+    db.prepare(`
+      UPDATE marketplace_reviews
+      SET decision = ?,
+          notes = ?,
+          decided_by = ?,
+          decided_at = CASE WHEN ? = 'pending' THEN NULL ELSE datetime('now') END,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).run(decision, notes, decidedBy, decision, existing.id);
+  } else {
+    db.prepare(`
+      INSERT INTO marketplace_reviews (
+        id, business_id, subject_type, subject_id, decision, notes, decided_by, decided_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'pending' THEN NULL ELSE datetime('now') END)
+    `).run(uuid(), businessId, subjectType, subjectId, decision, notes, decidedBy, decision);
+  }
+
+  return serializeReview(db.prepare(`
+    SELECT *
+    FROM marketplace_reviews
+    WHERE business_id = ? AND subject_type = ? AND subject_id = ?
+  `).get(businessId, subjectType, subjectId));
+}
+
+export function upsertMarketplaceConversation(db, businessId, matchId, payload = {}) {
+  const existing = db.prepare(`
+    SELECT *
+    FROM marketplace_conversations
+    WHERE business_id = ? AND match_id = ?
+  `).get(businessId, matchId);
+  const status = clean(payload.status) || existing?.status || 'open';
+  const channel = clean(payload.channel) || existing?.channel || 'email';
+  const threadSubject = clean(payload.threadSubject) || existing?.thread_subject || null;
+  const lastMessageAt = payload.lastMessageAt || new Date().toISOString();
+
+  if (existing) {
+    db.prepare(`
+      UPDATE marketplace_conversations
+      SET status = ?,
+          channel = ?,
+          thread_subject = ?,
+          last_message_at = ?,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).run(status, channel, threadSubject, lastMessageAt, existing.id);
+  } else {
+    db.prepare(`
+      INSERT INTO marketplace_conversations (
+        id, business_id, match_id, status, channel, thread_subject, last_message_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(uuid(), businessId, matchId, status, channel, threadSubject, lastMessageAt);
+  }
+
+  return serializeConversation(db.prepare(`
+    SELECT *
+    FROM marketplace_conversations
+    WHERE business_id = ? AND match_id = ?
+  `).get(businessId, matchId));
+}
+
 export function getMarketplaceOverview(db, businessId) {
   const counts = {
     founders: Number(db.prepare(`SELECT COUNT(*) AS n FROM marketplace_founder_profiles WHERE business_id = ?`).get(businessId)?.n || 0),
@@ -211,6 +373,16 @@ export function getMarketplaceOverview(db, businessId) {
       FROM marketplace_matches
       WHERE business_id = ?
         AND status IN ('queued_intro', 'sent', 'accepted')
+    `).get(businessId)?.n || 0),
+    pending_reviews: Number(db.prepare(`
+      SELECT COUNT(*) AS n
+      FROM marketplace_reviews
+      WHERE business_id = ? AND decision = 'pending'
+    `).get(businessId)?.n || 0),
+    open_conversations: Number(db.prepare(`
+      SELECT COUNT(*) AS n
+      FROM marketplace_conversations
+      WHERE business_id = ? AND status IN ('open', 'waiting', 'replied')
     `).get(businessId)?.n || 0)
   };
 
@@ -248,12 +420,32 @@ export function getMarketplaceOverview(db, businessId) {
     ORDER BY count DESC, stage ASC
     LIMIT 6
   `).all(businessId);
+  const reviews = db.prepare(`
+    SELECT subject_type, subject_id, decision, notes, decided_at, updated_at
+    FROM marketplace_reviews
+    WHERE business_id = ?
+    ORDER BY updated_at DESC, created_at DESC
+    LIMIT 12
+  `).all(businessId);
+  const conversations = db.prepare(`
+    SELECT c.id, c.match_id, c.status, c.channel, c.thread_subject, c.last_message_at, c.updated_at,
+           f.company_name, i.name AS investor_name
+    FROM marketplace_conversations c
+    JOIN marketplace_matches m ON m.id = c.match_id
+    JOIN marketplace_founder_profiles f ON f.id = m.founder_profile_id
+    JOIN marketplace_investor_profiles i ON i.id = m.investor_profile_id
+    WHERE c.business_id = ?
+    ORDER BY COALESCE(c.last_message_at, c.updated_at, c.created_at) DESC
+    LIMIT 10
+  `).all(businessId);
 
   return {
     counts,
     founders,
     investors,
     matches,
-    stage_mix: stageMix
+    stage_mix: stageMix,
+    reviews: reviews.map(serializeReview),
+    conversations: conversations.map(serializeConversation)
   };
 }

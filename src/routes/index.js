@@ -79,7 +79,12 @@ import {
   createFounderProfile,
   createInvestorProfile,
   createMarketplaceMatch,
-  getMarketplaceOverview
+  getMarketplaceOverview,
+  updateFounderProfileStatus,
+  updateInvestorProfileStatus,
+  updateMarketplaceMatch,
+  upsertMarketplaceReview,
+  upsertMarketplaceConversation
 } from '../business/marketplace.js';
 import { getBusinessTrainingPack } from '../business/training.js';
 import { dispatchSpecialistTask } from '../business/specialists.js';
@@ -2714,6 +2719,178 @@ router.post('/businesses/:id/marketplace/matches', requireAuth, asyncHandler(asy
 
   res.status(201).json({
     match,
+    marketplace: getMarketplaceOverview(db, business.id)
+  });
+}));
+
+// PATCH /api/businesses/:id/marketplace/founders/:founderId — update founder marketplace status
+router.patch('/businesses/:id/marketplace/founders/:founderId', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const blueprint = getBusinessBlueprint(business);
+  if (blueprint.key !== 'founder_investor_marketplace') {
+    return res.status(400).json({ error: 'This business does not use the founder-investor marketplace blueprint.' });
+  }
+
+  const schema = z.object({
+    status: z.enum(['applied', 'reviewing', 'approved', 'rejected', 'matched']),
+    notes: z.string().max(1000).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const founder = updateFounderProfileStatus(db, business.id, req.params.founderId, body);
+  if (!founder) return res.status(404).json({ error: 'Founder profile not found' });
+
+  const review = upsertMarketplaceReview(db, business.id, 'founder_profile', founder.id, {
+    decision: body.status === 'approved' || body.status === 'matched'
+      ? 'approved'
+      : body.status === 'rejected'
+        ? 'rejected'
+        : 'pending',
+    notes: body.notes,
+    decidedBy: req.user.sub
+  });
+
+  await logActivity(business.id, {
+    type: 'system',
+    department: 'operations',
+    title: `Founder profile ${body.status}: ${founder.company_name}`,
+    detail: {
+      founder_profile_id: founder.id,
+      review_id: review.id,
+      notes: body.notes || null
+    }
+  });
+
+  res.json({
+    founder,
+    review,
+    marketplace: getMarketplaceOverview(db, business.id)
+  });
+}));
+
+// PATCH /api/businesses/:id/marketplace/investors/:investorId — update investor status
+router.patch('/businesses/:id/marketplace/investors/:investorId', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const blueprint = getBusinessBlueprint(business);
+  if (blueprint.key !== 'founder_investor_marketplace') {
+    return res.status(400).json({ error: 'This business does not use the founder-investor marketplace blueprint.' });
+  }
+
+  const schema = z.object({
+    status: z.enum(['active', 'paused', 'archived']),
+    notes: z.string().max(1000).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const investor = updateInvestorProfileStatus(db, business.id, req.params.investorId, body);
+  if (!investor) return res.status(404).json({ error: 'Investor profile not found' });
+
+  const review = upsertMarketplaceReview(db, business.id, 'investor_profile', investor.id, {
+    decision: body.status === 'active' ? 'approved' : body.status === 'archived' ? 'rejected' : 'pending',
+    notes: body.notes,
+    decidedBy: req.user.sub
+  });
+
+  await logActivity(business.id, {
+    type: 'system',
+    department: 'operations',
+    title: `Investor profile ${body.status}: ${investor.name}`,
+    detail: {
+      investor_profile_id: investor.id,
+      review_id: review.id,
+      notes: body.notes || null
+    }
+  });
+
+  res.json({
+    investor,
+    review,
+    marketplace: getMarketplaceOverview(db, business.id)
+  });
+}));
+
+// PATCH /api/businesses/:id/marketplace/matches/:matchId — progress a marketplace match
+router.patch('/businesses/:id/marketplace/matches/:matchId', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const blueprint = getBusinessBlueprint(business);
+  if (blueprint.key !== 'founder_investor_marketplace') {
+    return res.status(400).json({ error: 'This business does not use the founder-investor marketplace blueprint.' });
+  }
+
+  const schema = z.object({
+    status: z.enum(['candidate', 'queued_intro', 'sent', 'accepted', 'declined', 'archived']).optional(),
+    rationale: z.string().max(1200).optional(),
+    introDraft: z.string().max(4000).optional(),
+    notes: z.string().max(1000).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const match = updateMarketplaceMatch(db, business.id, req.params.matchId, body);
+
+  if (body.status && body.status !== 'candidate') {
+    upsertMarketplaceReview(db, business.id, 'match', match.id, {
+      decision: ['accepted', 'sent', 'queued_intro'].includes(body.status) ? 'approved' : body.status === 'declined' ? 'rejected' : 'pending',
+      notes: body.notes || body.rationale,
+      decidedBy: req.user.sub
+    });
+  }
+
+  await logActivity(business.id, {
+    type: 'system',
+    department: 'operations',
+    title: `Match ${body.status || 'updated'}: ${match.id}`,
+    detail: {
+      match_id: match.id,
+      status: match.status,
+      rationale: body.rationale || null
+    }
+  });
+
+  res.json({
+    match,
+    marketplace: getMarketplaceOverview(db, business.id)
+  });
+}));
+
+// POST /api/businesses/:id/marketplace/matches/:matchId/conversations — track an intro/conversation update
+router.post('/businesses/:id/marketplace/matches/:matchId/conversations', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const blueprint = getBusinessBlueprint(business);
+  if (blueprint.key !== 'founder_investor_marketplace') {
+    return res.status(400).json({ error: 'This business does not use the founder-investor marketplace blueprint.' });
+  }
+
+  const schema = z.object({
+    status: z.enum(['open', 'waiting', 'replied', 'closed']).optional(),
+    channel: z.enum(['email', 'call', 'meeting', 'slack']).optional(),
+    threadSubject: z.string().max(280).optional(),
+    note: z.string().max(2000).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const conversation = upsertMarketplaceConversation(db, business.id, req.params.matchId, body);
+
+  await logActivity(business.id, {
+    type: 'system',
+    department: 'operations',
+    title: `Conversation ${conversation.status}: ${conversation.thread_subject || conversation.channel}`,
+    detail: {
+      match_id: req.params.matchId,
+      conversation_id: conversation.id,
+      note: body.note || null
+    }
+  });
+
+  res.status(201).json({
+    conversation,
     marketplace: getMarketplaceOverview(db, business.id)
   });
 }));
