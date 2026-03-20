@@ -100,7 +100,9 @@ const DEPARTMENT_BASE_PLAYBOOKS = {
       'decision rubric',
       'priority memo',
       'match rationale'
-    ]
+    ],
+    artifactKinds: ['blueprint', 'training_manual', 'playbook', 'research', 'launch_plan', 'content', 'task_summary'],
+    primaryArtifactKinds: ['blueprint', 'playbook', 'launch_plan', 'research', 'content']
   },
   engineering: {
     title: 'Engineering loop playbook',
@@ -116,7 +118,9 @@ const DEPARTMENT_BASE_PLAYBOOKS = {
       'form flow',
       'record model',
       'site update'
-    ]
+    ],
+    artifactKinds: ['site_file', 'content', 'task_summary'],
+    primaryArtifactKinds: ['site_file', 'content']
   },
   marketing: {
     title: 'Marketing loop playbook',
@@ -132,7 +136,9 @@ const DEPARTMENT_BASE_PLAYBOOKS = {
       'lead list',
       'email sequence',
       'ad/message test'
-    ]
+    ],
+    artifactKinds: ['content', 'email', 'social_post', 'research', 'task_summary'],
+    primaryArtifactKinds: ['content', 'email', 'social_post', 'research']
   },
   operations: {
     title: 'Operations loop playbook',
@@ -148,7 +154,9 @@ const DEPARTMENT_BASE_PLAYBOOKS = {
       'review queue rule',
       'response template',
       'recovery note'
-    ]
+    ],
+    artifactKinds: ['email', 'playbook', 'task_summary', 'content'],
+    primaryArtifactKinds: ['email', 'playbook', 'content']
   }
 };
 
@@ -167,6 +175,8 @@ function workflowPlaybook(workflowKey, blueprint) {
       ...(blueprint.taskGuidance?.[workflowKey]?.output || []),
       ...base.outputs
     ], 10),
+    expected_artifact_kinds: uniqueList(base.artifactKinds || [], 10),
+    primary_artifact_kinds: uniqueList(base.primaryArtifactKinds || base.artifactKinds || [], 8),
     success: uniqueList([
       ...(blueprint.taskGuidance?.[workflowKey]?.success || []),
       'The next operator can understand what happened and continue without guessing.'
@@ -219,6 +229,8 @@ export function getTrainingTaskGuidance(business, workflowKey) {
       ...playbook.outputs.slice(0, 4).map(item => `Prefer an output equivalent to: ${item}.`),
       ...pack.universal_standards.quality.slice(0, 2)
     ], 6),
+    expectedArtifactKinds: playbook.expected_artifact_kinds || [],
+    primaryArtifactKinds: playbook.primary_artifact_kinds || [],
     success: uniqueList([
       ...playbook.success,
       ...pack.universal_standards.safety.slice(0, 2)

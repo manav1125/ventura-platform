@@ -1967,6 +1967,9 @@
       <a class="nav-item" onclick="showPage('analytics',this)">
         <span class="nav-item-icon">▲</span> Analytics
       </a>
+      <a class="nav-item" id="nav-marketplace-item" onclick="showPage('marketplace',this)" style="display:none;">
+        <span class="nav-item-icon">◌</span> Platform
+      </a>
       <a class="nav-item" onclick="showPage('assets',this)">
         <span class="nav-item-icon">▣</span> Asset Hub
       </a>
@@ -2289,6 +2292,91 @@
           <div class="panel"><div class="panel-header"><span class="panel-title">Plan economics</span></div><div class="panel-body" id="analytics-plan-context">
             <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Loading subscription model, API budget, and revenue share...</div>
           </div></div>
+        </div>
+      </div>
+
+      <!-- MARKETPLACE PAGE -->
+      <div class="dash-page" id="page-marketplace">
+        <div class="dash-header">
+          <div><div class="dash-title">Platform</div><div class="dash-subtitle">Blueprint-native founder and investor marketplace operations</div></div>
+        </div>
+        <div class="metric-row" style="grid-template-columns:repeat(4,1fr)">
+          <div class="metric-card"><div class="metric-card-label">Founders</div><div class="metric-card-value" id="marketplace-founders-count">0</div><div class="metric-card-delta" id="marketplace-founders-delta">No founder applications yet</div></div>
+          <div class="metric-card"><div class="metric-card-label">Investors</div><div class="metric-card-value" id="marketplace-investors-count">0</div><div class="metric-card-delta" id="marketplace-investors-delta">No investor roster yet</div></div>
+          <div class="metric-card"><div class="metric-card-label">Matches</div><div class="metric-card-value" id="marketplace-matches-count">0</div><div class="metric-card-delta" id="marketplace-matches-delta">No scored matches yet</div></div>
+          <div class="metric-card"><div class="metric-card-label">Intros queued</div><div class="metric-card-value" id="marketplace-intros-count">0</div><div class="metric-card-delta" id="marketplace-intros-delta">No intro workflow yet</div></div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Marketplace runtime</span></div>
+            <div class="panel-body" id="marketplace-runtime-panel">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Ventura will describe the current founder-investor pipeline, blueprint, and operating focus here once the runtime loads.</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Training + blueprint</span></div>
+            <div class="panel-body" id="marketplace-training-panel">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Blueprint entities, required artifacts, and department playbooks will appear here for marketplace businesses.</div>
+            </div>
+          </div>
+        </div>
+        <div class="grid-3">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Founder pipeline</span></div>
+            <div class="panel-body" id="marketplace-founders-list" style="padding:0 20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;line-height:1.6;">No founder applications yet.</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Investor roster</span></div>
+            <div class="panel-body" id="marketplace-investors-list" style="padding:0 20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;line-height:1.6;">No investor profiles yet.</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Match queue</span></div>
+            <div class="panel-body" id="marketplace-matches-list" style="padding:0 20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;line-height:1.6;">No matches yet.</div>
+            </div>
+          </div>
+        </div>
+        <div class="grid-3">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Add founder</span></div>
+            <div class="panel-body">
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Founder name</label><input id="marketplace-founder-name" placeholder="Jane Founder" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Founder email</label><input id="marketplace-founder-email" placeholder="jane@startup.com" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Company</label><input id="marketplace-founder-company" placeholder="Signal Labs" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Stage</label><input id="marketplace-founder-stage" placeholder="Pre-seed" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Sectors</label><input id="marketplace-founder-sectors" placeholder="B2B SaaS, fintech" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Geography</label><input id="marketplace-founder-geography" placeholder="Singapore" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Traction summary</label><textarea id="marketplace-founder-traction" placeholder="Key traction, customers, growth signals..." style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;min-height:80px;"></textarea></div>
+              <button class="btn-run" onclick="createMarketplaceFounder()">Add founder profile</button>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Add investor</span></div>
+            <div class="panel-body">
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Investor name</label><input id="marketplace-investor-name" placeholder="Alex Investor" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Email</label><input id="marketplace-investor-email" placeholder="alex@fund.com" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Firm</label><input id="marketplace-investor-firm" placeholder="North Star Ventures" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Stage focus</label><input id="marketplace-investor-stage-focus" placeholder="Pre-seed, Seed" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Sector focus</label><input id="marketplace-investor-sector-focus" placeholder="B2B SaaS, AI tools" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Geography focus</label><input id="marketplace-investor-geography-focus" placeholder="US, Southeast Asia" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Thesis</label><textarea id="marketplace-investor-thesis" placeholder="Short thesis or focus areas..." style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;min-height:80px;"></textarea></div>
+              <button class="btn-run" onclick="createMarketplaceInvestor()">Add investor profile</button>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Queue a match</span></div>
+            <div class="panel-body">
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Founder</label><select id="marketplace-match-founder" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option value="">Choose founder</option></select></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Investor</label><select id="marketplace-match-investor" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option value="">Choose investor</option></select></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Override rationale</label><textarea id="marketplace-match-rationale" placeholder="Optional: why this match should move now..." style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;min-height:88px;"></textarea></div>
+              <div style="font-size:11px;color:rgba(255,255,255,0.38);margin-bottom:12px;font-family:'DM Mono',monospace;">Ventura will still score the match and persist the rationale for review.</div>
+              <button class="btn-run" onclick="createMarketplaceMatch()">Create match</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -3259,6 +3347,7 @@ function setActiveBusiness(biz) {
   state.control = null;
   state.operating = null;
   chatLoaded = false;
+  toggleMarketplaceNav(null);
   if (state.wsReady) state.ws.send(JSON.stringify({ type: 'subscribe', businessId: biz.id }));
   document.querySelectorAll('.dash-co-name').forEach(el => el.textContent = biz.name);
   document.querySelectorAll('.dash-subtitle').forEach(el => {
@@ -3296,6 +3385,7 @@ async function loadDashboard() {
     renderPortfolioPulse(pData);
     renderControlCenter(cData);
     renderOperatingSystem(oData);
+    renderMarketplaceWorkspace(oData, libraryData);
     renderAssetHub(cData, oData, libraryData, tData.tasks);
     renderTaskEvents(cData.taskEvents || oData.taskEvents || []);
     renderArtifacts(cData.artifacts || oData.artifacts || []);
@@ -3522,6 +3612,30 @@ function getBusinessSiteUrl(business = {}) {
   return business.live_site_url || business.published_site_url || business.web_url || '';
 }
 
+function toggleMarketplaceNav(operatingData) {
+  const nav = document.getElementById('nav-marketplace-item');
+  if (!nav) return;
+  const enabled = operatingData?.business?.blueprint?.key === 'founder_investor_marketplace';
+  nav.style.display = enabled ? '' : 'none';
+  if (!enabled) {
+    const page = document.getElementById('page-marketplace');
+    if (page?.classList.contains('active')) activateDashboardPage('overview');
+  }
+}
+
+function splitCsvInput(value) {
+  return String(value || '')
+    .split(/[,\n|]/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function formatCompactMoney(cents) {
+  const value = Number(cents || 0);
+  if (!value) return '$0';
+  return `$${(value / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+}
+
 function renderAssetHub(controlData, operatingData, libraryData, tasks) {
   const surfaceEl = document.getElementById('asset-surface-panel');
   const summaryEl = document.getElementById('asset-summary-panel');
@@ -3533,6 +3647,8 @@ function renderAssetHub(controlData, operatingData, libraryData, tasks) {
   const artifacts = libraryData?.artifacts || [];
   const deliverables = artifacts.filter(item => item.kind !== 'site_file');
   const siteFiles = artifacts.filter(item => item.kind === 'site_file');
+  const operatingDocs = deliverables.filter(item => ['blueprint', 'training_manual', 'playbook'].includes(item.kind));
+  const shippedOutputs = deliverables.filter(item => !['blueprint', 'training_manual', 'playbook'].includes(item.kind));
   const liveSiteUrl = getBusinessSiteUrl(business);
   const publishedSiteUrl = business.published_site_url || '';
   const externalSiteUrl = business.web_url || '';
@@ -3586,6 +3702,10 @@ function renderAssetHub(controlData, operatingData, libraryData, tasks) {
         <div style="font-size:24px;color:#e0ddd5;">${completedTasks.length}</div>
       </div>
       <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">MANUALS + PLAYBOOKS</div>
+        <div style="font-size:24px;color:#e0ddd5;">${operatingDocs.length}</div>
+      </div>
+      <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
         <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">TOP KINDS</div>
         <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${Object.entries(counts).slice(0, 4).map(([kind, count]) => `${titleCase(kind)} ${count}`).join(' · ') || 'No artifact categories yet'}</div>
       </div>
@@ -3606,7 +3726,7 @@ function renderAssetHub(controlData, operatingData, libraryData, tasks) {
     return;
   }
 
-  listEl.innerHTML = deliverables.length ? deliverables.slice(0, 24).map(item => `
+  const renderAssetRows = (items) => items.slice(0, 24).map(item => `
     <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
       <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;">
         <div>
@@ -3618,7 +3738,18 @@ function renderAssetHub(controlData, operatingData, libraryData, tasks) {
       ${item.summary ? `<div style="font-size:12px;color:rgba(255,255,255,0.7);line-height:1.65;margin-top:8px;">${esc(item.summary)}</div>` : ''}
       ${item.content_preview ? `<pre style="margin:10px 0 0;padding:12px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;color:rgba(255,255,255,0.72);font-size:11px;font-family:'DM Mono',monospace;white-space:pre-wrap;line-height:1.6;">${esc(item.content_preview)}</pre>` : ''}
     </div>
-  `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;">No non-site artifacts yet.</div>`;
+  `).join('');
+
+  listEl.innerHTML = `
+    <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin:0 0 8px;">OPERATING MANUALS</div>
+    ${operatingDocs.length
+      ? renderAssetRows(operatingDocs)
+      : `<div style="padding:10px 0 18px;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;">Blueprint, training manual, and department playbooks will appear here.</div>`}
+    <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin:18px 0 8px;">SHIPPED OUTPUTS</div>
+    ${shippedOutputs.length
+      ? renderAssetRows(shippedOutputs)
+      : `<div style="padding:10px 0 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.7;">No shipped outputs yet beyond manuals and site files.</div>`}
+  `;
 
   filesEl.innerHTML = siteFiles.length ? siteFiles.slice(0, 24).map(item => `
     <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
@@ -3655,6 +3786,147 @@ function renderArtifacts(artifacts) {
       ${item.content_preview ? `<pre style="margin:10px 0 0;padding:12px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.05);border-radius:3px;color:rgba(255,255,255,0.72);font-size:11px;font-family:'DM Mono',monospace;white-space:pre-wrap;line-height:1.6;">${esc(item.content_preview)}</pre>` : ''}
     </div>
   `).join('');
+}
+
+function renderMarketplaceWorkspace(operatingData, libraryData) {
+  toggleMarketplaceNav(operatingData);
+  const runtimeEl = document.getElementById('marketplace-runtime-panel');
+  const trainingEl = document.getElementById('marketplace-training-panel');
+  const foundersEl = document.getElementById('marketplace-founders-list');
+  const investorsEl = document.getElementById('marketplace-investors-list');
+  const matchesEl = document.getElementById('marketplace-matches-list');
+  if (!runtimeEl || !trainingEl || !foundersEl || !investorsEl || !matchesEl) return;
+
+  const blueprint = operatingData?.business?.blueprint || operatingData?.blueprint || null;
+  const marketplace = operatingData?.marketplace || null;
+  const training = operatingData?.training || null;
+  const artifacts = libraryData?.artifacts || [];
+
+  if (blueprint?.key !== 'founder_investor_marketplace' || !marketplace) {
+    runtimeEl.innerHTML = `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">This business is not using the founder-investor marketplace blueprint yet.</div>`;
+    trainingEl.innerHTML = `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Blueprint-native marketplace guidance will appear here for marketplace businesses.</div>`;
+    foundersEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No marketplace runtime for this business.</div>`;
+    investorsEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No marketplace runtime for this business.</div>`;
+    matchesEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No marketplace runtime for this business.</div>`;
+    setEl('marketplace-founders-count', '0');
+    setEl('marketplace-investors-count', '0');
+    setEl('marketplace-matches-count', '0');
+    setEl('marketplace-intros-count', '0');
+    setEl('marketplace-founders-delta', 'Blueprint inactive');
+    setEl('marketplace-investors-delta', 'Blueprint inactive');
+    setEl('marketplace-matches-delta', 'Blueprint inactive');
+    setEl('marketplace-intros-delta', 'Blueprint inactive');
+    return;
+  }
+
+  const counts = marketplace.counts || {};
+  const stageMix = marketplace.stage_mix || [];
+  const docs = artifacts.filter(item => ['blueprint', 'training_manual', 'playbook'].includes(item.kind));
+  const latestDoc = docs[0];
+
+  setEl('marketplace-founders-count', String(counts.founders || 0));
+  setEl('marketplace-investors-count', String(counts.investors || 0));
+  setEl('marketplace-matches-count', String(counts.matches || 0));
+  setEl('marketplace-intros-count', String(counts.intros_sent || 0));
+  setEl('marketplace-founders-delta', counts.founders ? `${counts.founders} profile${counts.founders === 1 ? '' : 's'} in review` : 'No founder applications yet');
+  setEl('marketplace-investors-delta', counts.investors ? `${counts.investors} investor record${counts.investors === 1 ? '' : 's'} live` : 'No investor roster yet');
+  setEl('marketplace-matches-delta', counts.matches ? `${counts.matches} candidate match${counts.matches === 1 ? '' : 'es'} scored` : 'No scored matches yet');
+  setEl('marketplace-intros-delta', counts.intros_sent ? `${counts.intros_sent} intro${counts.intros_sent === 1 ? '' : 's'} queued or sent` : 'No intro workflow yet');
+
+  runtimeEl.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;margin-bottom:6px;">BLUEPRINT RUNTIME</div>
+        <div style="font-size:14px;color:#e0ddd5;line-height:1.6;">${esc(blueprint.summary || 'Marketplace blueprint active.')}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.6;margin-top:8px;">Ventura should keep founder intake, investor qualification, match scoring, and intro delivery moving as one connected operating loop.</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">TOP STAGES</div>
+          <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${stageMix.length ? stageMix.map(item => `${item.stage} ${item.count}`).join(' · ') : 'No stage mix captured yet'}</div>
+        </div>
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">REQUIRED ARTIFACTS</div>
+          <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${(blueprint.required_artifacts || []).slice(0, 5).join(' · ') || 'No artifact contract loaded'}</div>
+        </div>
+      </div>
+      <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">WORKFLOWS</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">${(blueprint.workflows || []).map(item => `<span class="tag">${esc(item)}</span>`).join('') || '<span class="tag">No workflows defined</span>'}</div>
+      </div>
+    </div>
+  `;
+
+  trainingEl.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="padding:14px;background:rgba(200,168,75,0.07);border:1px solid rgba(200,168,75,0.14);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--gold);margin-bottom:6px;">TRAINING PACK</div>
+        <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${esc(training?.playbooks?.planning?.purpose || 'Marketplace training guidance is active.')}</div>
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.42);margin-top:8px;">${esc(latestDoc ? `${titleCase(latestDoc.kind)} · ${timeAgo(latestDoc.created_at)}` : 'Awaiting first training artifact refresh')}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">ENTITIES</div>
+          <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${(blueprint.entities || []).slice(0, 6).join(' · ') || 'No entities defined'}</div>
+        </div>
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">NORTH STAR</div>
+          <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${(training?.readiness?.north_star || []).slice(0, 4).join(' · ') || 'No metrics loaded'}</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        ${Object.entries(training?.playbooks || {}).map(([key, value]) => `<span class="tag">${esc(titleCase(key))}: ${esc((value.outputs || []).slice(0, 2).join(', '))}</span>`).join('') || '<span class="tag">No playbooks loaded</span>'}
+      </div>
+    </div>
+  `;
+
+  const founderOptions = (marketplace.founders || []).map(item => `<option value="${esc(item.id)}">${esc(item.company_name)} · ${esc(item.founder_name)}</option>`).join('');
+  const investorOptions = (marketplace.investors || []).map(item => `<option value="${esc(item.id)}">${esc(item.name)}${item.firm ? ` · ${esc(item.firm)}` : ''}</option>`).join('');
+  const founderSelect = document.getElementById('marketplace-match-founder');
+  const investorSelect = document.getElementById('marketplace-match-investor');
+  if (founderSelect) founderSelect.innerHTML = `<option value="">Choose founder</option>${founderOptions}`;
+  if (investorSelect) investorSelect.innerHTML = `<option value="">Choose investor</option>${investorOptions}`;
+
+  foundersEl.innerHTML = (marketplace.founders || []).length ? marketplace.founders.map(item => `
+    <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+        <div>
+          <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(item.company_name)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.55;">${esc(item.founder_name)}${item.founder_email ? ` · ${esc(item.founder_email)}` : ''}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.58);line-height:1.55;margin-top:6px;">${esc(item.stage || 'Stage pending')}${item.geography ? ` · ${esc(item.geography)}` : ''}</div>
+        </div>
+        <span class="tag">${esc((item.status || 'applied').toUpperCase())}</span>
+      </div>
+    </div>
+  `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No founder applications yet. Add the first founder profile here or let Ventura capture one from the intake flow.</div>`;
+
+  investorsEl.innerHTML = (marketplace.investors || []).length ? marketplace.investors.map(item => `
+    <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+        <div>
+          <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(item.name)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.55;">${esc(item.firm || 'Independent investor')}${item.title ? ` · ${esc(item.title)}` : ''}</div>
+        </div>
+        <span class="tag">${esc((item.status || 'active').toUpperCase())}</span>
+      </div>
+    </div>
+  `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No investor profiles yet. Add the first investor so Ventura can start scoring fit.</div>`;
+
+  matchesEl.innerHTML = (marketplace.matches || []).length ? marketplace.matches.map(item => `
+    <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+        <div>
+          <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(item.company_name)} → ${esc(item.investor_name)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.55;">${esc(item.founder_name)}${item.firm ? ` · ${esc(item.firm)}` : ''}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.64);line-height:1.6;margin-top:8px;">${esc(item.rationale || 'Ventura scored this match for review.')}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:18px;color:#e0ddd5;">${Math.round(Number(item.score || 0) * 100)}%</div>
+          <span class="tag">${esc((item.status || 'candidate').toUpperCase())}</span>
+        </div>
+      </div>
+    </div>
+  `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No matches yet. Once Ventura has founder and investor profiles, it should start leaving scored candidates here with a rationale.</div>`;
 }
 
 function renderTaskRows(tasks, limit = 8) {
@@ -5561,6 +5833,97 @@ async function syncWorkspaceContext(kinds = null) {
     await loadDashboard();
   } catch (err) {
     showToast(`Workspace sync failed: ${err.message}`);
+  }
+}
+
+async function createMarketplaceFounder() {
+  if (!state.activeBiz) return;
+  const founderName = document.getElementById('marketplace-founder-name')?.value?.trim() || '';
+  const founderEmail = document.getElementById('marketplace-founder-email')?.value?.trim() || '';
+  const companyName = document.getElementById('marketplace-founder-company')?.value?.trim() || '';
+  const stage = document.getElementById('marketplace-founder-stage')?.value?.trim() || '';
+  const sectors = splitCsvInput(document.getElementById('marketplace-founder-sectors')?.value || '');
+  const geography = document.getElementById('marketplace-founder-geography')?.value?.trim() || '';
+  const tractionSummary = document.getElementById('marketplace-founder-traction')?.value?.trim() || '';
+  if (!founderName || !companyName) {
+    showToast('Founder name and company are required');
+    return;
+  }
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/marketplace/founders`, {
+      founderName,
+      founderEmail: founderEmail || undefined,
+      companyName,
+      stage: stage || undefined,
+      sectors,
+      geography: geography || undefined,
+      tractionSummary: tractionSummary || undefined
+    });
+    ['marketplace-founder-name', 'marketplace-founder-email', 'marketplace-founder-company', 'marketplace-founder-stage', 'marketplace-founder-sectors', 'marketplace-founder-geography', 'marketplace-founder-traction']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    showToast('Founder profile added');
+    await loadDashboard();
+    activateDashboardPage('marketplace');
+  } catch (err) {
+    showToast(`Founder add failed: ${err.message}`);
+  }
+}
+
+async function createMarketplaceInvestor() {
+  if (!state.activeBiz) return;
+  const name = document.getElementById('marketplace-investor-name')?.value?.trim() || '';
+  const email = document.getElementById('marketplace-investor-email')?.value?.trim() || '';
+  const firm = document.getElementById('marketplace-investor-firm')?.value?.trim() || '';
+  const stageFocus = splitCsvInput(document.getElementById('marketplace-investor-stage-focus')?.value || '');
+  const sectorFocus = splitCsvInput(document.getElementById('marketplace-investor-sector-focus')?.value || '');
+  const geographyFocus = splitCsvInput(document.getElementById('marketplace-investor-geography-focus')?.value || '');
+  const thesis = document.getElementById('marketplace-investor-thesis')?.value?.trim() || '';
+  if (!name) {
+    showToast('Investor name is required');
+    return;
+  }
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/marketplace/investors`, {
+      name,
+      email: email || undefined,
+      firm: firm || undefined,
+      stageFocus,
+      sectorFocus,
+      geographyFocus,
+      thesis: thesis || undefined
+    });
+    ['marketplace-investor-name', 'marketplace-investor-email', 'marketplace-investor-firm', 'marketplace-investor-stage-focus', 'marketplace-investor-sector-focus', 'marketplace-investor-geography-focus', 'marketplace-investor-thesis']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    showToast('Investor profile added');
+    await loadDashboard();
+    activateDashboardPage('marketplace');
+  } catch (err) {
+    showToast(`Investor add failed: ${err.message}`);
+  }
+}
+
+async function createMarketplaceMatch() {
+  if (!state.activeBiz) return;
+  const founderProfileId = document.getElementById('marketplace-match-founder')?.value || '';
+  const investorProfileId = document.getElementById('marketplace-match-investor')?.value || '';
+  const rationale = document.getElementById('marketplace-match-rationale')?.value?.trim() || '';
+  if (!founderProfileId || !investorProfileId) {
+    showToast('Choose both a founder and an investor');
+    return;
+  }
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/marketplace/matches`, {
+      founderProfileId,
+      investorProfileId,
+      rationale: rationale || undefined
+    });
+    const rationaleEl = document.getElementById('marketplace-match-rationale');
+    if (rationaleEl) rationaleEl.value = '';
+    showToast('Match queued with rationale');
+    await loadDashboard();
+    activateDashboardPage('marketplace');
+  } catch (err) {
+    showToast(`Match create failed: ${err.message}`);
   }
 }
 

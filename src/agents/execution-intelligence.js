@@ -3,6 +3,7 @@ import { getDb } from '../db/migrate.js';
 import { logActivity } from './activity.js';
 import { getBlueprintTaskGuidance } from '../business/blueprints.js';
 import { getTrainingTaskGuidance } from '../business/training.js';
+import { listArtifacts } from './artifacts.js';
 
 const WORKFLOW_ALIASES = {
   planning: 'planning',
@@ -201,6 +202,14 @@ function buildVerificationChecklist(task, business, result) {
   const queuedForReview = safeArray(result.toolResults).some(item => item?.result?.queuedForReview);
   const summary = cleanString(result.summary);
   const workflowKey = normalizeWorkflowKey(task.workflow_key || task.department, task.department);
+  const trainingGuide = getTrainingTaskGuidance(business, workflowKey);
+  const taskArtifacts = listArtifacts(business.id, { taskId: task.id, limit: 30 });
+  const artifactKinds = uniqueList(taskArtifacts.map(item => item.kind), 20);
+  const artifactCheckActive = taskArtifacts.length > 0;
+  const expectedArtifactKinds = uniqueList(trainingGuide.expectedArtifactKinds || [], 10);
+  const primaryArtifactKinds = uniqueList(trainingGuide.primaryArtifactKinds || [], 8);
+  const expectedArtifactPresent = !artifactCheckActive || !expectedArtifactKinds.length || artifactKinds.some(kind => expectedArtifactKinds.includes(kind));
+  const primaryArtifactPresent = !artifactCheckActive || !primaryArtifactKinds.length || artifactKinds.some(kind => primaryArtifactKinds.includes(kind));
   const checklist = [
     {
       label: 'Concrete summary recorded',
@@ -209,6 +218,14 @@ function buildVerificationChecklist(task, business, result) {
     {
       label: 'Execution evidence captured',
       passed: usedTools.length > 0
+    },
+    {
+      label: 'Blueprint-appropriate artifact captured',
+      passed: expectedArtifactPresent
+    },
+    {
+      label: 'Primary deliverable captured beyond task metadata',
+      passed: primaryArtifactPresent
     },
     {
       label: 'Department-specific output expectation met',
@@ -234,11 +251,17 @@ function buildVerificationChecklist(task, business, result) {
   if (!usedTools.length) {
     riskNotes.push('No tool evidence was recorded for this task.');
   }
+  if (!expectedArtifactPresent) {
+    riskNotes.push(`No expected artifact was persisted. Ventura should leave a ${expectedArtifactKinds.join(', ')} output for this workflow.`);
+  }
+  if (!primaryArtifactPresent) {
+    riskNotes.push('The task completed without a strong primary deliverable artifact.');
+  }
   if (usedTools.includes('deploy_website') && business.involvement === 'autopilot') {
     riskNotes.push('A deployment was completed in autopilot mode.');
   }
 
-  return { checklist, riskNotes, usedTools, queuedForReview };
+  return { checklist, riskNotes, usedTools, queuedForReview, artifactKinds };
 }
 
 function verificationStatus(checklist, queuedForReview) {
@@ -540,7 +563,7 @@ export function getExecutionIntelligenceSnapshot(businessId) {
 }
 
 export function verifyTaskResult({ task, business, result }) {
-  const { checklist, riskNotes, usedTools, queuedForReview } = buildVerificationChecklist(task, business, result);
+  const { checklist, riskNotes, usedTools, queuedForReview, artifactKinds } = buildVerificationChecklist(task, business, result);
   const passedCount = checklist.filter(item => item.passed).length;
   const score = checklist.length ? passedCount / checklist.length : 0;
   const status = verificationStatus(checklist, queuedForReview);
@@ -553,7 +576,8 @@ export function verifyTaskResult({ task, business, result }) {
     checklist,
     risks: riskNotes,
     suggested_followups: followups,
-    tools_used: usedTools
+    tools_used: usedTools,
+    artifact_kinds: artifactKinds
   };
 }
 
@@ -623,6 +647,7 @@ export function upsertWorkflowState({ businessId, task, result, verification, cy
   const evidence = uniqueList([
     ...(safeArray(existing?.evidence)),
     ...safeArray(verification.tools_used).map(toolLabel),
+    ...safeArray(verification.artifact_kinds).map(kind => `Artifact: ${kind}`),
     cleanString(result.summary)
   ], 8);
   const openLoops = uniqueList([
