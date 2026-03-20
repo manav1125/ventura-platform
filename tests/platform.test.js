@@ -28,6 +28,7 @@ let tokens = {};
 let bizId;
 let otherTokens = {};
 let otherBizId;
+let marketplaceBizId;
 const nativeFetch = global.fetch;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -342,7 +343,7 @@ describe('Second founder setup', () => {
       password: 'password123'
     });
     assert.equal(register.status, 201);
-    otherTokens = { access: register.body.accessToken, refresh: register.body.refreshToken };
+    otherTokens = { access: register.body.accessToken, refresh: register.body.refreshToken, userId: register.body.user.id };
 
     const create = await POST('/api/businesses', {
       name: 'Other Business',
@@ -360,6 +361,90 @@ describe('Second founder setup', () => {
     assert.equal(list.status, 200);
     otherBizId = list.body.businesses[0].id;
     assert.ok(otherBizId);
+  });
+});
+
+describe('Blueprints and marketplace runtime', () => {
+
+  it('stores resolved blueprint metadata on a normal business', async () => {
+    const detail = await GET(`/api/businesses/${bizId}`, tokens.access);
+    assert.equal(detail.status, 200);
+    assert.equal(detail.body.business.blueprint.key, 'generic_saas');
+
+    const blueprintRes = await GET(`/api/businesses/${bizId}/blueprint`, tokens.access);
+    assert.equal(blueprintRes.status, 200);
+    assert.equal(blueprintRes.body.blueprint.key, 'generic_saas');
+    assert.ok(Array.isArray(blueprintRes.body.blueprint.entities));
+  });
+
+  it('provisions a founder-investor marketplace with the correct blueprint', async () => {
+    const { provisionBusiness } = await import('../src/provisioning/provision.js');
+    const result = await provisionBusiness({
+      userId: otherTokens.userId,
+      name: 'Founder Investor Connect',
+      type: 'marketplace',
+      description: 'A platform that matches early-stage founders with aligned investors based on stage, sector, geography, and thesis fit.',
+      targetCustomer: 'Early-stage founders raising pre-seed and seed rounds',
+      goal90d: 'Create the first 25 qualified founder-to-investor intros',
+      involvement: 'review'
+    });
+
+    marketplaceBizId = result.businessId;
+    await waitForNoRunningCycle(marketplaceBizId, otherTokens.access, 4000);
+
+    const detail = await GET(`/api/businesses/${marketplaceBizId}`, otherTokens.access);
+    assert.equal(detail.status, 200);
+    assert.equal(detail.body.business.blueprint.key, 'founder_investor_marketplace');
+
+    const operating = await GET(`/api/businesses/${marketplaceBizId}/operating-system`, otherTokens.access);
+    assert.equal(operating.status, 200);
+    assert.equal(operating.body.blueprint.key, 'founder_investor_marketplace');
+    assert.ok(operating.body.marketplace);
+    assert.equal(operating.body.marketplace.counts.founders, 0);
+    assert.equal(operating.body.marketplace.counts.investors, 0);
+  });
+
+  it('creates founder and investor profiles and scores a marketplace match', async () => {
+    const founderRes = await POST(`/api/businesses/${marketplaceBizId}/marketplace/founders`, {
+      founderName: 'Maya Chen',
+      founderEmail: 'maya@signalcloud.test',
+      companyName: 'SignalCloud',
+      stage: 'pre-seed',
+      sectors: ['B2B SaaS', 'Developer tools'],
+      geography: 'US',
+      tractionSummary: '500 beta users and 12 design partners',
+      raiseSummary: 'Raising a $1.2M pre-seed round',
+      raiseTargetCents: 120000000
+    }, otherTokens.access);
+    assert.equal(founderRes.status, 201);
+
+    const investorRes = await POST(`/api/businesses/${marketplaceBizId}/marketplace/investors`, {
+      name: 'Jordan Park',
+      email: 'jordan@northstarvc.test',
+      firm: 'Northstar Ventures',
+      title: 'Partner',
+      stageFocus: ['pre-seed', 'seed'],
+      sectorFocus: ['B2B SaaS', 'Developer tools', 'AI infrastructure'],
+      geographyFocus: ['US'],
+      checkSizeMinCents: 25000000,
+      checkSizeMaxCents: 250000000,
+      thesis: 'Backs technical founders building workflow software and infra products.'
+    }, otherTokens.access);
+    assert.equal(investorRes.status, 201);
+
+    const matchRes = await POST(`/api/businesses/${marketplaceBizId}/marketplace/matches`, {
+      founderProfileId: founderRes.body.founder.id,
+      investorProfileId: investorRes.body.investor.id
+    }, otherTokens.access);
+    assert.equal(matchRes.status, 201);
+    assert.ok(matchRes.body.match.score > 0.5);
+    assert.match(matchRes.body.match.rationale, /Ventura scored this match/i);
+
+    const overview = await GET(`/api/businesses/${marketplaceBizId}/marketplace/overview`, otherTokens.access);
+    assert.equal(overview.status, 200);
+    assert.equal(overview.body.marketplace.counts.founders, 1);
+    assert.equal(overview.body.marketplace.counts.investors, 1);
+    assert.equal(overview.body.marketplace.counts.matches, 1);
   });
 });
 

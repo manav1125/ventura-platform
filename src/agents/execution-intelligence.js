@@ -1,6 +1,7 @@
 import { v4 as uuid } from 'uuid';
 import { getDb } from '../db/migrate.js';
 import { logActivity } from './activity.js';
+import { getBlueprintTaskGuidance } from '../business/blueprints.js';
 
 const WORKFLOW_ALIASES = {
   planning: 'planning',
@@ -381,21 +382,31 @@ export function composeTaskBrief({ business, title, description = '', department
   const memory = parseJsonField(business.agent_memory, {});
   const normalizedWorkflow = normalizeWorkflowKey(workflowKey, department);
   const descriptionLines = splitDescriptionLines(description);
+  const blueprintGuide = getBlueprintTaskGuidance(business, normalizedWorkflow);
   const requirements = uniqueList([
     ...descriptionLines,
+    ...(blueprintGuide.requirements || []),
     ...DEFAULT_REQUIREMENTS[normalizedWorkflow]
   ], 8);
 
   const data = buildDataReferences(memory, workflowState);
   const constraints = buildConstraints(business, normalizedWorkflow);
-  const context = buildContext(business, memory, workflowState);
-  const output = uniqueList(DEFAULT_OUTPUTS[normalizedWorkflow], 5);
+  const context = uniqueList([
+    ...(blueprintGuide.context || []),
+    ...buildContext(business, memory, workflowState)
+  ], 10);
+  const output = uniqueList([
+    ...(blueprintGuide.output || []),
+    ...DEFAULT_OUTPUTS[normalizedWorkflow]
+  ], 5);
   const success = uniqueList([
+    ...(blueprintGuide.success || []),
     ...DEFAULT_SUCCESS[normalizedWorkflow],
     ...(safeArray(workflowState?.open_loops).length ? ['Resolve or explicitly carry forward any existing open loops.'] : [])
   ], 5);
 
   return {
+    blueprint: blueprintGuide.blueprint,
     workflow_key: normalizedWorkflow,
     what: cleanString(title),
     requirements,

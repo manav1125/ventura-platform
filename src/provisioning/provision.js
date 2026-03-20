@@ -20,6 +20,13 @@ import { createConnectAccount, getConnectAccountSnapshot } from '../integrations
 import { getPlanEconomics } from '../billing/plans.js';
 import { syncInfrastructureAssets } from '../infrastructure/assets.js';
 import { syncWorkspaceData } from '../integrations/workspace-sync.js';
+import {
+  buildBlueprintStorage,
+  formatBlueprintArtifactContent,
+  getBusinessBlueprint,
+  getInitialBlueprintTasks,
+  serializeBlueprint
+} from '../business/blueprints.js';
 
 function safeParse(value, fallback = {}) {
   try {
@@ -45,6 +52,7 @@ function uniqueStrings(values = [], limit = 12) {
 }
 
 function buildLaunchContextFromBusiness(business) {
+  const blueprint = getBusinessBlueprint(business);
   return {
     businessId: business.id,
     name: business.name,
@@ -54,7 +62,8 @@ function buildLaunchContextFromBusiness(business) {
     goal90d: business.goal_90d,
     involvement: business.involvement,
     webUrl: business.web_url,
-    emailAddress: business.email_address
+    emailAddress: business.email_address,
+    blueprint: serializeBlueprint(blueprint)
   };
 }
 
@@ -89,7 +98,8 @@ function buildAgentMemory(context, launchPlan = null, existingMemory = null) {
       headline: launchPlan.headline,
       subheadline: launchPlan.subheadline,
       offer: launchPlan.offer
-    } : previous.launch_plan || null
+    } : previous.launch_plan || null,
+    blueprint: context.blueprint || previous.blueprint || null
   };
 }
 
@@ -137,6 +147,13 @@ export async function provisionBusiness({ userId, name, type, description, targe
   const slug = await uniqueSlug(name);
   const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(userId);
   const economics = getPlanEconomics(user?.plan || 'trial');
+  const { blueprint, columns: blueprintColumns } = buildBlueprintStorage({
+    name,
+    type,
+    description,
+    targetCustomer,
+    goal90d
+  });
 
   const webUrl       = `https://${slug}.${PLATFORM_DOMAIN}`;
   const emailAddress = `${slug}@${PLATFORM_DOMAIN}`;
@@ -147,13 +164,18 @@ export async function provisionBusiness({ userId, name, type, description, targe
     INSERT INTO businesses (
       id, user_id, name, slug, type, description,
       target_customer, goal_90d, involvement, status,
+      blueprint_key, blueprint_label, blueprint_version, blueprint_config,
       web_url, db_name, email_address,
       monthly_subscription_cents, api_budget_cents, revenue_share_pct,
       tasks_included_per_month, infrastructure_included
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'provisioning', ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'provisioning', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     businessId, userId, name, slug, type, description,
     targetCustomer, goal90d, involvement,
+    blueprintColumns.blueprint_key,
+    blueprintColumns.blueprint_label,
+    blueprintColumns.blueprint_version,
+    blueprintColumns.blueprint_config,
     webUrl, dbName, emailAddress,
     economics.monthly_subscription_cents,
     economics.api_budget_cents,
@@ -187,6 +209,15 @@ export async function provisionBusiness({ userId, name, type, description, targe
     scheduleNextRun(businessId, { mode: 'daily', preferredHourUtc: 2 });
     let activeBusiness = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
     await syncWorkspaceData({ business: activeBusiness, triggeredBy: 'provisioning' });
+    await stepPublishBlueprintArtifact(activeBusiness || {
+      id: businessId,
+      name,
+      type,
+      description,
+      target_customer: targetCustomer,
+      goal_90d: goal90d,
+      involvement
+    }, blueprint);
     const launchPlan = await stepGenerateLaunchPlan({
       businessId,
       name,
@@ -389,6 +420,19 @@ async function stepGenerateLaunchPlan(context) {
   return plan;
 }
 
+async function stepPublishBlueprintArtifact(business, blueprint = null) {
+  const resolved = blueprint || getBusinessBlueprint(business);
+  createArtifact({
+    businessId: business.id,
+    department: 'strategy',
+    kind: 'blueprint',
+    title: `${business.name} blueprint`,
+    summary: resolved.summary,
+    content: formatBlueprintArtifactContent(resolved),
+    metadata: serializeBlueprint(resolved)
+  });
+}
+
 async function stepPublishInitialSite(businessId, launchPlan) {
   const db = getDb();
   const business = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
@@ -404,7 +448,10 @@ async function stepPublishInitialSite(businessId, launchPlan) {
 async function stepQueueInitialTasks(businessId, type, launchPlan = null) {
   const db = getDb();
   const business = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
-  const initialTasks = (launchPlan?.tasks?.length ? launchPlan.tasks : getBootstrapTasks(type))
+  const initialTasks = getInitialBlueprintTasks(
+    business,
+    launchPlan?.tasks?.length ? launchPlan.tasks : getBootstrapTasks(type)
+  )
     .sort((a, b) => (a.priority || 5) - (b.priority || 5));
   for (const task of initialTasks) {
     await queueTask({
@@ -440,13 +487,37 @@ export async function regenerateBusinessFoundation({
     throw new Error('A cycle is already running for this business.');
   }
 
-  const context = buildLaunchContextFromBusiness(business);
+  const resolvedBlueprint = buildBlueprintStorage({
+    name: business.name,
+    type: business.type,
+    description: business.description,
+    targetCustomer: business.target_customer,
+    goal90d: business.goal_90d
+  });
+  db.prepare(`
+    UPDATE businesses
+    SET blueprint_key = ?,
+        blueprint_label = ?,
+        blueprint_version = ?,
+        blueprint_config = ?,
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).run(
+    resolvedBlueprint.columns.blueprint_key,
+    resolvedBlueprint.columns.blueprint_label,
+    resolvedBlueprint.columns.blueprint_version,
+    resolvedBlueprint.columns.blueprint_config,
+    businessId
+  );
+  const refreshedBlueprintBusiness = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
+  const context = buildLaunchContextFromBusiness(refreshedBlueprintBusiness);
   const launchPlan = await stepGenerateLaunchPlan(context);
+  await stepPublishBlueprintArtifact(refreshedBlueprintBusiness, resolvedBlueprint.blueprint);
   await stepSeedAgentMemory(businessId, context, launchPlan, { preserveExisting: true });
   await stepPublishInitialSite(businessId, launchPlan);
 
   const replacedQueuedTasks = replaceQueuedTasks ? cancelQueuedAutonomousTasks(businessId) : 0;
-  await stepQueueInitialTasks(businessId, business.type, launchPlan);
+  await stepQueueInitialTasks(businessId, refreshedBlueprintBusiness.type, launchPlan);
 
   const queueSummary = db.prepare(`
     SELECT
@@ -477,6 +548,7 @@ export async function regenerateBusinessFoundation({
     summary: `Ventura regenerated the launch plan, republished the site, and refreshed ${queueSummary?.queued || 0} queued task${(queueSummary?.queued || 0) === 1 ? '' : 's'}.`,
     content: [
       `Triggered by: ${triggeredBy}`,
+      `Blueprint: ${resolvedBlueprint.blueprint.label}`,
       `Headline: ${launchPlan.headline}`,
       `Replaced queued autonomous tasks: ${replacedQueuedTasks}`,
       `Queued now: ${queueSummary?.queued || 0}`,

@@ -70,6 +70,17 @@ import {
   resolveSocialOauthFailure
 } from '../integrations/social-oauth.js';
 import { getPlanDefinition, resolveBusinessEconomics, serializePlan } from '../billing/plans.js';
+import {
+  buildBlueprintStorage,
+  getBusinessBlueprint,
+  serializeBlueprint
+} from '../business/blueprints.js';
+import {
+  createFounderProfile,
+  createInvestorProfile,
+  createMarketplaceMatch,
+  getMarketplaceOverview
+} from '../business/marketplace.js';
 import { dispatchSpecialistTask } from '../business/specialists.js';
 import {
   getInfrastructureSnapshot,
@@ -123,6 +134,15 @@ function resolveBusinessUrls(row) {
     live_site_url: usesLegacyVenturaDomain
       ? (publishedSiteUrl || rawWebUrl || null)
       : (rawWebUrl || publishedSiteUrl || null)
+  };
+}
+
+function serializeBusinessRecord(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    blueprint: serializeBlueprint(getBusinessBlueprint(row)),
+    ...resolveBusinessUrls(row)
   };
 }
 
@@ -565,6 +585,7 @@ function normaliseStringList(value) {
 
 function normaliseMemory(rawMemory, business = null) {
   const parsed = parseJsonField(rawMemory, {});
+  const blueprint = business ? serializeBlueprint(getBusinessBlueprint(business)) : parsed.blueprint || null;
   return {
     business: {
       ...(parsed.business || {}),
@@ -574,9 +595,11 @@ function normaliseMemory(rawMemory, business = null) {
         description: business.description,
         targetCustomer: business.target_customer,
         goal90d: business.goal_90d,
-        involvement: business.involvement
+        involvement: business.involvement,
+        blueprint
       } : {})
     },
+    blueprint,
     priorities: normaliseStringList(parsed.priorities),
     learnings: normaliseStringList(parsed.learnings),
     competitors: normaliseStringList(parsed.competitors),
@@ -605,6 +628,7 @@ function calcPctChange(current, previous) {
 function getPortfolioOverview(db, userId, plan) {
   const businesses = db.prepare(`
     SELECT b.id, b.name, b.slug, b.type, b.status, b.involvement, b.day_count, b.web_url,
+           b.blueprint_key, b.blueprint_label, b.blueprint_version, b.blueprint_config,
            b.cadence_mode, b.cadence_interval_hours, b.preferred_run_hour_utc, b.next_run_at, b.last_cycle_at,
            b.mrr_cents, b.total_revenue_cents, b.revenue_share_pct, b.monthly_subscription_cents,
            (
@@ -682,7 +706,7 @@ function getPortfolioOverview(db, userId, plan) {
       running_cycles,
       alerts_14d
     },
-    businesses: businesses.map(item => ({ ...item, ...resolveBusinessUrls(item) })),
+    businesses: businesses.map(serializeBusinessRecord),
     usage: getUserUsage(db, userId, plan),
     plan: serializePlan(plan)
   };
@@ -749,6 +773,7 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   const since14d = now - (14 * 86400000);
   const since30d = now - (30 * 86400000);
   const memory = normaliseMemory(business.agent_memory, business);
+  const blueprint = serializeBlueprint(getBusinessBlueprint(business));
   const economics = resolveBusinessEconomics(business, userPlan);
   const integrations = getBusinessIntegrations(business);
   const infrastructure = getInfrastructureSnapshot(business, integrations);
@@ -756,6 +781,9 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   const workspace = getWorkspaceSnapshot(business.id);
   const workspaceAutomation = getWorkspaceAutomationSnapshot(business.id);
   const execution = getExecutionIntelligenceSnapshot(business.id);
+  const marketplace = business.blueprint_key === 'founder_investor_marketplace'
+    ? getMarketplaceOverview(db, business.id)
+    : null;
   const operations = listActionOperations(business.id, 20);
   const operationSummary = getActionOperationSummary(business.id);
   const recoveryCases = listRecoveryCases(business.id, { limit: 12 });
@@ -870,6 +898,7 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       email_address: business.email_address,
       involvement: business.involvement,
       status: business.status,
+      blueprint,
       stripe_account_id: business.stripe_account_id,
       mrr_cents: business.mrr_cents,
       arr_cents: business.arr_cents,
@@ -895,6 +924,8 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
       }
     },
     memory,
+    blueprint,
+    marketplace,
     planning: {
       summary: {
         workflows: execution.workflows.length,
@@ -1112,6 +1143,7 @@ function serializePublicBusiness(row, fallbackPlan = 'trial') {
     description: row.description,
     target_customer: row.target_customer,
     goal_90d: row.goal_90d,
+    blueprint: serializeBlueprint(getBusinessBlueprint(row)),
     mrr_cents: row.mrr_cents,
     total_revenue_cents: row.total_revenue_cents,
     latest_headline: row.latest_headline,
@@ -1350,12 +1382,10 @@ router.get('/businesses', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
   const businesses = db.prepare(`
     SELECT id, name, slug, type, status, involvement, day_count, web_url, email_address,
+           blueprint_key, blueprint_label, blueprint_version, blueprint_config,
            mrr_cents, total_revenue_cents, monthly_subscription_cents, revenue_share_pct, created_at
     FROM businesses WHERE user_id = ? ORDER BY created_at DESC
-  `).all(req.user.sub).map(business => ({
-    ...business,
-    ...resolveBusinessUrls(business)
-  }));
+  `).all(req.user.sub).map(serializeBusinessRecord);
   res.json({ businesses });
 }));
 
@@ -1370,6 +1400,7 @@ router.post('/businesses', requireAuth, asyncHandler(async (req, res) => {
     involvement: z.enum(['autopilot', 'review', 'daily']).default('autopilot')
   });
   const body = validate(schema, req.body);
+  const blueprint = serializeBlueprint(buildBlueprintStorage(body).blueprint);
 
   // Plan limits
   const db = getDb();
@@ -1380,7 +1411,7 @@ router.post('/businesses', requireAuth, asyncHandler(async (req, res) => {
     return res.status(403).json({ error: `Plan limit reached. Upgrade to add more businesses.` });
   }
 
-  res.status(202).json({ message: 'Provisioning started', status: 'provisioning' });
+  res.status(202).json({ message: 'Provisioning started', status: 'provisioning', blueprint });
 
   // Kick off provisioning in the background (don't await)
   provisionBusiness({ userId: req.user.sub, ...body })
@@ -1396,7 +1427,16 @@ router.get('/businesses/:id', requireAuth, asyncHandler(async (req, res) => {
 
   // Parse JSON field
   business.agent_memory = JSON.parse(business.agent_memory || '{}');
-  res.json({ business: { ...business, ...resolveBusinessUrls(business) } });
+  res.json({ business: serializeBusinessRecord(business) });
+}));
+
+// GET /api/businesses/:id/blueprint — resolved operating blueprint for this business
+router.get('/businesses/:id/blueprint', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Business not found' });
+
+  res.json({ blueprint: serializeBlueprint(getBusinessBlueprint(business)) });
 }));
 
 // PATCH /api/businesses/:id — update business settings
@@ -1422,6 +1462,17 @@ router.patch('/businesses/:id', requireAuth, asyncHandler(async (req, res) => {
   };
   delete body.goal90d;
   delete body.targetCustomer;
+
+  if (body.name || body.description || body.target_customer || body.goal_90d || body.type) {
+    const { columns } = buildBlueprintStorage({
+      name: body.name || business.name,
+      type: body.type || business.type,
+      description: body.description || business.description,
+      targetCustomer: body.target_customer || business.target_customer,
+      goal90d: body.goal_90d || business.goal_90d
+    });
+    Object.assign(body, columns);
+  }
 
   const updates = Object.entries(body)
     .filter(([_, v]) => v !== undefined)
@@ -1456,7 +1507,8 @@ router.patch('/businesses/:id', requireAuth, asyncHandler(async (req, res) => {
         title: 'Founder updated the business profile',
         detail: {
           name: body.name || business.name,
-          type: body.type || business.type
+          type: body.type || business.type,
+          blueprint_key: body.blueprint_key || business.blueprint_key || null
         }
       });
     }
@@ -2512,6 +2564,146 @@ router.get('/businesses/:id/operating-system', requireAuth, asyncHandler(async (
 
   const user = db.prepare('SELECT plan FROM users WHERE id = ?').get(req.user.sub);
   res.json(getOperatingSystemSnapshot(db, business, user.plan));
+}));
+
+// GET /api/businesses/:id/marketplace/overview — founder-investor marketplace runtime
+router.get('/businesses/:id/marketplace/overview', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const blueprint = getBusinessBlueprint(business);
+  if (blueprint.key !== 'founder_investor_marketplace') {
+    return res.status(400).json({ error: 'This business does not use the founder-investor marketplace blueprint.' });
+  }
+
+  res.json({
+    blueprint: serializeBlueprint(blueprint),
+    marketplace: getMarketplaceOverview(db, business.id)
+  });
+}));
+
+// POST /api/businesses/:id/marketplace/founders — add a founder application profile
+router.post('/businesses/:id/marketplace/founders', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const blueprint = getBusinessBlueprint(business);
+  if (blueprint.key !== 'founder_investor_marketplace') {
+    return res.status(400).json({ error: 'This business does not use the founder-investor marketplace blueprint.' });
+  }
+
+  const schema = z.object({
+    founderName: z.string().min(2).max(120),
+    founderEmail: z.string().email().optional(),
+    companyName: z.string().min(2).max(140),
+    companyUrl: z.string().url().optional(),
+    stage: z.string().min(2).max(80).optional(),
+    sectors: z.array(z.string().min(2).max(80)).max(8).optional(),
+    geography: z.string().min(2).max(120).optional(),
+    tractionSummary: z.string().max(800).optional(),
+    raiseSummary: z.string().max(800).optional(),
+    raiseTargetCents: z.number().int().positive().optional()
+  });
+  const body = validate(schema, req.body || {});
+  const founder = createFounderProfile(db, business.id, body);
+
+  await logActivity(business.id, {
+    type: 'lead',
+    department: 'operations',
+    title: `Founder application added for ${founder.company_name}`,
+    detail: {
+      founder_profile_id: founder.id,
+      stage: founder.stage,
+      geography: founder.geography
+    }
+  });
+
+  res.status(201).json({
+    founder,
+    marketplace: getMarketplaceOverview(db, business.id)
+  });
+}));
+
+// POST /api/businesses/:id/marketplace/investors — add an investor profile
+router.post('/businesses/:id/marketplace/investors', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const blueprint = getBusinessBlueprint(business);
+  if (blueprint.key !== 'founder_investor_marketplace') {
+    return res.status(400).json({ error: 'This business does not use the founder-investor marketplace blueprint.' });
+  }
+
+  const schema = z.object({
+    name: z.string().min(2).max(120),
+    email: z.string().email().optional(),
+    firm: z.string().max(140).optional(),
+    title: z.string().max(120).optional(),
+    stageFocus: z.array(z.string().min(2).max(80)).max(8).optional(),
+    sectorFocus: z.array(z.string().min(2).max(80)).max(10).optional(),
+    geographyFocus: z.array(z.string().min(2).max(80)).max(8).optional(),
+    checkSizeMinCents: z.number().int().positive().optional(),
+    checkSizeMaxCents: z.number().int().positive().optional(),
+    thesis: z.string().max(1200).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const investor = createInvestorProfile(db, business.id, body);
+
+  await logActivity(business.id, {
+    type: 'lead',
+    department: 'operations',
+    title: `Investor profile added for ${investor.name}`,
+    detail: {
+      investor_profile_id: investor.id,
+      firm: investor.firm || null
+    }
+  });
+
+  res.status(201).json({
+    investor,
+    marketplace: getMarketplaceOverview(db, business.id)
+  });
+}));
+
+// POST /api/businesses/:id/marketplace/matches — create a scored founder-investor match
+router.post('/businesses/:id/marketplace/matches', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Not found' });
+
+  const blueprint = getBusinessBlueprint(business);
+  if (blueprint.key !== 'founder_investor_marketplace') {
+    return res.status(400).json({ error: 'This business does not use the founder-investor marketplace blueprint.' });
+  }
+
+  const schema = z.object({
+    founderProfileId: z.string().min(8),
+    investorProfileId: z.string().min(8),
+    status: z.enum(['candidate', 'queued_intro', 'sent', 'accepted', 'declined', 'archived']).optional(),
+    introDraft: z.string().max(4000).optional(),
+    rationale: z.string().max(2000).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const match = createMarketplaceMatch(db, business.id, body);
+
+  await logActivity(business.id, {
+    type: 'system',
+    department: 'operations',
+    title: 'Ventura created a marketplace match',
+    detail: {
+      match_id: match.id,
+      score: match.score,
+      status: match.status
+    }
+  });
+
+  res.status(201).json({
+    match,
+    marketplace: getMarketplaceOverview(db, business.id)
+  });
 }));
 
 // PATCH /api/businesses/:id/cadence — founder tunes recurring run cadence

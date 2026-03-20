@@ -18,6 +18,11 @@ import { syncWorkspaceData } from '../integrations/workspace-sync.js';
 import { markWorkspaceAutomationTaskOutcome, runWorkspaceAutomation } from './workspace-automation.js';
 import { emitToBusiness, emitToUser } from '../ws/websocket.js';
 import { AGENT_CRON_SCHEDULE, AGENT_MODEL } from '../config.js';
+import {
+  getBlueprintFallbackTasks,
+  getBusinessBlueprint,
+  serializeBlueprint
+} from '../business/blueprints.js';
 
 // ─── Cron scheduler ───────────────────────────────────────────────────────────
 let schedulerTask;
@@ -106,6 +111,9 @@ function buildFallbackCycleTasks({
   siteHeadline,
   existingTitles = new Set()
 }) {
+  const blueprintTasks = getBlueprintFallbackTasks({ business, existingTitles });
+  if (blueprintTasks.length) return blueprintTasks.slice(0, 4);
+
   const audience = business.target_customer || 'target customers';
   const goal = business.goal_90d || 'the 90-day goal';
   const planOffer = cleanString(latestPlan?.metadata?.offer || memory?.launch_plan?.offer || '');
@@ -549,6 +557,7 @@ export function startBusinessCycleIfIdle(business, triggeredBy = 'cron') {
 async function generateCycleTasks(business) {
   const db = getDb();
   const memory = JSON.parse(business.agent_memory || '{}');
+  const blueprint = getBusinessBlueprint(business);
   const { getWorkspacePromptContext } = await import('../integrations/workspace-sync.js');
   const latestPlan = getLatestArtifactByKind(business.id, 'launch_plan');
   const siteFile = getPublishedSiteFile(business.id, 'index.html');
@@ -595,6 +604,7 @@ async function generateCycleTasks(business) {
 Business goal: ${business.goal_90d}
 Day: ${business.day_count}
 Current MRR: $${(business.mrr_cents / 100).toFixed(2)}
+Business blueprint: ${JSON.stringify(serializeBlueprint(blueprint), null, 2)}
 Business memory: ${JSON.stringify(memory, null, 2)}
 Workspace snapshot: ${JSON.stringify(workspace, null, 2)}
 Latest launch plan: ${JSON.stringify(latestPlan?.metadata || {}, null, 2)}
@@ -608,6 +618,7 @@ Return a JSON array of 3-5 tasks to execute today. Each task: { title, descripti
 Departments: engineering | marketing | operations | strategy | sales | finance
 Focus on highest-impact actions toward the 90-day goal. Use the inbox, calendar, and accounting context where relevant. Vary departments each cycle.
 Every task must be specific to ${business.name}, mention a concrete deliverable, and be something Ventura can actually execute this cycle.
+Respect the business blueprint and choose work that advances the actual product or marketplace workflow, not just generic top-of-funnel polish.
 Do not output placeholder/meta tasks like "write the business plan", "define the MVP", or "build the full app".
 Do not repeat existing queued or recently completed work unless the task explicitly says it is a revision or retry.
 

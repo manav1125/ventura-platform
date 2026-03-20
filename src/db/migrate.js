@@ -96,6 +96,10 @@ export function runMigrations() {
       goal_90d      TEXT NOT NULL,
       involvement   TEXT NOT NULL DEFAULT 'autopilot',  -- autopilot | review | daily
       status        TEXT NOT NULL DEFAULT 'provisioning', -- provisioning | active | paused | cancelled
+      blueprint_key TEXT,
+      blueprint_label TEXT,
+      blueprint_version TEXT,
+      blueprint_config TEXT DEFAULT '{}',
       day_count     INTEGER NOT NULL DEFAULT 0,
       cadence_mode  TEXT NOT NULL DEFAULT 'daily', -- daily | hourly | manual
       cadence_interval_hours INTEGER NOT NULL DEFAULT 24,
@@ -129,6 +133,7 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_businesses_user ON businesses(user_id);
     CREATE INDEX IF NOT EXISTS idx_businesses_slug ON businesses(slug);
     CREATE INDEX IF NOT EXISTS idx_businesses_next_run ON businesses(next_run_at);
+    CREATE INDEX IF NOT EXISTS idx_businesses_blueprint ON businesses(blueprint_key);
 
     -- ─────────────────────────────────────────
     -- AGENT CYCLES
@@ -582,6 +587,104 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_infrastructure_assets_business ON infrastructure_assets(business_id);
 
     -- ─────────────────────────────────────────
+    -- MARKETPLACE DOMAIN (vertical blueprint data)
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS marketplace_founder_profiles (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      founder_name  TEXT NOT NULL,
+      founder_email TEXT,
+      company_name  TEXT NOT NULL,
+      company_url   TEXT,
+      stage         TEXT,
+      sectors       TEXT DEFAULT '[]',
+      geography     TEXT,
+      traction_summary TEXT,
+      raise_summary TEXT,
+      raise_target_cents INTEGER,
+      status        TEXT NOT NULL DEFAULT 'applied', -- applied | reviewing | approved | rejected | matched
+      metadata      TEXT DEFAULT '{}',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_marketplace_founders_business ON marketplace_founder_profiles(business_id);
+    CREATE INDEX IF NOT EXISTS idx_marketplace_founders_status ON marketplace_founder_profiles(status);
+
+    CREATE TABLE IF NOT EXISTS marketplace_investor_profiles (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      name          TEXT NOT NULL,
+      email         TEXT,
+      firm          TEXT,
+      title         TEXT,
+      stage_focus   TEXT DEFAULT '[]',
+      sector_focus  TEXT DEFAULT '[]',
+      geography_focus TEXT DEFAULT '[]',
+      check_size_min_cents INTEGER,
+      check_size_max_cents INTEGER,
+      thesis        TEXT,
+      status        TEXT NOT NULL DEFAULT 'active', -- active | paused | archived
+      metadata      TEXT DEFAULT '{}',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_marketplace_investors_business ON marketplace_investor_profiles(business_id);
+    CREATE INDEX IF NOT EXISTS idx_marketplace_investors_status ON marketplace_investor_profiles(status);
+
+    CREATE TABLE IF NOT EXISTS marketplace_matches (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      founder_profile_id TEXT NOT NULL REFERENCES marketplace_founder_profiles(id) ON DELETE CASCADE,
+      investor_profile_id TEXT NOT NULL REFERENCES marketplace_investor_profiles(id) ON DELETE CASCADE,
+      status        TEXT NOT NULL DEFAULT 'candidate', -- candidate | queued_intro | sent | accepted | declined | archived
+      score         REAL NOT NULL DEFAULT 0,
+      rationale     TEXT,
+      founder_summary TEXT,
+      investor_summary TEXT,
+      intro_draft   TEXT,
+      metadata      TEXT DEFAULT '{}',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(business_id, founder_profile_id, investor_profile_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_marketplace_matches_business ON marketplace_matches(business_id);
+    CREATE INDEX IF NOT EXISTS idx_marketplace_matches_status ON marketplace_matches(status);
+
+    CREATE TABLE IF NOT EXISTS marketplace_reviews (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      subject_type  TEXT NOT NULL,
+      subject_id    TEXT NOT NULL,
+      decision      TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected
+      notes         TEXT,
+      decided_by    TEXT REFERENCES users(id),
+      decided_at    TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_marketplace_reviews_business ON marketplace_reviews(business_id);
+    CREATE INDEX IF NOT EXISTS idx_marketplace_reviews_subject ON marketplace_reviews(subject_type, subject_id);
+
+    CREATE TABLE IF NOT EXISTS marketplace_conversations (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+      match_id      TEXT NOT NULL REFERENCES marketplace_matches(id) ON DELETE CASCADE,
+      status        TEXT NOT NULL DEFAULT 'open', -- open | waiting | replied | closed
+      channel       TEXT NOT NULL DEFAULT 'email',
+      thread_subject TEXT,
+      last_message_at TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_marketplace_conversations_business ON marketplace_conversations(business_id);
+    CREATE INDEX IF NOT EXISTS idx_marketplace_conversations_match ON marketplace_conversations(match_id);
+
+    -- ─────────────────────────────────────────
     -- REFRESH TOKENS
     -- ─────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -652,6 +755,10 @@ export function runMigrations() {
   ensureColumn(db, 'businesses', 'preferred_run_hour_utc', 'INTEGER NOT NULL DEFAULT 2');
   ensureColumn(db, 'businesses', 'next_run_at', 'TEXT');
   ensureColumn(db, 'businesses', 'last_cycle_at', 'TEXT');
+  ensureColumn(db, 'businesses', 'blueprint_key', 'TEXT');
+  ensureColumn(db, 'businesses', 'blueprint_label', 'TEXT');
+  ensureColumn(db, 'businesses', 'blueprint_version', 'TEXT');
+  ensureColumn(db, 'businesses', 'blueprint_config', "TEXT DEFAULT '{}'");
   ensureColumn(db, 'tasks', 'workflow_key', 'TEXT');
   ensureColumn(db, 'tasks', 'brief_json', 'TEXT');
   ensureColumn(db, 'tasks', 'verification_status', 'TEXT');
