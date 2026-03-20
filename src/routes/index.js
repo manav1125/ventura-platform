@@ -81,6 +81,7 @@ import {
   createMarketplaceMatch,
   getMarketplaceOverview
 } from '../business/marketplace.js';
+import { getBusinessTrainingPack } from '../business/training.js';
 import { dispatchSpecialistTask } from '../business/specialists.js';
 import {
   getInfrastructureSnapshot,
@@ -774,6 +775,7 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
   const since30d = now - (30 * 86400000);
   const memory = normaliseMemory(business.agent_memory, business);
   const blueprint = serializeBlueprint(getBusinessBlueprint(business));
+  const training = getBusinessTrainingPack(business);
   const economics = resolveBusinessEconomics(business, userPlan);
   const integrations = getBusinessIntegrations(business);
   const infrastructure = getInfrastructureSnapshot(business, integrations);
@@ -925,6 +927,7 @@ function getOperatingSystemSnapshot(db, business, userPlan = 'trial') {
     },
     memory,
     blueprint,
+    training,
     marketplace,
     planning: {
       summary: {
@@ -1437,6 +1440,15 @@ router.get('/businesses/:id/blueprint', requireAuth, asyncHandler(async (req, re
   if (!business) return res.status(404).json({ error: 'Business not found' });
 
   res.json({ blueprint: serializeBlueprint(getBusinessBlueprint(business)) });
+}));
+
+// GET /api/businesses/:id/training — platform training pack Ventura should operate against
+router.get('/businesses/:id/training', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Business not found' });
+
+  res.json({ training: getBusinessTrainingPack(business) });
 }));
 
 // PATCH /api/businesses/:id — update business settings

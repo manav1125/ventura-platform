@@ -375,6 +375,12 @@ describe('Blueprints and marketplace runtime', () => {
     assert.equal(blueprintRes.status, 200);
     assert.equal(blueprintRes.body.blueprint.key, 'generic_saas');
     assert.ok(Array.isArray(blueprintRes.body.blueprint.entities));
+
+    const trainingRes = await GET(`/api/businesses/${bizId}/training`, tokens.access);
+    assert.equal(trainingRes.status, 200);
+    assert.equal(trainingRes.body.training.blueprint.key, 'generic_saas');
+    assert.ok(Array.isArray(trainingRes.body.training.universal_skills));
+    assert.ok(trainingRes.body.training.playbooks.engineering);
   });
 
   it('provisions a founder-investor marketplace with the correct blueprint', async () => {
@@ -402,6 +408,12 @@ describe('Blueprints and marketplace runtime', () => {
     assert.ok(operating.body.marketplace);
     assert.equal(operating.body.marketplace.counts.founders, 0);
     assert.equal(operating.body.marketplace.counts.investors, 0);
+    assert.equal(operating.body.training.blueprint.key, 'founder_investor_marketplace');
+
+    const artifactsRes = await GET(`/api/businesses/${marketplaceBizId}/artifacts`, otherTokens.access);
+    assert.equal(artifactsRes.status, 200);
+    assert.ok(artifactsRes.body.artifacts.some(item => item.kind === 'training_manual'));
+    assert.ok(artifactsRes.body.artifacts.some(item => item.kind === 'playbook'));
   });
 
   it('creates founder and investor profiles and scores a marketplace match', async () => {

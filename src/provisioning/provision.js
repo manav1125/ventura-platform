@@ -27,6 +27,7 @@ import {
   getInitialBlueprintTasks,
   serializeBlueprint
 } from '../business/blueprints.js';
+import { buildTrainingArtifacts } from '../business/training.js';
 
 function safeParse(value, fallback = {}) {
   try {
@@ -216,8 +217,25 @@ export async function provisionBusiness({ userId, name, type, description, targe
       description,
       target_customer: targetCustomer,
       goal_90d: goal90d,
-      involvement
+      involvement,
+      blueprint_key: blueprint.key,
+      blueprint_label: blueprint.label,
+      blueprint_version: blueprint.version,
+      blueprint_config: JSON.stringify(blueprint.config || {})
     }, blueprint);
+    await stepPublishTrainingArtifacts(activeBusiness || {
+      id: businessId,
+      name,
+      type,
+      description,
+      target_customer: targetCustomer,
+      goal_90d: goal90d,
+      involvement,
+      blueprint_key: blueprint.key,
+      blueprint_label: blueprint.label,
+      blueprint_version: blueprint.version,
+      blueprint_config: JSON.stringify(blueprint.config || {})
+    });
     const launchPlan = await stepGenerateLaunchPlan({
       businessId,
       name,
@@ -433,6 +451,31 @@ async function stepPublishBlueprintArtifact(business, blueprint = null) {
   });
 }
 
+async function stepPublishTrainingArtifacts(business) {
+  const artifacts = buildTrainingArtifacts(business);
+  createArtifact({
+    businessId: business.id,
+    department: artifacts.manual.department,
+    kind: artifacts.manual.kind,
+    title: artifacts.manual.title,
+    summary: artifacts.manual.summary,
+    content: artifacts.manual.content,
+    metadata: artifacts.manual.metadata
+  });
+
+  for (const playbook of artifacts.playbooks) {
+    createArtifact({
+      businessId: business.id,
+      department: playbook.department,
+      kind: playbook.kind,
+      title: playbook.title,
+      summary: playbook.summary,
+      content: playbook.content,
+      metadata: playbook.metadata
+    });
+  }
+}
+
 async function stepPublishInitialSite(businessId, launchPlan) {
   const db = getDb();
   const business = db.prepare('SELECT * FROM businesses WHERE id = ?').get(businessId);
@@ -513,6 +556,7 @@ export async function regenerateBusinessFoundation({
   const context = buildLaunchContextFromBusiness(refreshedBlueprintBusiness);
   const launchPlan = await stepGenerateLaunchPlan(context);
   await stepPublishBlueprintArtifact(refreshedBlueprintBusiness, resolvedBlueprint.blueprint);
+  await stepPublishTrainingArtifacts(refreshedBlueprintBusiness);
   await stepSeedAgentMemory(businessId, context, launchPlan, { preserveExisting: true });
   await stepPublishInitialSite(businessId, launchPlan);
 
