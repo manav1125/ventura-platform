@@ -34,6 +34,8 @@ ventura-backend/
 
 ## Quick Start
 
+Public marketplace intake lives on the API-hosted `/sites/:slug` routes, so those landing-page forms only work after the API service has redeployed the latest commit.
+
 ### 1. Install dependencies
 
 ```bash
