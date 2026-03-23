@@ -18,6 +18,7 @@ import { syncWorkspaceData } from '../integrations/workspace-sync.js';
 import { markWorkspaceAutomationTaskOutcome, runWorkspaceAutomation } from './workspace-automation.js';
 import { emitToBusiness, emitToUser } from '../ws/websocket.js';
 import { AGENT_CRON_SCHEDULE, AGENT_MODEL } from '../config.js';
+import { getMarketplaceOverview } from '../business/marketplace.js';
 import {
   getBlueprintFallbackTasks,
   getBusinessBlueprint,
@@ -109,9 +110,10 @@ function buildFallbackCycleTasks({
   workspace,
   latestPlan,
   siteHeadline,
+  runtime = {},
   existingTitles = new Set()
 }) {
-  const blueprintTasks = getBlueprintFallbackTasks({ business, existingTitles });
+  const blueprintTasks = getBlueprintFallbackTasks({ business, existingTitles, runtime });
   if (blueprintTasks.length) return blueprintTasks.slice(0, 4);
 
   const audience = business.target_customer || 'target customers';
@@ -558,6 +560,9 @@ async function generateCycleTasks(business) {
   const db = getDb();
   const memory = JSON.parse(business.agent_memory || '{}');
   const blueprint = getBusinessBlueprint(business);
+  const marketplace = blueprint.key === 'founder_investor_marketplace'
+    ? getMarketplaceOverview(db, business.id)
+    : null;
   const { getWorkspacePromptContext } = await import('../integrations/workspace-sync.js');
   const latestPlan = getLatestArtifactByKind(business.id, 'launch_plan');
   const siteFile = getPublishedSiteFile(business.id, 'index.html');
@@ -590,6 +595,7 @@ async function generateCycleTasks(business) {
     workspace,
     latestPlan,
     siteHeadline,
+    runtime: { marketplace },
     existingTitles
   });
 
@@ -607,6 +613,7 @@ Current MRR: $${(business.mrr_cents / 100).toFixed(2)}
 Business blueprint: ${JSON.stringify(serializeBlueprint(blueprint), null, 2)}
 Business memory: ${JSON.stringify(memory, null, 2)}
 Workspace snapshot: ${JSON.stringify(workspace, null, 2)}
+Marketplace overview: ${JSON.stringify(marketplace, null, 2)}
 Latest launch plan: ${JSON.stringify(latestPlan?.metadata || {}, null, 2)}
 Current site headline: ${siteHeadline || 'No live headline yet'}
 
@@ -621,6 +628,8 @@ Every task must be specific to ${business.name}, mention a concrete deliverable,
 Respect the business blueprint and choose work that advances the actual product or marketplace workflow, not just generic top-of-funnel polish.
 Do not output placeholder/meta tasks like "write the business plan", "define the MVP", or "build the full app".
 Do not repeat existing queued or recently completed work unless the task explicitly says it is a revision or retry.
+If the blueprint is founder_investor_marketplace, prioritise moving real records through the pipeline: founder application -> investor roster -> scored match -> queued intro/sent -> conversation follow-up.
+For founder_investor_marketplace, prefer tasks Ventura can execute with native marketplace tools and persisted marketplace artifacts, not just generic messaging work.
 
 IMPORTANT: Return ONLY a JSON array, no other text.`;
 

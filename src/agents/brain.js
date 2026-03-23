@@ -19,6 +19,7 @@ import {
   createFounderProfile,
   createInvestorProfile,
   createMarketplaceMatch,
+  getMarketplaceOverview,
   getMarketplaceMatchDetail,
   renderConversationLog,
   renderFounderBrief,
@@ -212,6 +213,9 @@ export async function runTask(task, business, cycleId = null) {
   const workflowKey = normalizeWorkflowKey(task.workflow_key || task.department, task.department);
   const workflowState = getWorkflowState(business.id, workflowKey);
   const workspace = getWorkspacePromptContext(business.id);
+  const marketplace = business.blueprint_key === 'founder_investor_marketplace'
+    ? getMarketplaceOverview(getDb(), business.id)
+    : null;
   const brief = task.brief || composeTaskBrief({
     business,
     title: task.title,
@@ -240,6 +244,7 @@ export async function runTask(task, business, cycleId = null) {
         open_loops: workflowState.open_loops,
         evidence: workflowState.evidence
       }, null, 2)}` : '',
+      marketplace ? `MARKETPLACE RUNTIME:\n${JSON.stringify(marketplace, null, 2)}` : '',
       recentArtifacts.length ? `RECENT ARTIFACTS:\n${JSON.stringify(recentArtifacts, null, 2)}` : '',
       workspace ? `LIVE WORKSPACE DATA:\n${JSON.stringify(workspace, null, 2)}` : '',
       'Execute now.'

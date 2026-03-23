@@ -248,6 +248,11 @@ const BLUEPRINTS = {
           'Return a concrete operating rule, schema, or scorecard Ventura can reuse.',
           'Record how the change affects match quality, trust, or intro throughput.'
         ],
+        preferredTools: [
+          'create_marketplace_match',
+          'update_marketplace_match',
+          'log_marketplace_conversation'
+        ],
         success: [
           'A founder or investor can move one step further through the marketplace with less ambiguity.'
         ]
@@ -264,6 +269,10 @@ const BLUEPRINTS = {
         output: [
           'Ship an app surface, data model, or workflow Ventura can operate directly.',
           'Describe how a founder, investor, or admin will use the new flow.'
+        ],
+        preferredTools: [
+          'write_code',
+          'deploy_website'
         ],
         success: [
           'A real marketplace action is possible that was not possible before.'
@@ -282,6 +291,12 @@ const BLUEPRINTS = {
           'Produce campaign assets or lead lists tied to one side of the marketplace.',
           'Capture the hypothesis about why this segment should convert.'
         ],
+        preferredTools: [
+          'web_search',
+          'create_content',
+          'add_lead',
+          'post_social'
+        ],
         success: [
           'The next acquisition action targets a higher-signal founder or investor segment.'
         ]
@@ -298,6 +313,13 @@ const BLUEPRINTS = {
         output: [
           'Leave behind a durable review rule, intro template, or queue state change.',
           'Capture any trust or manual review concerns explicitly.'
+        ],
+        preferredTools: [
+          'create_marketplace_founder',
+          'create_marketplace_investor',
+          'create_marketplace_match',
+          'update_marketplace_match',
+          'log_marketplace_conversation'
         ],
         success: [
           'The intro pipeline is easier to audit and less dependent on hidden knowledge.'
@@ -351,8 +373,61 @@ const BLUEPRINTS = {
         }
       ];
     },
-    cycleTasks({ business, existingTitles = new Set() }) {
-      const tasks = [
+    cycleTasks({ business, existingTitles = new Set(), runtime = {} }) {
+      const counts = runtime?.marketplace?.counts || {};
+      const tasks = [];
+
+      if (!counts.founders) {
+        tasks.push({
+          title: `Drive the first qualified founder applications for ${business.name}`,
+          department: 'marketing',
+          description: `Use the live intake flow to attract and capture the first batch of founder applications with stage, raise context, and traction details Ventura can score.`,
+          workflowKey: 'marketing'
+        });
+      } else if (!counts.investors) {
+        tasks.push({
+          title: `Source the first investor roster for ${business.name}`,
+          department: 'marketing',
+          description: `Research and queue the first investor segment that fits the current founder pipeline, then create investor-ready targets Ventura can onboard into the marketplace.`,
+          workflowKey: 'marketing'
+        });
+      } else if (!counts.matches) {
+        tasks.push({
+          title: `Create the first scored founder-investor matches for ${business.name}`,
+          department: 'operations',
+          description: `Review the live founder and investor records, create candidate matches, and persist rationale plus intro readiness states Ventura can act on.`,
+          workflowKey: 'operations'
+        });
+      }
+
+      if ((counts.matches || 0) > (counts.intros_sent || 0)) {
+        tasks.push({
+          title: `Queue the next investor introductions for ${business.name}`,
+          department: 'operations',
+          description: `Move approved matches into queued intro or sent states, persist the intro draft, and leave the intro pipeline in a founder-readable state.`,
+          workflowKey: 'operations'
+        });
+      }
+
+      if ((counts.open_conversations || 0) > 0) {
+        tasks.push({
+          title: `Advance open investor conversations for ${business.name}`,
+          department: 'operations',
+          description: `Review active intro threads, log the latest response state, and make the next follow-up or acceptance outcome explicit inside the marketplace runtime.`,
+          workflowKey: 'operations'
+        });
+      }
+
+      if ((counts.pending_reviews || 0) > 0) {
+        tasks.push({
+          title: `Clear the founder-investor review queue for ${business.name}`,
+          department: 'operations',
+          description: `Work through pending founder, investor, or match review decisions so Ventura can keep the intro pipeline moving without hidden blockers.`,
+          workflowKey: 'operations'
+        });
+      }
+
+      tasks.push(
         {
           title: `Improve the founder application flow for ${business.name}`,
           department: 'engineering',
@@ -366,18 +441,12 @@ const BLUEPRINTS = {
           workflowKey: 'planning'
         },
         {
-          title: `Source the next tranche of high-fit investors for ${business.name}`,
-          department: 'marketing',
-          description: `Research and queue the next investor segment that best matches the platform's current founder pipeline and goal.`,
-          workflowKey: 'marketing'
-        },
-        {
           title: `Tighten intro operations and response tracking for ${business.name}`,
           department: 'operations',
           description: `Make the intro queue clearer, surface blocked conversations, and leave explicit follow-up states Ventura can audit.`,
           workflowKey: 'operations'
         }
-      ];
+      );
       return filterBlueprintTasks(tasks, existingTitles);
     }
   }
@@ -532,11 +601,12 @@ export function getInitialBlueprintTasks(business, launchPlanTasks = []) {
 
 export function getBlueprintFallbackTasks({
   business,
-  existingTitles = new Set()
+  existingTitles = new Set(),
+  runtime = {}
 }) {
   const blueprint = getBusinessBlueprint(business);
   if (typeof blueprint.cycleTasks !== 'function') return [];
-  return blueprint.cycleTasks({ business, existingTitles }).map(normaliseBlueprintTask);
+  return blueprint.cycleTasks({ business, existingTitles, runtime }).map(normaliseBlueprintTask);
 }
 
 export function getBlueprintTaskGuidance(business, workflowKey) {
@@ -547,6 +617,7 @@ export function getBlueprintTaskGuidance(business, workflowKey) {
     requirements: uniqueList(guide.requirements || [], 6),
     context: uniqueList(guide.context || [], 6),
     output: uniqueList(guide.output || [], 6),
+    preferredTools: uniqueList(guide.preferredTools || [], 8),
     success: uniqueList(guide.success || [], 6)
   };
 }

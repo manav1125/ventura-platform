@@ -135,7 +135,12 @@ function toolLabel(tool) {
     update_memory: 'Memory update',
     update_metrics: 'Metrics update',
     flag_for_review: 'Founder review flag',
-    task_complete: 'Completion handoff'
+    task_complete: 'Completion handoff',
+    create_marketplace_founder: 'Founder profile creation',
+    create_marketplace_investor: 'Investor profile creation',
+    create_marketplace_match: 'Marketplace match creation',
+    update_marketplace_match: 'Marketplace match update',
+    log_marketplace_conversation: 'Conversation logging'
   }[tool] || tool.replace(/_/g, ' '));
 }
 
@@ -427,6 +432,10 @@ export function composeTaskBrief({ business, title, description = '', department
     ...(trainingGuide.output || []),
     ...DEFAULT_OUTPUTS[normalizedWorkflow]
   ], 5);
+  const tools = uniqueList([
+    ...(blueprintGuide.preferredTools || []),
+    ...(trainingGuide.recommendedTools || [])
+  ], 8);
   const success = uniqueList([
     ...(blueprintGuide.success || []),
     ...(trainingGuide.success || []),
@@ -444,6 +453,7 @@ export function composeTaskBrief({ business, title, description = '', department
     constraints,
     context,
     output,
+    tools,
     success
   };
 }
@@ -462,6 +472,7 @@ export function formatTaskBrief(brief) {
     render('DATA AND STATE TO USE', brief.data),
     render('CONSTRAINTS', brief.constraints),
     render('CONTEXT', brief.context),
+    render('TOOLS TO PREFER', safeArray(brief.tools).map(toolLabel)),
     render('OUTPUT FORMAT', brief.output),
     render('SUCCESS CHECK', brief.success)
   ].filter(Boolean).join('\n\n');

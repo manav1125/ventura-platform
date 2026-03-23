@@ -416,6 +416,48 @@ describe('Blueprints and marketplace runtime', () => {
     assert.ok(artifactsRes.body.artifacts.some(item => item.kind === 'playbook'));
   });
 
+  it('encodes marketplace-native operating guidance into blueprint tasks and task briefs', async () => {
+    const { getDb } = await import('../src/db/migrate.js');
+    const { getBlueprintFallbackTasks } = await import('../src/business/blueprints.js');
+    const { composeTaskBrief, formatTaskBrief } = await import('../src/agents/execution-intelligence.js');
+
+    const db = getDb();
+    const business = db.prepare('SELECT * FROM businesses WHERE id = ?').get(marketplaceBizId);
+
+    const tasks = getBlueprintFallbackTasks({
+      business,
+      runtime: {
+        marketplace: {
+          counts: {
+            founders: 2,
+            investors: 2,
+            matches: 0,
+            intros_sent: 0,
+            pending_reviews: 1,
+            open_conversations: 0
+          }
+        }
+      },
+      existingTitles: new Set()
+    });
+
+    assert.ok(tasks.some(task => /scored founder-investor matches/i.test(task.title)));
+    assert.ok(tasks.some(task => /review queue/i.test(task.title)));
+
+    const brief = composeTaskBrief({
+      business,
+      title: 'Create the next candidate matches',
+      description: 'Review the current founder and investor pipeline, create candidate matches, and queue the best intro-ready pair.',
+      department: 'operations',
+      workflowKey: 'operations'
+    });
+
+    assert.ok(brief.tools.includes('create_marketplace_match'));
+    assert.ok(brief.tools.includes('update_marketplace_match'));
+    assert.match(formatTaskBrief(brief), /TOOLS TO PREFER/);
+    assert.match(formatTaskBrief(brief), /Marketplace match creation/);
+  });
+
   it('creates founder and investor profiles and scores a marketplace match', async () => {
     const founderRes = await POST(`/api/businesses/${marketplaceBizId}/marketplace/founders`, {
       founderName: 'Maya Chen',

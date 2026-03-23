@@ -102,7 +102,8 @@ const DEPARTMENT_BASE_PLAYBOOKS = {
       'match rationale'
     ],
     artifactKinds: ['blueprint', 'training_manual', 'playbook', 'research', 'launch_plan', 'content', 'task_summary'],
-    primaryArtifactKinds: ['blueprint', 'playbook', 'launch_plan', 'research', 'content']
+    primaryArtifactKinds: ['blueprint', 'playbook', 'launch_plan', 'research', 'content'],
+    recommendedTools: ['web_search', 'create_content', 'update_memory']
   },
   engineering: {
     title: 'Engineering loop playbook',
@@ -120,7 +121,8 @@ const DEPARTMENT_BASE_PLAYBOOKS = {
       'site update'
     ],
     artifactKinds: ['site_file', 'content', 'task_summary'],
-    primaryArtifactKinds: ['site_file', 'content']
+    primaryArtifactKinds: ['site_file', 'content'],
+    recommendedTools: ['write_code', 'deploy_website', 'create_content']
   },
   marketing: {
     title: 'Marketing loop playbook',
@@ -138,7 +140,8 @@ const DEPARTMENT_BASE_PLAYBOOKS = {
       'ad/message test'
     ],
     artifactKinds: ['content', 'email', 'social_post', 'research', 'task_summary'],
-    primaryArtifactKinds: ['content', 'email', 'social_post', 'research']
+    primaryArtifactKinds: ['content', 'email', 'social_post', 'research'],
+    recommendedTools: ['web_search', 'create_content', 'add_lead', 'send_email', 'post_social']
   },
   operations: {
     title: 'Operations loop playbook',
@@ -156,7 +159,8 @@ const DEPARTMENT_BASE_PLAYBOOKS = {
       'recovery note'
     ],
     artifactKinds: ['email', 'playbook', 'task_summary', 'content'],
-    primaryArtifactKinds: ['email', 'playbook', 'content']
+    primaryArtifactKinds: ['email', 'playbook', 'content'],
+    recommendedTools: ['send_email', 'flag_for_review', 'update_memory']
   }
 };
 
@@ -177,6 +181,10 @@ function workflowPlaybook(workflowKey, blueprint) {
     ], 10),
     expected_artifact_kinds: uniqueList(base.artifactKinds || [], 10),
     primary_artifact_kinds: uniqueList(base.primaryArtifactKinds || base.artifactKinds || [], 8),
+    recommended_tools: uniqueList([
+      ...(blueprint.taskGuidance?.[workflowKey]?.preferredTools || []),
+      ...(base.recommendedTools || [])
+    ], 8),
     success: uniqueList([
       ...(blueprint.taskGuidance?.[workflowKey]?.success || []),
       'The next operator can understand what happened and continue without guessing.'
@@ -231,6 +239,7 @@ export function getTrainingTaskGuidance(business, workflowKey) {
     ], 6),
     expectedArtifactKinds: playbook.expected_artifact_kinds || [],
     primaryArtifactKinds: playbook.primary_artifact_kinds || [],
+    recommendedTools: playbook.recommended_tools || [],
     success: uniqueList([
       ...playbook.success,
       ...pack.universal_standards.safety.slice(0, 2)
