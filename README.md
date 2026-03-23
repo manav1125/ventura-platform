@@ -66,6 +66,7 @@ WebSocket at `ws://localhost:3001/ws`
 |---|---|---|
 | `ANTHROPIC_API_KEY` | ✅ | Your Anthropic API key |
 | `JWT_SECRET` | ✅ | Secret for signing JWTs (make it long and random) |
+| `ADMIN_EMAILS` | Optional | Comma-separated emails that should get platform-admin access in the Ventura dashboard |
 | `STRIPE_SECRET_KEY` | Optional | Stripe secret key for payments |
 | `STRIPE_WEBHOOK_SECRET` | Optional | Stripe webhook signing secret |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | Optional | SMTP config (defaults to console in dev) |

@@ -1973,6 +1973,9 @@
       <a class="nav-item" onclick="showPage('intelligence',this)">
         <span class="nav-item-icon">✦</span> Intelligence
       </a>
+      <a class="nav-item" id="nav-admin-item" onclick="showPage('admin',this)" style="display:none;">
+        <span class="nav-item-icon">◈</span> Admin
+      </a>
       <a class="nav-item" onclick="showPage('assets',this)">
         <span class="nav-item-icon">▣</span> Asset Hub
       </a>
@@ -2463,6 +2466,67 @@
         </div>
       </div>
 
+      <!-- ADMIN PAGE -->
+      <div class="dash-page" id="page-admin">
+        <div class="dash-header">
+          <div><div class="dash-title">Platform Admin</div><div class="dash-subtitle">Cross-business oversight for blueprint canon, operating health, and Ventura’s long-term intelligence</div></div>
+          <button class="btn-run" onclick="triggerAdminRunAll()">▶ Run all businesses</button>
+        </div>
+        <div class="metric-row" style="grid-template-columns:repeat(4,1fr)">
+          <div class="metric-card"><div class="metric-card-label">Users</div><div class="metric-card-value" id="admin-users-count">0</div><div class="metric-card-delta" id="admin-users-delta">No platform stats loaded</div></div>
+          <div class="metric-card"><div class="metric-card-label">Businesses</div><div class="metric-card-value" id="admin-businesses-count">0</div><div class="metric-card-delta" id="admin-businesses-delta">No business count loaded</div></div>
+          <div class="metric-card"><div class="metric-card-label">Running cycles</div><div class="metric-card-value" id="admin-running-cycles-count">0</div><div class="metric-card-delta" id="admin-running-cycles-delta">No cycle data loaded</div></div>
+          <div class="metric-card"><div class="metric-card-label">Platform docs</div><div class="metric-card-value" id="admin-intel-docs-count">0</div><div class="metric-card-delta" id="admin-intel-docs-delta">No platform canon notes yet</div></div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Platform overview</span></div>
+            <div class="panel-body" id="admin-overview-panel">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Admin stats, revenue, and websocket health will load here.</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Blueprint canon coverage</span></div>
+            <div class="panel-body" id="admin-blueprints-panel">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Platform-level blueprint and playbook notes will be grouped here by business model.</div>
+            </div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Platform refinement vault</span></div>
+            <div class="panel-body" id="admin-intelligence-list" style="padding:0 20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;line-height:1.6;">No platform notes loaded yet.</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Add platform note</span></div>
+            <div class="panel-body">
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Blueprint</label><input id="admin-intelligence-blueprint" placeholder="founder_investor_marketplace" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Kind</label><select id="admin-intelligence-kind" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option value="blueprint_refinement">Blueprint refinement</option><option value="playbook_note">Playbook note</option><option value="operating_rule">Operating rule</option><option value="refinement_note">General refinement</option><option value="prompt_note">Prompt note</option></select></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Workflow</label><select id="admin-intelligence-workflow" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option value="">General</option><option value="planning">Planning</option><option value="engineering">Engineering</option><option value="marketing">Marketing</option><option value="operations">Operations</option></select></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Title</label><input id="admin-intelligence-title" placeholder="Tighten match rationale before queuing intros" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Content</label><textarea id="admin-intelligence-content" placeholder="What Ventura should standardize across businesses, blueprints, and future operator runs..." style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;min-height:140px;"></textarea></div>
+              <button class="btn-run" onclick="savePlatformIntelligenceDocument()">Save platform note</button>
+            </div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Recent cycles across businesses</span></div>
+            <div class="panel-body" id="admin-cycles-list" style="padding:0 20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;line-height:1.6;">No recent cycle data loaded.</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Live businesses</span></div>
+            <div class="panel-body" id="admin-businesses-list" style="padding:0 20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;line-height:1.6;">No platform business data loaded.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ASSET HUB PAGE -->
       <div class="dash-page" id="page-assets">
         <div class="dash-header">
@@ -2794,6 +2858,7 @@ let state = {
   assetLibrary: null,
   portfolio:    null,
   billing:      null,
+  admin:        null,
   authResetToken: null,
   live:         null,
   liveSlug:     null,
@@ -2848,7 +2913,7 @@ function storeTokens(at, rt) {
 }
 
 function clearAuth() {
-  state.accessToken = null; state.refreshToken = null; state.user = null; state.authResetToken = null;
+  state.accessToken = null; state.refreshToken = null; state.user = null; state.admin = null; state.authResetToken = null;
   localStorage.removeItem('v_at'); localStorage.removeItem('v_rt');
   disconnectWS({ reconnect: false });
 }
@@ -3443,7 +3508,8 @@ function setActiveBusiness(biz) {
 async function loadDashboard() {
   if (!state.activeBiz) return;
   try {
-    const [mData, tData, aData, cData, oData, pData, bData, libraryData, intelligenceData] = await Promise.all([
+    const isAdmin = state.user?.role === 'admin';
+    const [mData, tData, aData, cData, oData, pData, bData, libraryData, intelligenceData, adminStats, adminBusinesses, adminCycles, adminIntelligence] = await Promise.all([
       GET(`/businesses/${state.activeBiz.id}/metrics`),
       GET(`/businesses/${state.activeBiz.id}/tasks`),
       GET(`/businesses/${state.activeBiz.id}/activity?limit=40`),
@@ -3452,7 +3518,11 @@ async function loadDashboard() {
       GET('/portfolio/overview'),
       GET('/billing/plans'),
       GET(`/businesses/${state.activeBiz.id}/artifacts?limit=120`),
-      GET(`/businesses/${state.activeBiz.id}/intelligence`)
+      GET(`/businesses/${state.activeBiz.id}/intelligence`),
+      isAdmin ? GET('/admin/stats') : Promise.resolve(null),
+      isAdmin ? GET('/admin/businesses') : Promise.resolve(null),
+      isAdmin ? GET('/admin/cycles') : Promise.resolve(null),
+      isAdmin ? GET('/admin/intelligence') : Promise.resolve(null)
     ]);
     state.control = cData;
     state.operating = oData;
@@ -3460,6 +3530,12 @@ async function loadDashboard() {
     state.intelligence = intelligenceData;
     state.portfolio = pData;
     state.billing = bData;
+    state.admin = isAdmin ? {
+      stats: adminStats?.stats || null,
+      businesses: adminBusinesses?.businesses || [],
+      cycles: adminCycles?.cycles || [],
+      intelligence: adminIntelligence?.intelligence || null
+    } : null;
     renderAccountStatusBanner();
     renderMetrics(mData, oData);
     renderRuntimeOverview(cData, oData);
@@ -3473,6 +3549,7 @@ async function loadDashboard() {
     renderOperatingSystem(oData);
     renderMarketplaceWorkspace(oData, libraryData);
     renderIntelligenceVault(intelligenceData.intelligence, oData, libraryData);
+    renderPlatformAdmin(state.admin);
     renderAssetHub(cData, oData, libraryData, tData.tasks);
     renderTaskEvents(cData.taskEvents || oData.taskEvents || []);
     renderArtifacts(cData.artifacts || oData.artifacts || []);
@@ -3706,6 +3783,17 @@ function toggleMarketplaceNav(operatingData) {
   nav.style.display = enabled ? '' : 'none';
   if (!enabled) {
     const page = document.getElementById('page-marketplace');
+    if (page?.classList.contains('active')) activateDashboardPage('overview');
+  }
+}
+
+function toggleAdminNav() {
+  const nav = document.getElementById('nav-admin-item');
+  if (!nav) return;
+  const enabled = state.user?.role === 'admin';
+  nav.style.display = enabled ? '' : 'none';
+  if (!enabled) {
+    const page = document.getElementById('page-admin');
     if (page?.classList.contains('active')) activateDashboardPage('overview');
   }
 }
@@ -4141,6 +4229,126 @@ function renderIntelligenceVault(intelligenceData, operatingData, libraryData) {
       <div style="font-size:12px;color:rgba(255,255,255,0.72);line-height:1.7;margin-top:10px;white-space:pre-wrap;">${esc(item.content)}</div>
     </div>
   `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No intelligence notes yet. Add the first blueprint or playbook refinement to start turning Ventura work into durable platform IP.</div>`;
+}
+
+function renderPlatformAdmin(adminData) {
+  const overviewEl = document.getElementById('admin-overview-panel');
+  const blueprintsEl = document.getElementById('admin-blueprints-panel');
+  const docsEl = document.getElementById('admin-intelligence-list');
+  const cyclesEl = document.getElementById('admin-cycles-list');
+  const businessesEl = document.getElementById('admin-businesses-list');
+  if (!overviewEl || !blueprintsEl || !docsEl || !cyclesEl || !businessesEl) return;
+
+  if (!adminData) {
+    setEl('admin-users-count', '—');
+    setEl('admin-businesses-count', '—');
+    setEl('admin-running-cycles-count', '—');
+    setEl('admin-intel-docs-count', '—');
+    setEl('admin-users-delta', 'Admin access required');
+    setEl('admin-businesses-delta', 'Admin access required');
+    setEl('admin-running-cycles-delta', 'Admin access required');
+    setEl('admin-intel-docs-delta', 'Admin access required');
+    overviewEl.innerHTML = `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Sign in with an admin account to view platform-wide blueprint canon, operating stats, and refinement notes.</div>`;
+    blueprintsEl.innerHTML = `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Platform blueprint coverage is only visible to admins.</div>`;
+    docsEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No platform access.</div>`;
+    cyclesEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No platform access.</div>`;
+    businessesEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No platform access.</div>`;
+    return;
+  }
+
+  const stats = adminData.stats || {};
+  const intelligence = adminData.intelligence || {};
+  const intelligenceSummary = intelligence.summary || {};
+  const grouped = intelligence.grouped || {};
+  const docs = intelligence.documents || [];
+  const businesses = adminData.businesses || [];
+  const cycles = adminData.cycles || [];
+
+  setEl('admin-users-count', String(stats.users?.total ?? 0));
+  setEl('admin-businesses-count', String(stats.businesses?.total ?? 0));
+  setEl('admin-running-cycles-count', String(stats.agent?.running_now ?? 0));
+  setEl('admin-intel-docs-count', String(intelligenceSummary.total_documents ?? 0));
+  setEl('admin-users-delta', `${stats.users?.new_today ?? 0} new today`);
+  setEl('admin-businesses-delta', `${stats.businesses?.active ?? 0} active now`);
+  setEl('admin-running-cycles-delta', `${stats.agent?.cycles_today ?? 0} cycles today`);
+  setEl('admin-intel-docs-delta', `${intelligenceSummary.blueprints_covered ?? 0} blueprint group${(intelligenceSummary.blueprints_covered ?? 0) === 1 ? '' : 's'}`);
+
+  overviewEl.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;margin-bottom:6px;">PLATFORM HEALTH</div>
+        <div style="font-size:14px;color:#e0ddd5;line-height:1.6;">${formatMoney(stats.revenue?.total_mrr_cents || 0)} tracked MRR · ${formatMoney(stats.revenue?.total_revenue_cents || 0)} revenue tracked · ${stats.websocket?.totalConnections ?? 0} live websocket connection${(stats.websocket?.totalConnections ?? 0) === 1 ? '' : 's'}.</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">PLANS</div>
+          <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${(stats.users?.by_plan || []).map(item => `${titleCase(item.plan)} ${item.n}`).join(' · ') || 'No plan stats yet'}</div>
+        </div>
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">BUSINESS TYPES</div>
+          <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${(stats.businesses?.by_type || []).map(item => `${titleCase(item.type)} ${item.n}`).join(' · ') || 'No type breakdown yet'}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  blueprintsEl.innerHTML = Object.keys(grouped).length ? `
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      ${Object.entries(grouped).map(([key, items]) => `
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">${esc(key)}</div>
+              <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${items.length} platform note${items.length === 1 ? '' : 's'} · ${items.filter(item => item.status === 'active').length} active</div>
+            </div>
+            <span class="tag">${esc(titleCase(items[0]?.kind || 'note'))}</span>
+          </div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.58);line-height:1.6;margin-top:8px;">Latest: ${esc(items[0]?.title || 'No note title')}</div>
+        </div>
+      `).join('')}
+    </div>
+  ` : `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No platform-level blueprint notes yet. Start capturing cross-business rules and playbooks here.</div>`;
+
+  docsEl.innerHTML = docs.length ? docs.map(item => `
+    <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;">
+        <div>
+          <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(item.title)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.55;">${esc(item.blueprint_key || 'platform')} · ${esc(titleCase(item.kind || 'note'))}${item.workflow_key ? ` · ${esc(titleCase(item.workflow_key))}` : ''} · ${timeAgo(item.updated_at || item.created_at)}</div>
+        </div>
+        <span class="tag">${esc((item.status || 'active').toUpperCase())}</span>
+      </div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.72);line-height:1.7;margin-top:10px;white-space:pre-wrap;">${esc(item.content)}</div>
+    </div>
+  `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No platform notes yet. Add the first blueprint or playbook rule to start building Ventura’s shared intelligence layer.</div>`;
+
+  cyclesEl.innerHTML = cycles.length ? cycles.slice(0, 10).map(item => `
+    <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+        <div>
+          <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(item.business_name)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.55;">${esc(titleCase(item.triggered_by || 'cycle'))} · ${esc(item.summary || 'No summary yet')}</div>
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-top:8px;">${timeAgo(item.created_at)}</div>
+        </div>
+        <span class="tag">${esc((item.status || 'idle').toUpperCase())}</span>
+      </div>
+    </div>
+  `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No recent cycles available.</div>`;
+
+  businessesEl.innerHTML = businesses.length ? businesses.slice(0, 12).map(item => `
+    <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+        <div>
+          <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(item.name)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.55;">${esc(item.founder_email || 'Unknown founder')} · ${esc(titleCase(item.type || 'business'))} · ${formatMoney(item.mrr_cents || 0)} MRR</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end;">
+          <span class="tag">${esc((item.status || 'idle').toUpperCase())}</span>
+          <button class="icon-btn" onclick="switchBusiness('${esc(item.id)}')">Open</button>
+        </div>
+      </div>
+    </div>
+  `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No business records available.</div>`;
 }
 
 function renderTaskRows(tasks, limit = 8) {
@@ -6256,6 +6464,59 @@ async function saveIntelligenceDocument() {
   }
 }
 
+async function savePlatformIntelligenceDocument() {
+  if (state.user?.role !== 'admin') {
+    showToast('Admin access required');
+    return;
+  }
+  const blueprintKey = document.getElementById('admin-intelligence-blueprint')?.value?.trim() || '';
+  const kind = document.getElementById('admin-intelligence-kind')?.value || 'refinement_note';
+  const workflowKey = document.getElementById('admin-intelligence-workflow')?.value || '';
+  const title = document.getElementById('admin-intelligence-title')?.value?.trim() || '';
+  const content = document.getElementById('admin-intelligence-content')?.value?.trim() || '';
+  if (!title || !content) {
+    showToast('Title and content are required');
+    return;
+  }
+  try {
+    const response = await POST('/admin/intelligence/documents', {
+      blueprintKey: blueprintKey || undefined,
+      kind,
+      workflowKey: workflowKey || undefined,
+      title,
+      content
+    });
+    ['admin-intelligence-blueprint', 'admin-intelligence-title', 'admin-intelligence-content'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const workflowEl = document.getElementById('admin-intelligence-workflow');
+    if (workflowEl) workflowEl.value = '';
+    state.admin = state.admin || {};
+    state.admin.intelligence = response.intelligence;
+    renderPlatformAdmin(state.admin);
+    showToast('Platform intelligence note saved');
+    activateDashboardPage('admin');
+  } catch (err) {
+    showToast(`Could not save platform note: ${err.message}`);
+  }
+}
+
+async function triggerAdminRunAll() {
+  if (state.user?.role !== 'admin') {
+    showToast('Admin access required');
+    return;
+  }
+  try {
+    await POST('/admin/run-all', {});
+    showToast('Ventura is starting a platform-wide run');
+    await loadDashboard();
+    activateDashboardPage('admin');
+  } catch (err) {
+    showToast(`Could not start platform run: ${err.message}`);
+  }
+}
+
 async function runWorkspaceAutomationNow() {
   if (!state.activeBiz) return;
   try {
@@ -6843,6 +7104,7 @@ async function showDashboard(e, opts = {}) {
   if (opts.businessId) dashboardParams.set('business', opts.businessId);
   setRoute(`dashboard${dashboardParams.toString() ? `?${dashboardParams.toString()}` : ''}`);
   updateNavForAuth(true);
+  toggleAdminNav();
   renderAccountStatusBanner();
   connectWS();
   await loadBusinesses();
@@ -6883,6 +7145,10 @@ function showLanding(e) {
 }
 
 function showPage(pageId, el) {
+  if (pageId === 'admin' && state.user?.role !== 'admin') {
+    showToast('Admin access required');
+    return;
+  }
   document.querySelectorAll('.dash-page').forEach(p => p.classList.remove('active'));
   const page = document.getElementById('page-' + pageId);
   if (page) page.classList.add('active');

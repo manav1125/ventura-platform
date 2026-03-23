@@ -42,6 +42,10 @@ export const WS_HEARTBEAT_INTERVAL   = parseInt(process.env.WS_HEARTBEAT_INTERVA
 
 export const RATE_LIMIT_WINDOW_MS    = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000');
 export const RATE_LIMIT_MAX          = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100');
+export const ADMIN_EMAILS           = String(process.env.ADMIN_EMAILS || '')
+  .split(',')
+  .map(value => value.trim().toLowerCase())
+  .filter(Boolean);
 
 // Deployment
 export const VERCEL_TOKEN            = process.env.VERCEL_TOKEN || '';

@@ -185,6 +185,8 @@ function serializeUser(user) {
     email: user.email,
     name: user.name,
     plan: user.plan,
+    role: user.is_admin ? 'admin' : 'user',
+    is_admin: !!user.is_admin,
     email_verified: !!user.email_verified,
     email_verified_at: user.email_verified_at || null,
     created_at: user.created_at

@@ -3,7 +3,7 @@
 // Provides oversight of all users, businesses, agent cycles, and revenue
 
 import express from 'express';
-import { requireAuth } from '../auth/auth.js';
+import { getUserById, requireAuth } from '../auth/auth.js';
 import { getDb } from '../db/migrate.js';
 import { runAllBusinesses } from '../agents/runner.js';
 import { broadcast, getStats } from '../ws/websocket.js';
@@ -17,7 +17,8 @@ const router = express.Router();
 
 // ── Admin guard middleware ─────────────────────────────────────────────────────
 function requireAdmin(req, res, next) {
-  if (req.user?.role !== 'admin') {
+  const user = getUserById(req.user?.sub);
+  if (!user?.is_admin) {
     return res.status(403).json({ error: 'Admin access required' });
   }
   next();

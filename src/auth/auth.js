@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { v4 as uuid } from 'uuid';
-import { JWT_SECRET, JWT_EXPIRES_IN, BCRYPT_ROUNDS } from '../config.js';
+import { JWT_SECRET, JWT_EXPIRES_IN, BCRYPT_ROUNDS, ADMIN_EMAILS } from '../config.js';
 import { getDb } from '../db/migrate.js';
 
 // ─── Token generation ────────────────────────────────────────────────────────
@@ -95,6 +95,25 @@ export function optionalAuth(req, res, next) {
 
 // ─── User operations ─────────────────────────────────────────────────────────
 
+function isConfiguredAdminEmail(email) {
+  return ADMIN_EMAILS.includes(String(email || '').trim().toLowerCase());
+}
+
+function resolveAdminFlag(user) {
+  return !!(user?.is_admin || isConfiguredAdminEmail(user?.email));
+}
+
+function syncConfiguredAdminFlag(db, user) {
+  if (!user?.id || !isConfiguredAdminEmail(user.email) || user.is_admin) return user;
+  db.prepare(`
+    UPDATE users
+    SET is_admin = 1,
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).run(user.id);
+  return { ...user, is_admin: 1 };
+}
+
 export async function registerUser({ email, name, password }) {
   const db = getDb();
   const normalizedEmail = email.toLowerCase().trim();
@@ -109,7 +128,8 @@ export async function registerUser({ email, name, password }) {
     VALUES (?, ?, ?, ?, 'trial', 0)
   `).run(id, normalizedEmail, name.trim(), password_hash);
 
-  return { id, email: normalizedEmail, name, plan: 'trial', email_verified: 0 };
+  const created = { id, email: normalizedEmail, name, plan: 'trial', email_verified: 0, is_admin: 0 };
+  return syncConfiguredAdminFlag(db, created);
 }
 
 export async function loginUser({ email, password }) {
@@ -120,12 +140,17 @@ export async function loginUser({ email, password }) {
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) throw new Error('INVALID_CREDENTIALS');
 
-  return user;
+  return syncConfiguredAdminFlag(db, user);
 }
 
 export function issueTokens(user) {
   const db = getDb();
-  const accessToken = signAccessToken({ sub: user.id, email: user.email, plan: user.plan, role: user.is_admin ? 'admin' : 'user' });
+  const accessToken = signAccessToken({
+    sub: user.id,
+    email: user.email,
+    plan: user.plan,
+    role: resolveAdminFlag(user) ? 'admin' : 'user'
+  });
   const refreshToken = generateRefreshToken();
 
   // Hash and store refresh token
@@ -153,16 +178,17 @@ export function rotateRefreshToken(rawToken) {
 
   // Rotate: delete old, issue new
   db.prepare('DELETE FROM refresh_tokens WHERE token_hash = ?').run(tokenHash);
-  return issueTokens({ id: stored.user_id, email: stored.email, plan: stored.plan, is_admin: stored.is_admin });
+  return issueTokens({ id: stored.user_id, email: stored.email, plan: stored.plan, is_admin: resolveAdminFlag(stored) });
 }
 
 export function getUserById(id) {
   const db = getDb();
-  return db.prepare(`
-    SELECT id, email, name, plan, stripe_customer_id, email_verified, email_verified_at, created_at
+  const user = db.prepare(`
+    SELECT id, email, name, plan, stripe_customer_id, email_verified, email_verified_at, created_at, is_admin
     FROM users
     WHERE id = ?
   `).get(id);
+  return user ? { ...user, is_admin: resolveAdminFlag(user) ? 1 : 0 } : null;
 }
 
 export function getUserByEmail(email) {

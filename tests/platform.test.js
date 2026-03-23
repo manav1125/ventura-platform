@@ -14,6 +14,7 @@ const BASE = 'http://localhost:3099';
 process.env.NODE_ENV   = 'test';
 process.env.DB_PATH    = ':memory:';
 process.env.JWT_SECRET = 'test-secret-xyz';
+process.env.ADMIN_EMAILS = 'other@ventura.test';
 process.env.ANTHROPIC_API_KEY = 'sk-test-placeholder';
 process.env.FRONTEND_URL = BASE;
 process.env.TWITTER_CLIENT_ID = 'x-client-id-test';
@@ -369,6 +370,16 @@ describe('Second founder setup', () => {
     assert.equal(list.status, 200);
     otherBizId = list.body.businesses[0].id;
     assert.ok(otherBizId);
+  });
+
+  it('grants admin access to configured admin emails', async () => {
+    const me = await GET('/api/auth/me', otherTokens.access);
+    assert.equal(me.status, 200);
+    assert.equal(me.body.user.role, 'admin');
+
+    const stats = await GET('/api/admin/stats', otherTokens.access);
+    assert.equal(stats.status, 200);
+    assert.ok(stats.body.stats);
   });
 });
 
