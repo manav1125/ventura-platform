@@ -15,6 +15,19 @@ import {
 import { createArtifact, listArtifacts } from './artifacts.js';
 import { logTaskEvent } from './task-events.js';
 import { getWorkspacePromptContext } from '../integrations/workspace-sync.js';
+import {
+  createFounderProfile,
+  createInvestorProfile,
+  createMarketplaceMatch,
+  getMarketplaceMatchDetail,
+  renderConversationLog,
+  renderFounderBrief,
+  renderIntroDraft,
+  renderInvestorBrief,
+  renderMatchMemo,
+  upsertMarketplaceConversation,
+  updateMarketplaceMatch
+} from '../business/marketplace.js';
 
 let agentClient = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY }) : null;
 
@@ -73,10 +86,92 @@ const AGENT_TOOLS = [
     name: 'task_complete',
     description: 'Mark the current task as done with a summary and optional recommended next steps.',
     input_schema: { type: 'object', properties: { summary: { type: 'string' }, next_steps: { type: 'array', items: { type: 'string' } } }, required: ['summary'] }
+  },
+  {
+    name: 'create_marketplace_founder',
+    description: 'Create a founder application profile inside a founder-investor marketplace business.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        founderName: { type: 'string' },
+        founderEmail: { type: 'string' },
+        companyName: { type: 'string' },
+        companyUrl: { type: 'string' },
+        stage: { type: 'string' },
+        sectors: { type: 'array', items: { type: 'string' } },
+        geography: { type: 'string' },
+        tractionSummary: { type: 'string' },
+        raiseSummary: { type: 'string' }
+      },
+      required: ['founderName', 'founderEmail', 'companyName']
+    }
+  },
+  {
+    name: 'create_marketplace_investor',
+    description: 'Create an investor profile inside a founder-investor marketplace business.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        email: { type: 'string' },
+        firm: { type: 'string' },
+        title: { type: 'string' },
+        stageFocus: { type: 'array', items: { type: 'string' } },
+        sectorFocus: { type: 'array', items: { type: 'string' } },
+        geographyFocus: { type: 'array', items: { type: 'string' } },
+        thesis: { type: 'string' }
+      },
+      required: ['name', 'email']
+    }
+  },
+  {
+    name: 'create_marketplace_match',
+    description: 'Create and score a founder-investor match inside a founder-investor marketplace business.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        founderProfileId: { type: 'string' },
+        investorProfileId: { type: 'string' },
+        rationale: { type: 'string' },
+        introDraft: { type: 'string' }
+      },
+      required: ['founderProfileId', 'investorProfileId']
+    }
+  },
+  {
+    name: 'update_marketplace_match',
+    description: 'Progress a marketplace match through intro and acceptance states.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        matchId: { type: 'string' },
+        status: { type: 'string', enum: ['candidate', 'queued_intro', 'sent', 'accepted', 'declined', 'archived'] },
+        rationale: { type: 'string' },
+        introDraft: { type: 'string' },
+        notes: { type: 'string' }
+      },
+      required: ['matchId', 'status']
+    }
+  },
+  {
+    name: 'log_marketplace_conversation',
+    description: 'Record a founder-investor conversation update inside a marketplace business.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        matchId: { type: 'string' },
+        status: { type: 'string', enum: ['open', 'waiting', 'replied', 'closed'] },
+        channel: { type: 'string', enum: ['email', 'call', 'meeting', 'slack'] },
+        threadSubject: { type: 'string' },
+        note: { type: 'string' }
+      },
+      required: ['matchId', 'status', 'channel']
+    }
   }
 ];
 
 function buildSystemPrompt(business, memory, workflowState = null, workspace = null) {
+  const blueprint = business.blueprint_key || 'generic';
   return `You are the autonomous AI operator for "${business.name}", a ${business.type} business on day ${business.day_count}.
 
 CONTEXT:
@@ -87,6 +182,7 @@ CONTEXT:
 - Website: ${business.web_url}
 - Email: ${business.email_address}
 - Involvement: ${business.involvement}
+- Blueprint: ${blueprint}
 
 MEMORY: ${JSON.stringify(memory, null, 2)}
 WORKFLOW STATE: ${JSON.stringify(workflowState || {}, null, 2)}
@@ -104,6 +200,7 @@ PRINCIPLES:
 9. Connect every action to the 90-day goal.
 10. You must work inside Ventura. Never tell the founder to hire a developer, use Carrd, use Framer, or do the work manually when Ventura has a tool that can perform or queue the work.
 11. If something cannot be completed because a provider credential or external dependency is missing, say exactly what is missing and still produce the best Ventura-native artifact possible.
+12. If this business uses the founder_investor_marketplace blueprint, use the marketplace tools to create profiles, create matches, move intro status, and log conversations instead of leaving generic strategy-only notes.
 
 INVOLVEMENT: ${business.involvement === 'autopilot' ? 'Execute everything autonomously.' : business.involvement === 'review' ? 'Flag email sends and deployments for review.' : 'Flag major decisions for founder approval.'}
 
@@ -526,6 +623,182 @@ async function executeTool(name, input, task, business, memory, pendingFiles, cy
       });
       return { success: true };
 
+    case 'create_marketplace_founder': {
+      if (business.blueprint_key !== 'founder_investor_marketplace') {
+        return { error: 'Marketplace founder creation is only available for marketplace businesses.' };
+      }
+      const founder = createFounderProfile(db, business.id, input);
+      await logActivity(business.id, {
+        type: 'lead',
+        department: 'operations',
+        title: `Marketplace founder added: ${founder.company_name}`,
+        detail: { founder_profile_id: founder.id, source: 'agent_tool' }
+      });
+      createArtifact({
+        businessId: business.id,
+        taskId: task.id,
+        cycleId,
+        department: 'operations',
+        kind: 'marketplace_founder_brief',
+        title: `Founder brief — ${founder.company_name}`,
+        summary: `${founder.company_name} entered the marketplace pipeline.`,
+        content: renderFounderBrief(founder, business.name),
+        metadata: {
+          founder_profile_id: founder.id,
+          source: 'agent_tool'
+        }
+      });
+      return { success: true, founderId: founder.id, companyName: founder.company_name };
+    }
+
+    case 'create_marketplace_investor': {
+      if (business.blueprint_key !== 'founder_investor_marketplace') {
+        return { error: 'Marketplace investor creation is only available for marketplace businesses.' };
+      }
+      const investor = createInvestorProfile(db, business.id, input);
+      await logActivity(business.id, {
+        type: 'lead',
+        department: 'operations',
+        title: `Marketplace investor added: ${investor.name}`,
+        detail: { investor_profile_id: investor.id, source: 'agent_tool' }
+      });
+      createArtifact({
+        businessId: business.id,
+        taskId: task.id,
+        cycleId,
+        department: 'operations',
+        kind: 'marketplace_investor_brief',
+        title: `Investor brief — ${investor.name}`,
+        summary: `${investor.name}${investor.firm ? ` from ${investor.firm}` : ''} is now in the investor roster.`,
+        content: renderInvestorBrief(investor, business.name),
+        metadata: {
+          investor_profile_id: investor.id,
+          source: 'agent_tool'
+        }
+      });
+      return { success: true, investorId: investor.id, investorName: investor.name };
+    }
+
+    case 'create_marketplace_match': {
+      if (business.blueprint_key !== 'founder_investor_marketplace') {
+        return { error: 'Marketplace match creation is only available for marketplace businesses.' };
+      }
+      const match = createMarketplaceMatch(db, business.id, input);
+      const detail = getMarketplaceMatchDetail(db, business.id, match.id);
+      await logActivity(business.id, {
+        type: 'system',
+        department: 'operations',
+        title: `Marketplace match created`,
+        detail: { match_id: match.id, score: match.score, source: 'agent_tool' }
+      });
+      if (detail) {
+        createArtifact({
+          businessId: business.id,
+          taskId: task.id,
+          cycleId,
+          department: 'operations',
+          kind: 'marketplace_match_memo',
+          title: `Match memo — ${detail.company_name} × ${detail.investor_name}`,
+          summary: `${detail.company_name} was paired with ${detail.investor_name} at a ${Math.round(Number(detail.score || 0) * 100)}% fit score.`,
+          content: renderMatchMemo(detail, business.name),
+          metadata: {
+            match_id: match.id,
+            source: 'agent_tool'
+          }
+        });
+        createArtifact({
+          businessId: business.id,
+          taskId: task.id,
+          cycleId,
+          department: 'operations',
+          kind: 'marketplace_intro_draft',
+          title: `Intro draft — ${detail.company_name} × ${detail.investor_name}`,
+          summary: `Ventura prepared a first intro draft for ${detail.company_name} and ${detail.investor_name}.`,
+          content: renderIntroDraft(detail, business.name),
+          metadata: {
+            match_id: match.id,
+            source: 'agent_tool'
+          }
+        });
+      }
+      return { success: true, matchId: match.id, score: match.score };
+    }
+
+    case 'update_marketplace_match': {
+      if (business.blueprint_key !== 'founder_investor_marketplace') {
+        return { error: 'Marketplace match updates are only available for marketplace businesses.' };
+      }
+      const match = updateMarketplaceMatch(db, business.id, input.matchId, input);
+      const detail = getMarketplaceMatchDetail(db, business.id, input.matchId);
+      await logActivity(business.id, {
+        type: 'system',
+        department: 'operations',
+        title: `Marketplace match ${match.status}`,
+        detail: { match_id: match.id, source: 'agent_tool' }
+      });
+      if (detail) {
+        createArtifact({
+          businessId: business.id,
+          taskId: task.id,
+          cycleId,
+          department: 'operations',
+          kind: 'marketplace_match_update',
+          title: `Match update — ${detail.company_name} × ${detail.investor_name}`,
+          summary: `Match moved to ${match.status}.`,
+          content: [
+            `# Match update`,
+            ``,
+            `Match: ${detail.company_name} × ${detail.investor_name}`,
+            `Status: ${match.status}`,
+            input.notes ? `Notes: ${input.notes}` : 'Notes: No operator note attached.',
+            ``,
+            `## Intro draft`,
+            renderIntroDraft(detail, business.name)
+          ].join('\n'),
+          metadata: {
+            match_id: match.id,
+            status: match.status,
+            source: 'agent_tool'
+          }
+        });
+      }
+      return { success: true, matchId: match.id, status: match.status };
+    }
+
+    case 'log_marketplace_conversation': {
+      if (business.blueprint_key !== 'founder_investor_marketplace') {
+        return { error: 'Marketplace conversation logging is only available for marketplace businesses.' };
+      }
+      const conversation = upsertMarketplaceConversation(db, business.id, input.matchId, input);
+      const detail = getMarketplaceMatchDetail(db, business.id, input.matchId);
+      await logActivity(business.id, {
+        type: 'system',
+        department: 'operations',
+        title: `Marketplace conversation ${conversation.status}`,
+        detail: { match_id: input.matchId, conversation_id: conversation.id, source: 'agent_tool' }
+      });
+      if (detail) {
+        createArtifact({
+          businessId: business.id,
+          taskId: task.id,
+          cycleId,
+          department: 'operations',
+          kind: 'marketplace_conversation_log',
+          title: `Conversation log — ${detail.company_name} × ${detail.investor_name}`,
+          summary: `Conversation moved to ${conversation.status} over ${conversation.channel}.`,
+          content: renderConversationLog(detail, conversation, input.note),
+          metadata: {
+            match_id: input.matchId,
+            conversation_id: conversation.id,
+            status: conversation.status,
+            channel: conversation.channel,
+            source: 'agent_tool'
+          }
+        });
+      }
+      return { success: true, conversationId: conversation.id, status: conversation.status };
+    }
+
     default:
       return { error: `Unknown tool: ${name}` };
   }
@@ -543,6 +816,11 @@ function summarizeToolResult(name, result = {}) {
   if (name === 'create_content') return `${result.type || 'Content'} created`;
   if (name === 'update_memory') return 'Agent memory updated';
   if (name === 'update_metrics') return 'Business metrics updated';
+  if (name === 'create_marketplace_founder') return 'Marketplace founder profile created';
+  if (name === 'create_marketplace_investor') return 'Marketplace investor profile created';
+  if (name === 'create_marketplace_match') return 'Marketplace match created';
+  if (name === 'update_marketplace_match') return 'Marketplace match updated';
+  if (name === 'log_marketplace_conversation') return 'Marketplace conversation logged';
   if (name === 'task_complete') return 'Task handed off as complete';
   return `${name} finished`;
 }

@@ -1703,6 +1703,159 @@ describe('Agent runtime', () => {
     assert.ok(events.some(item => item.phase === 'tool_succeeded' && item.title.includes('create_content')));
     assert.ok(events.some(item => item.phase === 'tool_succeeded' && item.title.includes('task_complete')));
   });
+
+  it('lets Ventura operate the marketplace with blueprint-native tools', async () => {
+    const { getDb } = await import('../src/db/migrate.js');
+    const { queueTask, getAllTasks } = await import('../src/agents/tasks.js');
+    const { listArtifacts } = await import('../src/agents/artifacts.js');
+    const { runTask, __setAgentClientForTests, __resetAgentClientForTests } = await import('../src/agents/brain.js');
+    const { getMarketplaceOverview } = await import('../src/business/marketplace.js');
+
+    const db = getDb();
+    const business = db.prepare('SELECT * FROM businesses WHERE id = ?').get(marketplaceBizId);
+    const taskId = await queueTask({
+      businessId: marketplaceBizId,
+      business,
+      title: 'Seed the marketplace with first match',
+      description: 'Create one founder, one investor, match them, and log the first intro thread.',
+      department: 'operations',
+      triggeredBy: 'agent'
+    });
+    const task = getAllTasks(marketplaceBizId, 200).find(item => item.id === taskId);
+    assert.ok(task);
+
+    const calls = [];
+    __setAgentClientForTests({
+      messages: {
+        create: async (payload) => {
+          calls.push(JSON.parse(JSON.stringify(payload)));
+          if (calls.length === 1) {
+            return {
+              stop_reason: 'tool_use',
+              content: [
+                {
+                  type: 'tool_use',
+                  id: 'toolu_founder',
+                  name: 'create_marketplace_founder',
+                  input: {
+                    founderName: 'Nina Shah',
+                    founderEmail: 'nina@orbit.test',
+                    companyName: 'Orbit Stack',
+                    stage: 'Seed',
+                    sectors: ['B2B SaaS', 'Developer tools'],
+                    geography: 'Singapore',
+                    tractionSummary: '14 design partners and 4 paid teams.',
+                    raiseSummary: 'Opening a $1M seed round.'
+                  }
+                },
+                {
+                  type: 'tool_use',
+                  id: 'toolu_investor',
+                  name: 'create_marketplace_investor',
+                  input: {
+                    name: 'Riley Tan',
+                    email: 'riley@altitude.test',
+                    firm: 'Altitude Capital',
+                    stageFocus: ['Seed'],
+                    sectorFocus: ['B2B SaaS', 'Developer tools'],
+                    geographyFocus: ['Singapore', 'APAC'],
+                    thesis: 'Backs developer and workflow software in APAC.'
+                  }
+                }
+              ]
+            };
+          }
+
+          if (calls.length === 2) {
+            const toolResultMessage = payload.messages[payload.messages.length - 1];
+            const parsedResults = toolResultMessage.content.map(item => JSON.parse(item.content[0].text));
+            const founderId = parsedResults.find(item => item.founderId)?.founderId;
+            const investorId = parsedResults.find(item => item.investorId)?.investorId;
+            return {
+              stop_reason: 'tool_use',
+              content: [
+                {
+                  type: 'tool_use',
+                  id: 'toolu_match',
+                  name: 'create_marketplace_match',
+                  input: {
+                    founderProfileId: founderId,
+                    investorProfileId: investorId
+                  }
+                }
+              ]
+            };
+          }
+
+          if (calls.length === 3) {
+            const toolResultMessage = payload.messages[payload.messages.length - 1];
+            const matchResult = JSON.parse(toolResultMessage.content[0].content[0].text);
+            return {
+              stop_reason: 'tool_use',
+              content: [
+                {
+                  type: 'tool_use',
+                  id: 'toolu_match_update',
+                  name: 'update_marketplace_match',
+                  input: {
+                    matchId: matchResult.matchId,
+                    status: 'queued_intro',
+                    notes: 'Ventura is ready to send the intro.'
+                  }
+                },
+                {
+                  type: 'tool_use',
+                  id: 'toolu_conversation',
+                  name: 'log_marketplace_conversation',
+                  input: {
+                    matchId: matchResult.matchId,
+                    status: 'open',
+                    channel: 'email',
+                    threadSubject: 'Intro: Orbit Stack × Altitude Capital',
+                    note: 'Initial intro drafted and queued.'
+                  }
+                },
+                {
+                  type: 'tool_use',
+                  id: 'toolu_complete',
+                  name: 'task_complete',
+                  input: {
+                    summary: 'Ventura added the first founder and investor, created a scored match, and logged the opening intro thread.',
+                    next_steps: ['Send the intro email', 'Track investor reply']
+                  }
+                }
+              ]
+            };
+          }
+
+          throw new Error(`Unexpected Anthropic mock call ${calls.length}`);
+        }
+      }
+    });
+
+    try {
+      const result = await runTask(task, business, null);
+      assert.match(result.summary, /created a scored match/i);
+    } finally {
+      __resetAgentClientForTests();
+    }
+
+    const overview = getMarketplaceOverview(db, marketplaceBizId);
+    assert.ok(overview.counts.founders >= 1);
+    assert.ok(overview.counts.investors >= 1);
+    assert.ok(overview.counts.matches >= 1);
+    assert.ok(overview.counts.open_conversations >= 1);
+
+    const artifacts = listArtifacts(marketplaceBizId, { taskId, limit: 20 });
+    const kinds = artifacts.map(item => item.kind);
+    assert.ok(kinds.includes('marketplace_founder_brief'));
+    assert.ok(kinds.includes('marketplace_investor_brief'));
+    assert.ok(kinds.includes('marketplace_match_memo'));
+    assert.ok(kinds.includes('marketplace_intro_draft'));
+    assert.ok(kinds.includes('marketplace_match_update'));
+    assert.ok(kinds.includes('marketplace_conversation_log'));
+    assert.ok(kinds.includes('task_summary'));
+  });
 });
 
 describe('Published sites', () => {
