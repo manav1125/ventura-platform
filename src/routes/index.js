@@ -93,6 +93,12 @@ import {
   renderInvestorBrief,
   renderMatchMemo
 } from '../business/marketplace.js';
+import { enqueueMarketplaceLifecycleWork } from '../business/marketplace-lifecycle.js';
+import {
+  createIntelligenceDocument,
+  getBusinessIntelligenceOverview,
+  updateIntelligenceDocument
+} from '../business/intelligence.js';
 import { getBusinessTrainingPack } from '../business/training.js';
 import { dispatchSpecialistTask } from '../business/specialists.js';
 import {
@@ -1463,6 +1469,96 @@ router.get('/businesses/:id/training', requireAuth, asyncHandler(async (req, res
   res.json({ training: getBusinessTrainingPack(business) });
 }));
 
+// GET /api/businesses/:id/intelligence — blueprint canon + refinement vault
+router.get('/businesses/:id/intelligence', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Business not found' });
+
+  res.json({ intelligence: getBusinessIntelligenceOverview(db, business) });
+}));
+
+// POST /api/businesses/:id/intelligence/documents — persist a refinement note or operating rule
+router.post('/businesses/:id/intelligence/documents', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Business not found' });
+
+  const schema = z.object({
+    kind: z.enum(['blueprint_refinement', 'playbook_note', 'operating_rule', 'refinement_note', 'prompt_note']),
+    title: z.string().min(4).max(180),
+    content: z.string().min(8).max(12000),
+    workflowKey: z.enum(['planning', 'engineering', 'marketing', 'operations']).optional(),
+    status: z.enum(['active', 'archived']).optional(),
+    metadata: z.record(z.any()).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const document = createIntelligenceDocument(db, {
+    businessId: business.id,
+    authorUserId: req.user.sub,
+    scope: 'business',
+    blueprintKey: business.blueprint_key || getBusinessBlueprint(business).key,
+    workflowKey: body.workflowKey,
+    kind: body.kind,
+    title: body.title,
+    content: body.content,
+    status: body.status || 'active',
+    metadata: body.metadata || {}
+  });
+
+  await logActivity(business.id, {
+    type: 'insight',
+    department: body.workflowKey || 'strategy',
+    title: `Intelligence note added: ${document.title}`,
+    detail: {
+      document_id: document.id,
+      kind: document.kind
+    }
+  });
+
+  res.status(201).json({
+    document,
+    intelligence: getBusinessIntelligenceOverview(db, business)
+  });
+}));
+
+// PATCH /api/businesses/:id/intelligence/documents/:docId — refine an intelligence note
+router.patch('/businesses/:id/intelligence/documents/:docId', requireAuth, asyncHandler(async (req, res) => {
+  const db = getDb();
+  const business = getOwnedBusiness(db, req.params.id, req.user.sub);
+  if (!business) return res.status(404).json({ error: 'Business not found' });
+
+  const schema = z.object({
+    kind: z.enum(['blueprint_refinement', 'playbook_note', 'operating_rule', 'refinement_note', 'prompt_note']).optional(),
+    title: z.string().min(4).max(180).optional(),
+    content: z.string().min(8).max(12000).optional(),
+    workflowKey: z.enum(['planning', 'engineering', 'marketing', 'operations']).optional(),
+    status: z.enum(['active', 'archived']).optional(),
+    metadata: z.record(z.any()).optional()
+  });
+  const body = validate(schema, req.body || {});
+  const document = updateIntelligenceDocument(db, req.params.docId, body);
+  if (!document || document.business_id !== business.id) {
+    return res.status(404).json({ error: 'Intelligence document not found' });
+  }
+
+  await logActivity(business.id, {
+    type: 'insight',
+    department: body.workflowKey || document.workflow_key || 'strategy',
+    title: `Intelligence note updated: ${document.title}`,
+    detail: {
+      document_id: document.id,
+      kind: document.kind,
+      status: document.status
+    }
+  });
+
+  res.json({
+    document,
+    intelligence: getBusinessIntelligenceOverview(db, business)
+  });
+}));
+
 // PATCH /api/businesses/:id — update business settings
 router.patch('/businesses/:id', requireAuth, asyncHandler(async (req, res) => {
   const db = getDb();
@@ -2658,6 +2754,12 @@ router.post('/businesses/:id/marketplace/founders', requireAuth, asyncHandler(as
     }
   });
 
+  await enqueueMarketplaceLifecycleWork({
+    businessId: business.id,
+    source: 'founder',
+    founderId: founder.id
+  });
+
   res.status(201).json({
     founder,
     marketplace: getMarketplaceOverview(db, business.id)
@@ -2711,6 +2813,12 @@ router.post('/businesses/:id/marketplace/investors', requireAuth, asyncHandler(a
       investor_profile_id: investor.id,
       firm: investor.firm || null
     }
+  });
+
+  await enqueueMarketplaceLifecycleWork({
+    businessId: business.id,
+    source: 'investor',
+    investorId: investor.id
   });
 
   res.status(201).json({
@@ -2783,6 +2891,12 @@ router.post('/businesses/:id/marketplace/matches', requireAuth, asyncHandler(asy
     }
   });
 
+  await enqueueMarketplaceLifecycleWork({
+    businessId: business.id,
+    source: 'match',
+    matchId: match.id
+  });
+
   res.status(201).json({
     match,
     marketplace: getMarketplaceOverview(db, business.id)
@@ -2829,6 +2943,12 @@ router.patch('/businesses/:id/marketplace/founders/:founderId', requireAuth, asy
     }
   });
 
+  await enqueueMarketplaceLifecycleWork({
+    businessId: business.id,
+    source: 'founder',
+    founderId: founder.id
+  });
+
   res.json({
     founder,
     review,
@@ -2870,6 +2990,12 @@ router.patch('/businesses/:id/marketplace/investors/:investorId', requireAuth, a
       review_id: review.id,
       notes: body.notes || null
     }
+  });
+
+  await enqueueMarketplaceLifecycleWork({
+    businessId: business.id,
+    source: 'investor',
+    investorId: investor.id
   });
 
   res.json({
@@ -2944,6 +3070,12 @@ router.patch('/businesses/:id/marketplace/matches/:matchId', requireAuth, asyncH
     }
   });
 
+  await enqueueMarketplaceLifecycleWork({
+    businessId: business.id,
+    source: 'match',
+    matchId: match.id
+  });
+
   res.json({
     match,
     marketplace: getMarketplaceOverview(db, business.id)
@@ -2997,6 +3129,13 @@ router.post('/businesses/:id/marketplace/matches/:matchId/conversations', requir
       conversation_id: conversation.id,
       note: body.note || null
     }
+  });
+
+  await enqueueMarketplaceLifecycleWork({
+    businessId: business.id,
+    source: 'conversation',
+    matchId: req.params.matchId,
+    conversation
   });
 
   res.status(201).json({

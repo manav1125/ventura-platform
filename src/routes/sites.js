@@ -9,6 +9,7 @@ import {
   renderFounderBrief,
   renderInvestorBrief
 } from '../business/marketplace.js';
+import { enqueueMarketplaceLifecycleWork } from '../business/marketplace-lifecycle.js';
 import { logActivity } from '../agents/activity.js';
 
 const router = express.Router();
@@ -59,6 +60,12 @@ router.post('/:slug/apply/founder', async (req, res) => {
       founder_profile_id: founder.id,
       source: 'public_site'
     }
+  });
+
+  await enqueueMarketplaceLifecycleWork({
+    businessId: business.id,
+    source: 'founder',
+    founderId: founder.id
   });
 
   res.status(201).json({
@@ -117,6 +124,12 @@ router.post('/:slug/join/investor', async (req, res) => {
       investor_profile_id: investor.id,
       source: 'public_site'
     }
+  });
+
+  await enqueueMarketplaceLifecycleWork({
+    businessId: business.id,
+    source: 'investor',
+    investorId: investor.id
   });
 
   res.status(201).json({

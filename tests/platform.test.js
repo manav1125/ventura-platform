@@ -95,6 +95,14 @@ before(async () => {
 });
 
 after(async () => {
+  const { getDb } = await import('../src/db/migrate.js');
+  const db = getDb();
+  const deadline = Date.now() + 2500;
+  while (Date.now() < deadline) {
+    const running = Number(db.prepare(`SELECT COUNT(*) AS n FROM agent_cycles WHERE status = 'running'`).get()?.n || 0);
+    if (!running) break;
+    await new Promise(resolve => setTimeout(resolve, 75));
+  }
   const mod = await import('../src/server.js');
   await mod.shutdown();
 });
@@ -381,6 +389,10 @@ describe('Blueprints and marketplace runtime', () => {
     assert.equal(trainingRes.body.training.blueprint.key, 'generic_saas');
     assert.ok(Array.isArray(trainingRes.body.training.universal_skills));
     assert.ok(trainingRes.body.training.playbooks.engineering);
+
+    const intelligenceRes = await GET(`/api/businesses/${bizId}/intelligence`, tokens.access);
+    assert.equal(intelligenceRes.status, 200);
+    assert.equal(intelligenceRes.body.intelligence.blueprint.key, 'generic_saas');
   });
 
   it('provisions a founder-investor marketplace with the correct blueprint', async () => {
@@ -614,6 +626,26 @@ describe('Blueprints and marketplace runtime', () => {
     assert.equal(overview.status, 200);
     assert.ok(overview.body.marketplace.founders.some(item => item.company_name === 'Relay Stack'));
     assert.ok(overview.body.marketplace.investors.some(item => item.name === 'Jamie Park'));
+
+    const tasks = await GET(`/api/businesses/${marketplaceBizId}/tasks`, otherTokens.access);
+    assert.equal(tasks.status, 200);
+    assert.ok(tasks.body.tasks.some(item => /Review founder application for Relay Stack/i.test(item.title)));
+    assert.ok(tasks.body.tasks.some(item => /Review investor profile for Jamie Park/i.test(item.title)));
+  });
+
+  it('persists intelligence vault notes for the business owner', async () => {
+    const create = await POST(`/api/businesses/${marketplaceBizId}/intelligence/documents`, {
+      kind: 'operating_rule',
+      workflowKey: 'operations',
+      title: 'Do not queue intros without persisted rationale',
+      content: 'Every candidate match must include a persisted fit memo and intro draft before Ventura moves it into queued_intro.'
+    }, otherTokens.access);
+    assert.equal(create.status, 201);
+    assert.equal(create.body.document.kind, 'operating_rule');
+
+    const list = await GET(`/api/businesses/${marketplaceBizId}/intelligence`, otherTokens.access);
+    assert.equal(list.status, 200);
+    assert.ok(list.body.intelligence.documents.some(item => item.title === 'Do not queue intros without persisted rationale'));
   });
 });
 

@@ -1970,6 +1970,9 @@
       <a class="nav-item" id="nav-marketplace-item" onclick="showPage('marketplace',this)" style="display:none;">
         <span class="nav-item-icon">◌</span> Platform
       </a>
+      <a class="nav-item" onclick="showPage('intelligence',this)">
+        <span class="nav-item-icon">✦</span> Intelligence
+      </a>
       <a class="nav-item" onclick="showPage('assets',this)">
         <span class="nav-item-icon">▣</span> Asset Hub
       </a>
@@ -2415,6 +2418,51 @@
         </div>
       </div>
 
+      <!-- INTELLIGENCE PAGE -->
+      <div class="dash-page" id="page-intelligence">
+        <div class="dash-header">
+          <div><div class="dash-title">Intelligence Vault</div><div class="dash-subtitle">Blueprint canon, operator playbooks, and refinement notes Ventura should keep learning from</div></div>
+        </div>
+        <div class="metric-row" style="grid-template-columns:repeat(4,1fr)">
+          <div class="metric-card"><div class="metric-card-label">Blueprint docs</div><div class="metric-card-value" id="intel-blueprint-docs-count">0</div><div class="metric-card-delta" id="intel-blueprint-docs-delta">No refinement docs yet</div></div>
+          <div class="metric-card"><div class="metric-card-label">Playbook notes</div><div class="metric-card-value" id="intel-playbook-docs-count">0</div><div class="metric-card-delta" id="intel-playbook-docs-delta">No playbook notes yet</div></div>
+          <div class="metric-card"><div class="metric-card-label">Operating rules</div><div class="metric-card-value" id="intel-rule-docs-count">0</div><div class="metric-card-delta" id="intel-rule-docs-delta">No hard rules yet</div></div>
+          <div class="metric-card"><div class="metric-card-label">Active docs</div><div class="metric-card-value" id="intel-active-docs-count">0</div><div class="metric-card-delta" id="intel-active-docs-delta">Vault is empty</div></div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Blueprint canon</span></div>
+            <div class="panel-body" id="intelligence-canon-panel">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Current blueprint entities, workflows, and metrics will load here.</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Playbooks Ventura runs</span></div>
+            <div class="panel-body" id="intelligence-playbooks-panel">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">Department playbooks and preferred tools will appear here.</div>
+            </div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Refinement vault</span></div>
+            <div class="panel-body" id="intelligence-documents-list" style="padding:0 20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;line-height:1.6;">Add the first blueprint or playbook refinement note to start building Ventura’s long-term operating memory.</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Add intelligence note</span></div>
+            <div class="panel-body">
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Kind</label><select id="intelligence-note-kind" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option value="blueprint_refinement">Blueprint refinement</option><option value="playbook_note">Playbook note</option><option value="operating_rule">Operating rule</option><option value="refinement_note">General refinement</option><option value="prompt_note">Prompt note</option></select></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Workflow</label><select id="intelligence-note-workflow" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"><option value="">General</option><option value="planning">Planning</option><option value="engineering">Engineering</option><option value="marketing">Marketing</option><option value="operations">Operations</option></select></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Title</label><input id="intelligence-note-title" placeholder="Refine investor match scoring around stage fit" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Content</label><textarea id="intelligence-note-content" placeholder="What Ventura should do differently, what rule to add, what good looks like..." style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;min-height:140px;"></textarea></div>
+              <button class="btn-run" onclick="saveIntelligenceDocument()">Save intelligence note</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ASSET HUB PAGE -->
       <div class="dash-page" id="page-assets">
         <div class="dash-header">
@@ -2742,6 +2790,7 @@ let state = {
   activeBiz:    null,
   control:      null,
   operating:    null,
+  intelligence: null,
   assetLibrary: null,
   portfolio:    null,
   billing:      null,
@@ -3394,7 +3443,7 @@ function setActiveBusiness(biz) {
 async function loadDashboard() {
   if (!state.activeBiz) return;
   try {
-    const [mData, tData, aData, cData, oData, pData, bData, libraryData] = await Promise.all([
+    const [mData, tData, aData, cData, oData, pData, bData, libraryData, intelligenceData] = await Promise.all([
       GET(`/businesses/${state.activeBiz.id}/metrics`),
       GET(`/businesses/${state.activeBiz.id}/tasks`),
       GET(`/businesses/${state.activeBiz.id}/activity?limit=40`),
@@ -3402,11 +3451,13 @@ async function loadDashboard() {
       GET(`/businesses/${state.activeBiz.id}/operating-system`),
       GET('/portfolio/overview'),
       GET('/billing/plans'),
-      GET(`/businesses/${state.activeBiz.id}/artifacts?limit=120`)
+      GET(`/businesses/${state.activeBiz.id}/artifacts?limit=120`),
+      GET(`/businesses/${state.activeBiz.id}/intelligence`)
     ]);
     state.control = cData;
     state.operating = oData;
     state.assetLibrary = libraryData;
+    state.intelligence = intelligenceData;
     state.portfolio = pData;
     state.billing = bData;
     renderAccountStatusBanner();
@@ -3421,6 +3472,7 @@ async function loadDashboard() {
     renderControlCenter(cData);
     renderOperatingSystem(oData);
     renderMarketplaceWorkspace(oData, libraryData);
+    renderIntelligenceVault(intelligenceData.intelligence, oData, libraryData);
     renderAssetHub(cData, oData, libraryData, tData.tasks);
     renderTaskEvents(cData.taskEvents || oData.taskEvents || []);
     renderArtifacts(cData.artifacts || oData.artifacts || []);
@@ -4016,6 +4068,79 @@ function renderMarketplaceWorkspace(operatingData, libraryData) {
       </div>
     </div>
   `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No intro conversations have been logged yet.</div>`;
+}
+
+function renderIntelligenceVault(intelligenceData, operatingData, libraryData) {
+  const canonEl = document.getElementById('intelligence-canon-panel');
+  const playbooksEl = document.getElementById('intelligence-playbooks-panel');
+  const docsEl = document.getElementById('intelligence-documents-list');
+  if (!canonEl || !playbooksEl || !docsEl) return;
+
+  const intelligence = intelligenceData || {};
+  const blueprint = intelligence.blueprint || operatingData?.blueprint || operatingData?.business?.blueprint || null;
+  const training = intelligence.training || operatingData?.training || null;
+  const docs = intelligence.documents || [];
+  const summary = intelligence.summary || {};
+  const artifactDocs = (libraryData?.artifacts || []).filter(item => ['blueprint', 'training_manual', 'playbook'].includes(item.kind));
+
+  setEl('intel-blueprint-docs-count', String(summary.blueprint_documents || 0));
+  setEl('intel-playbook-docs-count', String(summary.playbook_documents || 0));
+  setEl('intel-rule-docs-count', String(summary.operating_rules || 0));
+  setEl('intel-active-docs-count', String(summary.active_documents || 0));
+  setEl('intel-blueprint-docs-delta', summary.blueprint_documents ? `${summary.blueprint_documents} refinement doc${summary.blueprint_documents === 1 ? '' : 's'}` : 'No refinement docs yet');
+  setEl('intel-playbook-docs-delta', summary.playbook_documents ? `${summary.playbook_documents} playbook note${summary.playbook_documents === 1 ? '' : 's'}` : 'No playbook notes yet');
+  setEl('intel-rule-docs-delta', summary.operating_rules ? `${summary.operating_rules} operating rule${summary.operating_rules === 1 ? '' : 's'}` : 'No hard rules yet');
+  setEl('intel-active-docs-delta', summary.active_documents ? `${summary.active_documents} active document${summary.active_documents === 1 ? '' : 's'}` : 'Vault is empty');
+
+  canonEl.innerHTML = blueprint ? `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:#28ca41;margin-bottom:6px;">${esc((blueprint.label || 'Blueprint').toUpperCase())}</div>
+        <div style="font-size:14px;color:#e0ddd5;line-height:1.6;">${esc(blueprint.summary || 'Blueprint summary unavailable.')}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">ENTITIES</div>
+          <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${(blueprint.entities || []).join(' · ') || 'No entities defined'}</div>
+        </div>
+        <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">WORKFLOWS</div>
+          <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${(blueprint.workflows || []).join(' · ') || 'No workflows defined'}</div>
+        </div>
+      </div>
+      <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">NORTH STAR METRICS</div>
+        <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${(blueprint.metrics || []).join(' · ') || 'No metrics defined'}</div>
+      </div>
+    </div>
+  ` : `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No blueprint loaded for this business yet.</div>`;
+
+  playbooksEl.innerHTML = training?.playbooks ? `
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      ${Object.entries(training.playbooks || {}).map(([key, value]) => `
+        <div style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
+          <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">${esc(titleCase(key))}</div>
+          <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${esc(value.purpose || 'No purpose recorded')}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.6;margin-top:8px;">Outputs: ${esc((value.outputs || []).slice(0, 4).join(', ') || 'None')}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.6;margin-top:6px;">Tools: ${esc((value.recommended_tools || []).join(', ') || 'Not specified')}</div>
+        </div>
+      `).join('')}
+      ${artifactDocs.length ? `<div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.35);">Artifacts: ${artifactDocs.length} canon document${artifactDocs.length === 1 ? '' : 's'} persisted for this business.</div>` : ''}
+    </div>
+  ` : `<div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No training pack loaded for this business yet.</div>`;
+
+  docsEl.innerHTML = docs.length ? docs.map(item => `
+    <div style="padding:14px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;">
+        <div>
+          <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(item.title)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.52);line-height:1.55;">${esc(titleCase(item.kind || 'note'))}${item.workflow_key ? ` · ${esc(titleCase(item.workflow_key))}` : ''} · ${timeAgo(item.updated_at || item.created_at)}</div>
+        </div>
+        <span class="tag">${esc((item.status || 'active').toUpperCase())}</span>
+      </div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.72);line-height:1.7;margin-top:10px;white-space:pre-wrap;">${esc(item.content)}</div>
+    </div>
+  `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No intelligence notes yet. Add the first blueprint or playbook refinement to start turning Ventura work into durable platform IP.</div>`;
 }
 
 function renderTaskRows(tasks, limit = 8) {
@@ -6097,6 +6222,37 @@ async function logMarketplaceConversation() {
     activateDashboardPage('marketplace');
   } catch (err) {
     showToast(`Conversation log failed: ${err.message}`);
+  }
+}
+
+async function saveIntelligenceDocument() {
+  if (!state.activeBiz) return;
+  const kind = document.getElementById('intelligence-note-kind')?.value || 'refinement_note';
+  const workflowKey = document.getElementById('intelligence-note-workflow')?.value || '';
+  const title = document.getElementById('intelligence-note-title')?.value?.trim() || '';
+  const content = document.getElementById('intelligence-note-content')?.value?.trim() || '';
+  if (!title || !content) {
+    showToast('Title and content are required');
+    return;
+  }
+  try {
+    await POST(`/businesses/${state.activeBiz.id}/intelligence/documents`, {
+      kind,
+      workflowKey: workflowKey || undefined,
+      title,
+      content
+    });
+    ['intelligence-note-title', 'intelligence-note-content'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const workflowEl = document.getElementById('intelligence-note-workflow');
+    if (workflowEl) workflowEl.value = '';
+    showToast('Intelligence note saved');
+    await loadDashboard();
+    activateDashboardPage('intelligence');
+  } catch (err) {
+    showToast(`Could not save note: ${err.message}`);
   }
 }
 

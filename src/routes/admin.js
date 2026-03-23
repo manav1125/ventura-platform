@@ -7,6 +7,11 @@ import { requireAuth } from '../auth/auth.js';
 import { getDb } from '../db/migrate.js';
 import { runAllBusinesses } from '../agents/runner.js';
 import { broadcast, getStats } from '../ws/websocket.js';
+import {
+  createIntelligenceDocument,
+  getPlatformIntelligenceOverview,
+  updateIntelligenceDocument
+} from '../business/intelligence.js';
 
 const router = express.Router();
 
@@ -109,6 +114,53 @@ router.get('/cycles', asyncHandler(async (req, res) => {
     LIMIT 100
   `).all();
   res.json({ cycles });
+}));
+
+// GET /api/admin/intelligence — platform blueprint/playbook refinement vault
+router.get('/intelligence', asyncHandler(async (req, res) => {
+  const db = getDb();
+  res.json({
+    intelligence: getPlatformIntelligenceOverview(db, {
+      blueprintKey: typeof req.query.blueprintKey === 'string' ? req.query.blueprintKey : null
+    })
+  });
+}));
+
+// POST /api/admin/intelligence/documents — add a platform-level blueprint/playbook note
+router.post('/intelligence/documents', asyncHandler(async (req, res) => {
+  const { scope = 'platform', blueprintKey = null, workflowKey = null, kind, title, content, status = 'active', metadata = {} } = req.body || {};
+  if (!kind || !title || !content) {
+    return res.status(400).json({ error: 'kind, title, and content are required' });
+  }
+  const db = getDb();
+  const document = createIntelligenceDocument(db, {
+    businessId: null,
+    authorUserId: req.user.sub,
+    scope,
+    blueprintKey,
+    workflowKey,
+    kind,
+    title,
+    content,
+    status,
+    metadata
+  });
+  res.status(201).json({ document, intelligence: getPlatformIntelligenceOverview(db, { blueprintKey }) });
+}));
+
+// PATCH /api/admin/intelligence/documents/:id — update a platform-level note
+router.patch('/intelligence/documents/:id', asyncHandler(async (req, res) => {
+  const db = getDb();
+  const document = updateIntelligenceDocument(db, req.params.id, {
+    workflowKey: req.body?.workflowKey,
+    kind: req.body?.kind,
+    title: req.body?.title,
+    content: req.body?.content,
+    status: req.body?.status,
+    metadata: req.body?.metadata
+  });
+  if (!document) return res.status(404).json({ error: 'Intelligence document not found' });
+  res.json({ document, intelligence: getPlatformIntelligenceOverview(db, { blueprintKey: document.blueprint_key || null }) });
 }));
 
 // POST /api/admin/run-all — manually trigger cycles for all businesses

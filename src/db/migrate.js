@@ -685,6 +685,30 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_marketplace_conversations_match ON marketplace_conversations(match_id);
 
     -- ─────────────────────────────────────────
+    -- INTELLIGENCE DOCUMENTS (blueprints, playbooks, refinements)
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS intelligence_documents (
+      id            TEXT PRIMARY KEY,
+      business_id   TEXT REFERENCES businesses(id) ON DELETE CASCADE,
+      author_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      scope         TEXT NOT NULL DEFAULT 'business', -- business | platform
+      blueprint_key TEXT,
+      workflow_key  TEXT,
+      kind          TEXT NOT NULL, -- blueprint_refinement | playbook_note | operating_rule | refinement_note | prompt_note
+      title         TEXT NOT NULL,
+      content       TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'active', -- active | archived
+      metadata      TEXT DEFAULT '{}',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_intelligence_documents_business ON intelligence_documents(business_id);
+    CREATE INDEX IF NOT EXISTS idx_intelligence_documents_scope ON intelligence_documents(scope);
+    CREATE INDEX IF NOT EXISTS idx_intelligence_documents_blueprint ON intelligence_documents(blueprint_key);
+    CREATE INDEX IF NOT EXISTS idx_intelligence_documents_workflow ON intelligence_documents(workflow_key);
+
+    -- ─────────────────────────────────────────
     -- REFRESH TOKENS
     -- ─────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS refresh_tokens (
