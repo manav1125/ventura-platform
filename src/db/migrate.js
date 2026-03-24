@@ -133,7 +133,6 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_businesses_user ON businesses(user_id);
     CREATE INDEX IF NOT EXISTS idx_businesses_slug ON businesses(slug);
     CREATE INDEX IF NOT EXISTS idx_businesses_next_run ON businesses(next_run_at);
-    CREATE INDEX IF NOT EXISTS idx_businesses_blueprint ON businesses(blueprint_key);
 
     -- ─────────────────────────────────────────
     -- AGENT CYCLES
@@ -783,6 +782,9 @@ export function runMigrations() {
   ensureColumn(db, 'businesses', 'blueprint_label', 'TEXT');
   ensureColumn(db, 'businesses', 'blueprint_version', 'TEXT');
   ensureColumn(db, 'businesses', 'blueprint_config', "TEXT DEFAULT '{}'");
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_businesses_blueprint ON businesses(blueprint_key);
+  `);
   ensureColumn(db, 'tasks', 'workflow_key', 'TEXT');
   ensureColumn(db, 'tasks', 'brief_json', 'TEXT');
   ensureColumn(db, 'tasks', 'verification_status', 'TEXT');
