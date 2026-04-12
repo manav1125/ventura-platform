@@ -8,6 +8,7 @@ import { v4 as uuid } from 'uuid';
 import { runMigrations, getDb } from './migrate.js';
 import { seedDefaultIntegrations } from '../integrations/registry.js';
 import { getPlanEconomics } from '../billing/plans.js';
+import { AGENT_MODEL } from '../config.js';
 
 async function seed() {
   console.log('🌱 Seeding database...\n');
@@ -19,8 +20,8 @@ async function seed() {
   const passwordHash = await bcrypt.hash('password123', 10);
 
   db.prepare(`
-    INSERT OR IGNORE INTO users (id, email, name, password_hash, plan, email_verified, email_verified_at)
-    VALUES (?, 'demo@ventura.ai', 'Demo Founder', ?, 'builder', 1, datetime('now'))
+    INSERT OR IGNORE INTO users (id, email, name, password_hash, plan, email_verified, email_verified_at, credits_monthly_reset_at)
+    VALUES (?, 'demo@ventura.ai', 'Demo Founder', ?, 'builder', 1, datetime('now'), datetime('now','start of month'))
   `).run(userId, passwordHash);
 
   const user = db.prepare("SELECT * FROM users WHERE email='demo@ventura.ai'").get();
@@ -185,6 +186,13 @@ async function seed() {
     );
   }
   console.log('✅ 30 days of metrics');
+
+  // ── Seed pricing reference (optional defaults) ───────────────────────────
+  db.prepare(`
+    INSERT OR IGNORE INTO price_book (id, provider, model, input_cents_per_million, output_cents_per_million, cached_input_cents_per_million)
+    VALUES (?, 'anthropic', ?, 0, 0, 0)
+  `).run(uuid(), AGENT_MODEL || 'claude-sonnet-4-6');
+  console.log('✅ Price book seeded');
 
   // ── Seed leads ─────────────────────────────────────────────────────────────
   const leads = [

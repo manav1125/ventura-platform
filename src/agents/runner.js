@@ -19,6 +19,7 @@ import { markWorkspaceAutomationTaskOutcome, runWorkspaceAutomation } from './wo
 import { emitToBusiness, emitToUser } from '../ws/websocket.js';
 import { AGENT_CRON_SCHEDULE, AGENT_MODEL } from '../config.js';
 import { getMarketplaceOverview } from '../business/marketplace.js';
+import { getCreditsStatus, recordUsageEvent } from '../billing/usage.js';
 import {
   getBlueprintFallbackTasks,
   getBusinessBlueprint,
@@ -329,8 +330,22 @@ export async function runBusinessCycle(business, triggeredBy = 'cron') {
     for (const task of tasks) {
       try {
         console.log(`  → Task: ${task.title} [${task.department}]`);
-        startTask(task.id, cycleId);
         const currentBusiness = db.prepare('SELECT * FROM businesses WHERE id = ?').get(business.id);
+        const user = db.prepare('SELECT id, plan, email FROM users WHERE id = ?').get(currentBusiness.user_id);
+        const creditStatus = getCreditsStatus(db, user.id, user.plan);
+        if (creditStatus.remaining <= 0) {
+          const reason = 'Credits exhausted. Add credits or upgrade your plan to continue.';
+          failTask(task.id, reason);
+          logActivity(business.id, {
+            type: 'alert',
+            department: task.department,
+            title: 'Agent paused — credits exhausted',
+            detail: { reason }
+          });
+          emitToUser(user.id, { event: 'credits:exhausted', credits: creditStatus });
+          break;
+        }
+        startTask(task.id, cycleId);
 
         const result = await runTask(task, currentBusiness, cycleId);
         completeTask(task.id, result);
@@ -605,6 +620,12 @@ async function generateCycleTasks(business) {
   if (!ANTHROPIC_API_KEY) return fallbackTasks;
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
+  const userPlan = db.prepare('SELECT plan FROM users WHERE id=?').get(business.user_id)?.plan || 'trial';
+  const creditStatus = getCreditsStatus(db, business.user_id, userPlan);
+  if (creditStatus.remaining <= 0) {
+    return fallbackTasks;
+  }
+
   const prompt = `You are deciding what tasks to execute for ${business.name} today.
 
 Business goal: ${business.goal_90d}
@@ -639,6 +660,20 @@ IMPORTANT: Return ONLY a JSON array, no other text.`;
       max_tokens: 1024,
       messages: [{ role: 'user', content: prompt }]
     });
+    try {
+      recordUsageEvent({
+        businessId: business.id,
+        userId: business.user_id,
+        taskId: null,
+        provider: 'anthropic',
+        model: AGENT_MODEL,
+        usage: response.usage || {},
+        kind: 'cycle_planning',
+        note: 'cycle_plan'
+      });
+    } catch (err) {
+      console.error('Usage tracking failed:', err.message);
+    }
 
     const text = response.content[0].text.trim();
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -689,6 +724,9 @@ async function generateCycleSummary(business, tasksRun, errors, cycleId, trigger
     const Anthropic = (await import('@anthropic-ai/sdk')).default;
     const { ANTHROPIC_API_KEY, AGENT_MODEL } = await import('../config.js');
     if (!ANTHROPIC_API_KEY) return fallback;
+    const userPlan = db.prepare('SELECT plan FROM users WHERE id=?').get(business.user_id)?.plan || 'trial';
+    const creditStatus = getCreditsStatus(db, business.user_id, userPlan);
+    if (creditStatus.remaining <= 0) return fallback;
     const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
     const response = await client.messages.create({
@@ -722,6 +760,20 @@ Rules:
 - Keep it under 38 words.`
       }]
     });
+    try {
+      recordUsageEvent({
+        businessId: business.id,
+        userId: business.user_id,
+        taskId: null,
+        provider: 'anthropic',
+        model: AGENT_MODEL,
+        usage: response.usage || {},
+        kind: 'cycle_summary',
+        note: 'cycle_summary'
+      });
+    } catch (err) {
+      console.error('Usage tracking failed:', err.message);
+    }
 
     const summary = cleanString(response.content[0].text);
     if (!summary || /\?/.test(summary) || /(hire a developer|build it yourself|use carrd|use framer|manually do)/i.test(summary)) {

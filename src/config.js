@@ -29,6 +29,8 @@ export const STRIPE_WEBHOOK_SECRET    = process.env.STRIPE_WEBHOOK_SECRET || '';
 export const STRIPE_PLATFORM_FEE_PCT  = parseInt(process.env.STRIPE_PLATFORM_FEE_PERCENT || '20');
 export const STRIPE_PRICE_BUILDER_MONTHLY = process.env.STRIPE_PRICE_BUILDER_MONTHLY || '';
 export const STRIPE_PRICE_FLEET_MONTHLY   = process.env.STRIPE_PRICE_FLEET_MONTHLY || '';
+export const STRIPE_PRICE_CREDITS_1000    = process.env.STRIPE_PRICE_CREDITS_1000 || '';
+export const STRIPE_PRICE_CREDITS_5000    = process.env.STRIPE_PRICE_CREDITS_5000 || '';
 
 export const SMTP_HOST  = process.env.SMTP_HOST || '';
 export const SMTP_PORT  = parseInt(process.env.SMTP_PORT || '587');
@@ -46,6 +48,13 @@ export const ADMIN_EMAILS           = String(process.env.ADMIN_EMAILS || '')
   .split(',')
   .map(value => value.trim().toLowerCase())
   .filter(Boolean);
+
+// Credits + pricing
+export const CREDIT_VALUE_CENTS     = parseInt(process.env.CREDIT_VALUE_CENTS || '1', 10); // 1 credit = $0.01
+export const CREDIT_MARGIN_MULTIPLIER = parseFloat(process.env.CREDIT_MARGIN_MULTIPLIER || '2'); // 100% margin
+export const DEFAULT_INPUT_CENTS_PER_MILLION = parseInt(process.env.DEFAULT_INPUT_CENTS_PER_MILLION || '0', 10);
+export const DEFAULT_OUTPUT_CENTS_PER_MILLION = parseInt(process.env.DEFAULT_OUTPUT_CENTS_PER_MILLION || '0', 10);
+export const DEFAULT_CACHED_INPUT_CENTS_PER_MILLION = parseInt(process.env.DEFAULT_CACHED_INPUT_CENTS_PER_MILLION || '0', 10);
 
 // Deployment
 export const VERCEL_TOKEN            = process.env.VERCEL_TOKEN || '';

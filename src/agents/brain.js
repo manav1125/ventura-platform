@@ -15,6 +15,7 @@ import {
 import { createArtifact, listArtifacts } from './artifacts.js';
 import { logTaskEvent } from './task-events.js';
 import { getWorkspacePromptContext } from '../integrations/workspace-sync.js';
+import { recordUsageEvent } from '../billing/usage.js';
 import {
   createFounderProfile,
   createInvestorProfile,
@@ -265,6 +266,20 @@ export async function runTask(task, business, cycleId = null) {
       tools: AGENT_TOOLS,
       messages
     });
+    try {
+      recordUsageEvent({
+        businessId: business.id,
+        userId: business.user_id,
+        taskId: task.id,
+        provider: 'anthropic',
+        model: AGENT_MODEL,
+        usage: response.usage || {},
+        kind: 'agent_step',
+        note: `agent:${task.department}`
+      });
+    } catch (err) {
+      console.error('Usage tracking failed:', err.message);
+    }
 
     const assistantContent = Array.isArray(response.content) ? response.content : [];
     const toolUses = assistantContent.filter(block => block.type === 'tool_use');

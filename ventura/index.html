@@ -2494,6 +2494,25 @@
         </div>
         <div class="grid-2">
           <div class="panel">
+            <div class="panel-header"><span class="panel-title">Price book</span></div>
+            <div class="panel-body" id="admin-pricing-list" style="padding:0 20px;">
+              <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;line-height:1.6;">No pricing rows loaded yet.</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Update pricing</span></div>
+            <div class="panel-body">
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Provider</label><input id="admin-pricing-provider" placeholder="anthropic" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Model</label><input id="admin-pricing-model" placeholder="claude-sonnet-4-6" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Input cents / 1M tokens</label><input id="admin-pricing-input" type="number" placeholder="300" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Output cents / 1M tokens</label><input id="admin-pricing-output" type="number" placeholder="1500" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <div class="form-field" style="margin-bottom:12px;"><label style="color:rgba(255,255,255,0.3)">Cached input cents / 1M tokens</label><input id="admin-pricing-cached" type="number" placeholder="30" style="background:rgba(255,255,255,0.05);border-color:rgba(255,255,255,0.08);color:#e0ddd5;"/></div>
+              <button class="btn-run" onclick="savePriceBookEntry()">Save price row</button>
+            </div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
             <div class="panel-header"><span class="panel-title">Platform refinement vault</span></div>
             <div class="panel-body" id="admin-intelligence-list" style="padding:0 20px;">
               <div style="font-size:13px;color:rgba(255,255,255,0.55);padding:18px 0;line-height:1.6;">No platform notes loaded yet.</div>
@@ -3509,7 +3528,7 @@ async function loadDashboard() {
   if (!state.activeBiz) return;
   try {
     const isAdmin = state.user?.role === 'admin';
-    const [mData, tData, aData, cData, oData, pData, bData, libraryData, intelligenceData, adminStats, adminBusinesses, adminCycles, adminIntelligence] = await Promise.all([
+    const [mData, tData, aData, cData, oData, pData, bData, usageData, libraryData, intelligenceData, adminStats, adminBusinesses, adminCycles, adminIntelligence, adminPricing] = await Promise.all([
       GET(`/businesses/${state.activeBiz.id}/metrics`),
       GET(`/businesses/${state.activeBiz.id}/tasks`),
       GET(`/businesses/${state.activeBiz.id}/activity?limit=40`),
@@ -3517,12 +3536,14 @@ async function loadDashboard() {
       GET(`/businesses/${state.activeBiz.id}/operating-system`),
       GET('/portfolio/overview'),
       GET('/billing/plans'),
+      GET('/billing/usage'),
       GET(`/businesses/${state.activeBiz.id}/artifacts?limit=120`),
       GET(`/businesses/${state.activeBiz.id}/intelligence`),
       isAdmin ? GET('/admin/stats') : Promise.resolve(null),
       isAdmin ? GET('/admin/businesses') : Promise.resolve(null),
       isAdmin ? GET('/admin/cycles') : Promise.resolve(null),
-      isAdmin ? GET('/admin/intelligence') : Promise.resolve(null)
+      isAdmin ? GET('/admin/intelligence') : Promise.resolve(null),
+      isAdmin ? GET('/admin/pricing') : Promise.resolve(null)
     ]);
     state.control = cData;
     state.operating = oData;
@@ -3530,11 +3551,13 @@ async function loadDashboard() {
     state.intelligence = intelligenceData;
     state.portfolio = pData;
     state.billing = bData;
+    state.billingUsage = usageData || null;
     state.admin = isAdmin ? {
       stats: adminStats?.stats || null,
       businesses: adminBusinesses?.businesses || [],
       cycles: adminCycles?.cycles || [],
-      intelligence: adminIntelligence?.intelligence || null
+      intelligence: adminIntelligence?.intelligence || null,
+      pricing: adminPricing?.pricing || []
     } : null;
     renderAccountStatusBanner();
     renderMetrics(mData, oData);
@@ -4237,7 +4260,8 @@ function renderPlatformAdmin(adminData) {
   const docsEl = document.getElementById('admin-intelligence-list');
   const cyclesEl = document.getElementById('admin-cycles-list');
   const businessesEl = document.getElementById('admin-businesses-list');
-  if (!overviewEl || !blueprintsEl || !docsEl || !cyclesEl || !businessesEl) return;
+  const pricingEl = document.getElementById('admin-pricing-list');
+  if (!overviewEl || !blueprintsEl || !docsEl || !cyclesEl || !businessesEl || !pricingEl) return;
 
   if (!adminData) {
     setEl('admin-users-count', '—');
@@ -4253,6 +4277,7 @@ function renderPlatformAdmin(adminData) {
     docsEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No platform access.</div>`;
     cyclesEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No platform access.</div>`;
     businessesEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No platform access.</div>`;
+    pricingEl.innerHTML = `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No platform access.</div>`;
     return;
   }
 
@@ -4263,6 +4288,7 @@ function renderPlatformAdmin(adminData) {
   const docs = intelligence.documents || [];
   const businesses = adminData.businesses || [];
   const cycles = adminData.cycles || [];
+  const pricing = adminData.pricing || [];
 
   setEl('admin-users-count', String(stats.users?.total ?? 0));
   setEl('admin-businesses-count', String(stats.businesses?.total ?? 0));
@@ -4349,6 +4375,18 @@ function renderPlatformAdmin(adminData) {
       </div>
     </div>
   `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No business records available.</div>`;
+
+  pricingEl.innerHTML = pricing.length ? pricing.map(row => `
+    <div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">
+        <div>
+          <div style="font-size:13px;color:#e0ddd5;margin-bottom:4px;">${esc(row.provider)} · ${esc(row.model)}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.6;">Input ${Number(row.input_cents_per_million||0)}¢ / 1M · Output ${Number(row.output_cents_per_million||0)}¢ / 1M · Cached ${Number(row.cached_input_cents_per_million||0)}¢ / 1M</div>
+        </div>
+        <span class="tag">${esc(timeAgo(row.updated_at || row.created_at))}</span>
+      </div>
+    </div>
+  `).join('') : `<div style="padding:18px 0;font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6;">No pricing rows yet. Add the first model pricing entry to start cost-based credit tracking.</div>`;
 }
 
 function renderTaskRows(tasks, limit = 8) {
@@ -5369,6 +5407,11 @@ function renderSettings(data, operating = null, billing = null) {
     const cadence = data.cadence || operating?.cadence || {};
     const currentPlan = billing?.current || data.plan?.id || 'trial';
     const upgradeOptions = (billing?.plans || []).filter(plan => plan.id !== currentPlan);
+    const usage = state.billingUsage || data.usage || {};
+    const creditUsage = usage.credits || {};
+    const creditRemaining = Number(creditUsage.remaining || 0);
+    const creditMonthly = Number(creditUsage.monthly_included || 0);
+    const creditBonus = Number(creditUsage.bonus || 0);
     controlsEl.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(40,202,65,0.05);border:1px solid rgba(40,202,65,0.1);border-radius:3px">
@@ -5377,7 +5420,18 @@ function renderSettings(data, operating = null, billing = null) {
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
           <span style="font-size:13px;color:rgba(255,255,255,0.7)">Founder-requested tasks</span>
-          <span style="font-size:11px;font-family:'DM Mono',monospace;color:#e0ddd5;padding:3px 10px;background:rgba(255,255,255,0.08);border-radius:2px">${data.usage?.tasks?.used || 0}/${data.usage?.tasks?.limit || 0}</span>
+          <span style="font-size:11px;font-family:'DM Mono',monospace;color:#e0ddd5;padding:3px 10px;background:rgba(255,255,255,0.08);border-radius:2px">${usage.tasks?.used || 0}/${usage.tasks?.limit || 0}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
+          <span style="font-size:13px;color:rgba(255,255,255,0.7)">Credits remaining</span>
+          <span style="font-size:11px;font-family:'DM Mono',monospace;color:${creditRemaining > 0 ? '#e0ddd5' : '#ff6a55'};padding:3px 10px;background:rgba(255,255,255,0.08);border-radius:2px">${creditRemaining}</span>
+        </div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.55);line-height:1.6;margin-top:-8px;">
+          ${creditMonthly} monthly credits + ${creditBonus} top-up credits.
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          <button class="icon-btn" onclick="startCreditTopup('credits_1000')">Buy 1,000 credits</button>
+          <button class="icon-btn" onclick="startCreditTopup('credits_5000')">Buy 5,000 credits</button>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px">
           <span style="font-size:13px;color:rgba(255,255,255,0.7)">Control mode</span>
@@ -5452,6 +5506,14 @@ function renderSettings(data, operating = null, billing = null) {
             <div>
               <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">TASKS INCLUDED</div>
               <div style="font-size:18px;color:#e0ddd5;">${economics.tasks_included_per_month || data.usage?.tasks?.limit || 0}/mo</div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">CREDITS INCLUDED</div>
+              <div style="font-size:18px;color:#e0ddd5;">${economics.credits_per_month || creditMonthly || 0}/mo</div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:6px;">CREDITS REMAINING</div>
+              <div style="font-size:18px;color:${creditRemaining > 0 ? '#e0ddd5' : '#ff6a55'};">${creditRemaining}</div>
             </div>
           </div>
         </div>
@@ -6502,6 +6564,38 @@ async function savePlatformIntelligenceDocument() {
   }
 }
 
+async function savePriceBookEntry() {
+  if (state.user?.role !== 'admin') {
+    showToast('Admin access required');
+    return;
+  }
+  const provider = document.getElementById('admin-pricing-provider')?.value?.trim() || '';
+  const model = document.getElementById('admin-pricing-model')?.value?.trim() || '';
+  const inputCents = Number(document.getElementById('admin-pricing-input')?.value || 0);
+  const outputCents = Number(document.getElementById('admin-pricing-output')?.value || 0);
+  const cachedCents = Number(document.getElementById('admin-pricing-cached')?.value || 0);
+  if (!provider || !model) {
+    showToast('Provider and model are required');
+    return;
+  }
+  try {
+    const response = await POST('/admin/pricing', {
+      provider,
+      model,
+      input_cents_per_million: inputCents,
+      output_cents_per_million: outputCents,
+      cached_input_cents_per_million: cachedCents
+    });
+    state.admin = state.admin || {};
+    state.admin.pricing = response.pricing || [];
+    renderPlatformAdmin(state.admin);
+    showToast('Pricing row saved');
+    activateDashboardPage('admin');
+  } catch (err) {
+    showToast(`Could not save pricing row: ${err.message}`);
+  }
+}
+
 async function triggerAdminRunAll() {
   if (state.user?.role !== 'admin') {
     showToast('Admin access required');
@@ -6927,6 +7021,19 @@ async function startUpgrade(plan) {
     showToast('Checkout link unavailable');
   } catch (err) {
     showToast(`Upgrade unavailable: ${err.message}`);
+  }
+}
+
+async function startCreditTopup(pack) {
+  try {
+    const session = await POST('/billing/topup', { pack });
+    if (session.url) {
+      window.location.href = session.url;
+      return;
+    }
+    showToast('Top-up link unavailable');
+  } catch (err) {
+    showToast(`Top-up unavailable: ${err.message}`);
   }
 }
 

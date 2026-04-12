@@ -9,6 +9,7 @@ export const PLAN_DEFINITIONS = {
     economics: {
       monthly_subscription_cents: 0,
       api_budget_cents: 0,
+      credits_per_month: 200,
       revenue_share_pct: STRIPE_PLATFORM_FEE_PCT,
       tasks_included_per_month: 3,
       infrastructure_included: false
@@ -17,6 +18,7 @@ export const PLAN_DEFINITIONS = {
       '1 business',
       'Shared infrastructure preview',
       '3 founder-requested tasks / month',
+      '200 credits / month',
       'Dashboard + control layer'
     ]
   },
@@ -28,6 +30,7 @@ export const PLAN_DEFINITIONS = {
     economics: {
       monthly_subscription_cents: 4900,
       api_budget_cents: 500,
+      credits_per_month: 3000,
       revenue_share_pct: STRIPE_PLATFORM_FEE_PCT,
       tasks_included_per_month: 5,
       infrastructure_included: true
@@ -35,6 +38,7 @@ export const PLAN_DEFINITIONS = {
     features: [
       'Daily autonomous loop',
       '5 founder-requested tasks / month',
+      '3,000 credits / month',
       'Provisioned infra per company',
       'Live founder approvals + override'
     ]
@@ -47,6 +51,7 @@ export const PLAN_DEFINITIONS = {
     economics: {
       monthly_subscription_cents: 19900,
       api_budget_cents: 2500,
+      credits_per_month: 12000,
       revenue_share_pct: 15,
       tasks_included_per_month: 40,
       infrastructure_included: true
@@ -54,6 +59,7 @@ export const PLAN_DEFINITIONS = {
     features: [
       '5 businesses',
       '40 founder-requested tasks / month',
+      '12,000 credits / month',
       'Cross-business oversight',
       'Priority specialist agents'
     ]

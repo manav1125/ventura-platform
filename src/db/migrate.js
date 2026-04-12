@@ -77,6 +77,9 @@ export function runMigrations() {
       email_verified INTEGER NOT NULL DEFAULT 0,
       email_verified_at TEXT,
       is_admin      INTEGER NOT NULL DEFAULT 0,
+      credits_bonus INTEGER NOT NULL DEFAULT 0,
+      credits_monthly_used INTEGER NOT NULL DEFAULT 0,
+      credits_monthly_reset_at TEXT,
       stripe_customer_id TEXT,
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -182,6 +185,55 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
     CREATE INDEX IF NOT EXISTS idx_tasks_department ON tasks(department);
     CREATE INDEX IF NOT EXISTS idx_tasks_workflow_key ON tasks(workflow_key);
+
+    -- ─────────────────────────────────────────
+    -- PRICING + CREDITS
+    -- ─────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS price_book (
+      id            TEXT PRIMARY KEY,
+      provider      TEXT NOT NULL,
+      model         TEXT NOT NULL,
+      input_cents_per_million INTEGER NOT NULL DEFAULT 0,
+      output_cents_per_million INTEGER NOT NULL DEFAULT 0,
+      cached_input_cents_per_million INTEGER NOT NULL DEFAULT 0,
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_price_book_provider ON price_book(provider);
+    CREATE INDEX IF NOT EXISTS idx_price_book_model ON price_book(model);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_price_book_unique ON price_book(provider, model);
+
+    CREATE TABLE IF NOT EXISTS usage_events (
+      id            TEXT PRIMARY KEY,
+      user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      business_id   TEXT REFERENCES businesses(id) ON DELETE CASCADE,
+      task_id       TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+      provider      TEXT NOT NULL,
+      model         TEXT NOT NULL,
+      input_tokens  INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+      cost_cents    INTEGER NOT NULL DEFAULT 0,
+      credits       INTEGER NOT NULL DEFAULT 0,
+      kind          TEXT NOT NULL DEFAULT 'agent',
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_usage_events_user ON usage_events(user_id);
+    CREATE INDEX IF NOT EXISTS idx_usage_events_business ON usage_events(business_id);
+    CREATE INDEX IF NOT EXISTS idx_usage_events_created ON usage_events(created_at);
+
+    CREATE TABLE IF NOT EXISTS credit_ledger (
+      id            TEXT PRIMARY KEY,
+      user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      business_id   TEXT REFERENCES businesses(id) ON DELETE SET NULL,
+      type          TEXT NOT NULL, -- topup | usage | adjustment
+      credits       INTEGER NOT NULL DEFAULT 0,
+      note          TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_credit_ledger_user ON credit_ledger(user_id);
 
     -- ─────────────────────────────────────────
     -- ACTIVITY FEED (real-time events)
@@ -794,6 +846,9 @@ export function runMigrations() {
   ensureColumn(db, 'integrations', 'updated_at', 'TEXT');
   ensureColumn(db, 'users', 'email_verified', 'INTEGER NOT NULL DEFAULT 1');
   ensureColumn(db, 'users', 'email_verified_at', 'TEXT');
+  ensureColumn(db, 'users', 'credits_bonus', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'users', 'credits_monthly_used', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'users', 'credits_monthly_reset_at', 'TEXT');
   db.prepare(`
     UPDATE integrations
     SET secrets = COALESCE(secrets, '{}'),

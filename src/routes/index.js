@@ -71,6 +71,7 @@ import {
   resolveSocialOauthFailure
 } from '../integrations/social-oauth.js';
 import { getPlanDefinition, resolveBusinessEconomics, serializePlan } from '../billing/plans.js';
+import { getCreditsStatus, recordUsageEvent } from '../billing/usage.js';
 import {
   buildBlueprintStorage,
   getBusinessBlueprint,
@@ -204,6 +205,7 @@ function getUserUsage(db, userId, plan) {
       AND date(t.created_at) >= date('now', 'start of month')
   `).get(userId).n;
   const businessCount = db.prepare('SELECT COUNT(*) AS n FROM businesses WHERE user_id = ?').get(userId).n;
+  const credits = getCreditsStatus(db, userId, plan);
 
   return {
     tasks: {
@@ -215,7 +217,8 @@ function getUserUsage(db, userId, plan) {
       used: businessCount,
       limit: limits.businesses,
       remaining: Math.max(0, limits.businesses - businessCount)
-    }
+    },
+    credits
   };
 }
 
@@ -1731,6 +1734,9 @@ router.post('/businesses/:id/tasks', requireAuth, asyncHandler(async (req, res) 
   if (usage.tasks.used >= usage.tasks.limit) {
     return res.status(403).json({ error: `Monthly founder task limit reached for ${user.plan}.` });
   }
+  if (usage.credits?.remaining <= 0) {
+    return res.status(402).json({ error: 'Credits exhausted. Top up or upgrade to queue more tasks.', credits: usage.credits });
+  }
 
   const schema = z.object({
     title: z.string().min(3).max(300),
@@ -2166,6 +2172,7 @@ router.post('/businesses/:id/messages', requireAuth, asyncHandler(async (req, re
   const approvals = listApprovals(req.params.id, { status: 'pending', limit: 10 });
   const recentActivity = getRecentActivity(req.params.id, 8);
   const memory = normaliseMemory(business.agent_memory, business);
+  const userPlan = db.prepare('SELECT plan FROM users WHERE id=?').get(req.user.sub)?.plan || req.user.plan || 'trial';
   const actionable = shouldQueueFounderTask(content);
   const requestedRun = wantsCycleRun(content);
 
@@ -2189,6 +2196,18 @@ router.post('/businesses/:id/messages', requireAuth, asyncHandler(async (req, re
     }
   } else if (actionable) {
     const department = inferFounderTaskDepartment(content);
+    const creditStatus = getCreditsStatus(db, req.user.sub, userPlan);
+    if (creditStatus.remaining <= 0) {
+      aiContent = `You’re out of credits. Top up or upgrade to queue more work.`;
+      const aiMsgId = uuid();
+      db.prepare(`INSERT INTO messages (id, business_id, role, content) VALUES (?, ?, 'assistant', ?)`).run(aiMsgId, req.params.id, aiContent);
+      const { emitToBusiness } = await import('../ws/websocket.js');
+      emitToBusiness(req.params.id, { event: 'message:new', role: 'assistant', content: aiContent, id: aiMsgId });
+      return res.json({
+        message: { id: aiMsgId, role: 'assistant', content: aiContent },
+        meta: { queuedTaskId: null, runStarted: false, credits: creditStatus }
+      });
+    }
     queuedTaskId = await queueTask({
       businessId: req.params.id,
       business,
@@ -2213,6 +2232,19 @@ router.post('/businesses/:id/messages', requireAuth, asyncHandler(async (req, re
     aiContent = buildFounderChatFallback(business, runtime, approvals);
   } else {
     try {
+      const creditStatus = getCreditsStatus(db, req.user.sub, userPlan);
+      if (creditStatus.remaining <= 0) {
+        aiContent = `You’re out of credits. Top up or upgrade to keep the agent running.`;
+        const aiMsgId = uuid();
+        db.prepare(`INSERT INTO messages (id, business_id, role, content) VALUES (?, ?, 'assistant', ?)`).run(aiMsgId, req.params.id, aiContent);
+        const { emitToBusiness } = await import('../ws/websocket.js');
+        emitToBusiness(req.params.id, { event: 'message:new', role: 'assistant', content: aiContent, id: aiMsgId });
+        return res.json({
+          message: { id: aiMsgId, role: 'assistant', content: aiContent },
+          meta: { queuedTaskId, runStarted, credits: creditStatus }
+        });
+      }
+
       const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
       const systemPrompt = `You are Ventura's founder-facing operator console for "${business.name}".
 
@@ -2259,6 +2291,20 @@ ${JSON.stringify(memory, null, 2)}`;
         system: systemPrompt,
         messages: history.map(m => ({ role: m.role, content: m.content }))
       });
+      try {
+        recordUsageEvent({
+          businessId: business.id,
+          userId: req.user.sub,
+          taskId: null,
+          provider: 'anthropic',
+          model: AGENT_MODEL,
+          usage: aiResponse.usage || {},
+          kind: 'founder_chat',
+          note: 'founder_chat'
+        });
+      } catch (err) {
+        console.error('Usage tracking failed:', err.message);
+      }
       aiContent = aiResponse.content[0]?.text || buildFounderChatFallback(business, runtime, approvals);
     } catch (error) {
       aiContent = `${buildFounderChatFallback(business, runtime, approvals)} Anthropic response failed: ${error.message}`;

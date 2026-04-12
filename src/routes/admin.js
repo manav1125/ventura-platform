@@ -3,6 +3,7 @@
 // Provides oversight of all users, businesses, agent cycles, and revenue
 
 import express from 'express';
+import { v4 as uuid } from 'uuid';
 import { getUserById, requireAuth } from '../auth/auth.js';
 import { getDb } from '../db/migrate.js';
 import { runAllBusinesses } from '../agents/runner.js';
@@ -125,6 +126,60 @@ router.get('/intelligence', asyncHandler(async (req, res) => {
       blueprintKey: typeof req.query.blueprintKey === 'string' ? req.query.blueprintKey : null
     })
   });
+}));
+
+// GET /api/admin/pricing — list price book entries
+router.get('/pricing', asyncHandler(async (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT provider, model, input_cents_per_million, output_cents_per_million, cached_input_cents_per_million, updated_at
+    FROM price_book
+    ORDER BY provider ASC, model ASC
+  `).all();
+  res.json({ pricing: rows });
+}));
+
+// POST /api/admin/pricing — upsert price book entry
+router.post('/pricing', asyncHandler(async (req, res) => {
+  const {
+    provider,
+    model,
+    input_cents_per_million = 0,
+    output_cents_per_million = 0,
+    cached_input_cents_per_million = 0
+  } = req.body || {};
+
+  if (!provider || !model) {
+    return res.status(400).json({ error: 'provider and model are required' });
+  }
+
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO price_book (
+      id, provider, model, input_cents_per_million, output_cents_per_million, cached_input_cents_per_million, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(provider, model)
+    DO UPDATE SET
+      input_cents_per_million = excluded.input_cents_per_million,
+      output_cents_per_million = excluded.output_cents_per_million,
+      cached_input_cents_per_million = excluded.cached_input_cents_per_million,
+      updated_at = datetime('now')
+  `).run(
+    uuid(),
+    String(provider),
+    String(model),
+    Number(input_cents_per_million || 0),
+    Number(output_cents_per_million || 0),
+    Number(cached_input_cents_per_million || 0)
+  );
+
+  const rows = db.prepare(`
+    SELECT provider, model, input_cents_per_million, output_cents_per_million, cached_input_cents_per_million, updated_at
+    FROM price_book
+    ORDER BY provider ASC, model ASC
+  `).all();
+  res.json({ pricing: rows });
 }));
 
 // POST /api/admin/intelligence/documents — add a platform-level blueprint/playbook note

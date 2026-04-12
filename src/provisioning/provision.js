@@ -56,6 +56,7 @@ function buildLaunchContextFromBusiness(business) {
   const blueprint = getBusinessBlueprint(business);
   return {
     businessId: business.id,
+    userId: business.user_id,
     name: business.name,
     type: business.type,
     description: business.description,

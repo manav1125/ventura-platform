@@ -1,7 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ANTHROPIC_API_KEY, AGENT_MODEL } from '../config.js';
+import { recordUsageEvent, getCreditsStatus } from '../billing/usage.js';
+import { getDb } from '../db/migrate.js';
 
 export async function generateLaunchPlan({
+  businessId,
+  userId,
   name,
   type,
   description,
@@ -13,6 +17,14 @@ export async function generateLaunchPlan({
 }) {
   if (ANTHROPIC_API_KEY) {
     try {
+      if (businessId && userId) {
+        const db = getDb();
+        const userPlan = db.prepare('SELECT plan FROM users WHERE id=?').get(userId)?.plan || 'trial';
+        const credits = getCreditsStatus(db, userId, userPlan);
+        if (credits.remaining <= 0) {
+          return buildFallbackLaunchPlan({ name, type, description, targetCustomer, goal90d });
+        }
+      }
       const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
       const response = await client.messages.create({
         model: AGENT_MODEL,
@@ -81,6 +93,22 @@ Rules:
       });
 
       const text = response.content?.[0]?.text?.trim() || '';
+      try {
+        if (businessId && userId) {
+          recordUsageEvent({
+            businessId,
+            userId,
+            taskId: null,
+            provider: 'anthropic',
+            model: AGENT_MODEL,
+            usage: response.usage || {},
+            kind: 'launch_planner',
+            note: 'launch_plan'
+          });
+        }
+      } catch (err) {
+        console.error('Usage tracking failed:', err.message);
+      }
       const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(cleaned);
       if (Array.isArray(parsed.tasks) && parsed.tasks.length) {
