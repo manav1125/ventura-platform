@@ -233,6 +233,48 @@ router.post('/broadcast', asyncHandler(async (req, res) => {
   res.json({ sent: true, connections: getStats().totalConnections });
 }));
 
+// POST /api/admin/businesses/pause-all — pause all businesses except one
+router.post('/businesses/pause-all', asyncHandler(async (req, res) => {
+  const { keepBusinessId = null } = req.body || {};
+  const db = getDb();
+  if (keepBusinessId) {
+    db.prepare(`
+      UPDATE businesses
+      SET status='paused', next_run_at=NULL, updated_at=datetime('now')
+      WHERE id <> ?
+    `).run(keepBusinessId);
+    db.prepare(`
+      UPDATE agent_cycles
+      SET status='failed', error='Paused by admin cleanup'
+      WHERE status='running' AND business_id <> ?
+    `).run(keepBusinessId);
+  } else {
+    db.prepare(`
+      UPDATE businesses
+      SET status='paused', next_run_at=NULL, updated_at=datetime('now')
+    `).run();
+    db.prepare(`
+      UPDATE agent_cycles
+      SET status='failed', error='Paused by admin cleanup'
+      WHERE status='running'
+    `).run();
+  }
+  res.json({ success: true });
+}));
+
+// POST /api/admin/users/:id/credits/reset — reset monthly usage + bonus credits
+router.post('/users/:id/credits/reset', asyncHandler(async (req, res) => {
+  const db = getDb();
+  db.prepare(`
+    UPDATE users
+    SET credits_bonus = 0,
+        credits_monthly_used = 0,
+        credits_monthly_reset_at = datetime('now','start of month')
+    WHERE id = ?
+  `).run(req.params.id);
+  res.json({ success: true });
+}));
+
 // PATCH /api/admin/users/:id/plan — upgrade/downgrade a user's plan
 router.patch('/users/:id/plan', asyncHandler(async (req, res) => {
   const { plan } = req.body;

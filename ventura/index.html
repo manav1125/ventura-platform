@@ -4312,11 +4312,19 @@ function renderPlatformAdmin(adminData) {
         </div>
         <div style="padding:12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:3px;">
           <div style="font-size:11px;font-family:'DM Mono',monospace;color:rgba(255,255,255,0.38);margin-bottom:6px;">BUSINESS TYPES</div>
-          <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${(stats.businesses?.by_type || []).map(item => `${titleCase(item.type)} ${item.n}`).join(' · ') || 'No type breakdown yet'}</div>
-        </div>
-      </div>
+      <div style="font-size:13px;color:#e0ddd5;line-height:1.6;">${(stats.businesses?.by_type || []).map(item => `${titleCase(item.type)} ${item.n}`).join(' · ') || 'No type breakdown yet'}</div>
     </div>
-  `;
+  </div>
+</div>
+`;
+
+  if (state.activeBiz?.id) {
+    overviewEl.innerHTML += `
+      <div style="margin-top:16px;display:flex;flex-wrap:wrap;gap:8px;">
+        <button class="icon-btn" onclick="pauseOtherBusinesses('${esc(state.activeBiz.id)}')">Pause all except active business</button>
+      </div>
+    `;
+  }
 
   blueprintsEl.innerHTML = Object.keys(grouped).length ? `
     <div style="display:flex;flex-direction:column;gap:12px;">
@@ -6593,6 +6601,23 @@ async function savePriceBookEntry() {
     activateDashboardPage('admin');
   } catch (err) {
     showToast(`Could not save pricing row: ${err.message}`);
+  }
+}
+
+async function pauseOtherBusinesses(keepId) {
+  if (state.user?.role !== 'admin') {
+    showToast('Admin access required');
+    return;
+  }
+  if (!keepId) return;
+  const confirmPause = confirm('Pause all businesses except the active one? This stops their agent loops and marks running cycles as failed.');
+  if (!confirmPause) return;
+  try {
+    await POST('/admin/businesses/pause-all', { keepBusinessId: keepId });
+    showToast('Paused all other businesses');
+    await loadDashboard();
+  } catch (err) {
+    showToast(`Could not pause businesses: ${err.message}`);
   }
 }
 
